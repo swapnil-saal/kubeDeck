@@ -1,93 +1,87 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --font-sans: 'Inter', sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
-  /* Deep Space Theme - Dark Mode Default */
-  --background: 222 47% 11%;
-  --foreground: 210 40% 98%;
+  --background: 220 20% 4%;
+  --foreground: 210 20% 90%;
 
-  --card: 222 47% 13%;
-  --card-foreground: 210 40% 98%;
+  --card: 220 20% 6%;
+  --card-foreground: 210 20% 90%;
 
-  --popover: 222 47% 11%;
-  --popover-foreground: 210 40% 98%;
+  --popover: 220 20% 5%;
+  --popover-foreground: 210 20% 90%;
 
-  --primary: 252 59% 50%; /* Tech Violet */
-  --primary-foreground: 210 40% 98%;
+  --primary: 187 80% 48%;
+  --primary-foreground: 220 20% 4%;
 
-  --secondary: 217 33% 17%;
-  --secondary-foreground: 210 40% 98%;
+  --secondary: 220 15% 10%;
+  --secondary-foreground: 210 20% 90%;
 
-  --muted: 217 33% 17%;
-  --muted-foreground: 215 20.2% 65.1%;
+  --muted: 220 15% 12%;
+  --muted-foreground: 215 15% 55%;
 
-  --accent: 190 90% 50%; /* Cyan accent for active states */
-  --accent-foreground: 222 47% 11%;
+  --accent: 187 80% 48%;
+  --accent-foreground: 220 20% 4%;
 
-  --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 210 40% 98%;
+  --destructive: 0 62% 30%;
+  --destructive-foreground: 210 20% 90%;
 
-  --border: 217 33% 20%;
-  --input: 217 33% 20%;
-  --ring: 252 59% 50%;
+  --border: 220 15% 12%;
+  --input: 220 15% 12%;
+  --ring: 187 80% 48%;
 
-  --radius: 0.5rem;
+  --radius: 0.375rem;
 }
 
 @layer base {
-  body {
-    @apply bg-background text-foreground antialiased font-sans;
+  * {
+    @apply border-border;
   }
   
-  /* Custom scrollbar for tech feel */
+  body {
+    @apply bg-[#06080c] text-foreground antialiased;
+    font-family: var(--font-mono);
+  }
+  
+  /* Minimal scrollbar */
   ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 6px;
+    height: 6px;
   }
   ::-webkit-scrollbar-track {
-    @apply bg-secondary/50;
+    background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    @apply bg-primary/30 rounded-full hover:bg-primary/50 transition-colors;
+    @apply bg-white/[0.06] rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-white/10;
+  }
+  
+  /* Firefox scrollbar */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.06) transparent;
   }
 
-  code, pre {
+  code, pre, .font-mono {
     font-family: var(--font-mono);
+  }
+
+  /* Selection */
+  ::selection {
+    @apply bg-cyan-500/30 text-cyan-100;
   }
 }
 
 @layer components {
   .glass-panel {
-    @apply bg-card/80 backdrop-blur-md border border-white/5 shadow-xl;
-  }
-  
-  .tech-border {
-    @apply border border-primary/20 hover:border-primary/40 transition-colors duration-300;
-  }
-
-  .status-badge {
-    @apply px-2 py-0.5 rounded text-xs font-mono font-medium border;
-  }
-  
-  .status-success {
-    @apply bg-emerald-500/10 text-emerald-400 border-emerald-500/20;
-  }
-  
-  .status-warning {
-    @apply bg-amber-500/10 text-amber-400 border-amber-500/20;
-  }
-  
-  .status-error {
-    @apply bg-rose-500/10 text-rose-400 border-rose-500/20;
-  }
-  
-  .status-neutral {
-    @apply bg-slate-500/10 text-slate-400 border-slate-500/20;
+    @apply bg-white/[0.02] backdrop-blur-md border border-white/[0.04] shadow-xl;
   }
 }

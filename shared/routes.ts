@@ -78,7 +78,36 @@ export const api = {
         200: z.object({ message: z.string() }),
         500: errorSchemas.internal
       }
-    }
+    },
+    // ── Detail endpoints ────────────────────────────
+    resourceDescribe: {
+      method: 'GET' as const,
+      path: '/api/k8s/resource/:type/:name/describe' as const,
+      responses: {
+        200: z.object({ content: z.string() }),
+        500: errorSchemas.internal
+      }
+    },
+    resourceYaml: {
+      method: 'GET' as const,
+      path: '/api/k8s/resource/:type/:name/yaml' as const,
+      responses: {
+        200: z.object({ content: z.string() }),
+        500: errorSchemas.internal
+      }
+    },
+    resourceEvents: {
+      method: 'GET' as const,
+      path: '/api/k8s/resource/:type/:name/events' as const,
+      responses: {
+        200: z.object({ content: z.string() }),
+        500: errorSchemas.internal
+      }
+    },
+    podLogsStream: {
+      method: 'GET' as const,
+      path: '/api/k8s/pods/:name/logs/stream' as const,
+    },
   }
 };
 
