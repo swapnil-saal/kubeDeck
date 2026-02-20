@@ -45,6 +45,39 @@ export const api = {
         200: z.array(k8sServiceSchema),
         500: errorSchemas.internal
       },
+    },
+    podDelete: {
+      method: 'DELETE' as const,
+      path: '/api/k8s/pods/:name' as const,
+      responses: {
+        200: z.object({ message: z.string() }),
+        500: errorSchemas.internal
+      }
+    },
+    podLogs: {
+      method: 'GET' as const,
+      path: '/api/k8s/pods/:name/logs' as const,
+      responses: {
+        200: z.object({ logs: z.string() }),
+        500: errorSchemas.internal
+      }
+    },
+    podEnv: {
+      method: 'GET' as const,
+      path: '/api/k8s/pods/:name/env' as const,
+      responses: {
+        200: z.object({ env: z.string() }),
+        500: errorSchemas.internal
+      }
+    },
+    portForward: {
+      method: 'POST' as const,
+      path: '/api/k8s/pods/:name/port-forward' as const,
+      input: z.object({ port: z.number() }),
+      responses: {
+        200: z.object({ message: z.string() }),
+        500: errorSchemas.internal
+      }
     }
   }
 };

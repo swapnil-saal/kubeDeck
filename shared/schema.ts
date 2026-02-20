@@ -42,6 +42,8 @@ export const k8sServiceSchema = z.object({
 
 export type K8sContext = z.infer<typeof k8sContextSchema>;
 export type K8sNamespace = z.infer<typeof k8sNamespaceSchema>;
-export type K8sPod = z.infer<typeof k8sPodSchema>;
+export type K8sPod = z.infer<typeof k8sPodSchema> & {
+  containers?: string[];
+};
 export type K8sDeployment = z.infer<typeof k8sDeploymentSchema>;
 export type K8sService = z.infer<typeof k8sServiceSchema>;

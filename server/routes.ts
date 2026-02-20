@@ -166,5 +166,78 @@ export async function registerRoutes(
     }
   });
 
+  app.delete(`${api.k8s.podDelete.path}`, async (req, res) => {
+    try {
+      const { name } = req.params;
+      const context = req.query.context ? `--context=${req.query.context}` : '';
+      const namespace = req.query.namespace ? `-n ${req.query.namespace}` : '';
+      
+      if (isReplit) {
+        return res.json({ message: `Pod ${name} deleted (mock)` });
+      }
+
+      await execAsync(`kubectl delete pod ${name} ${context} ${namespace}`);
+      res.json({ message: `Pod ${name} deleted` });
+    } catch (err) {
+      res.status(500).json({ message: String(err) });
+    }
+  });
+
+  app.get(`${api.k8s.podLogs.path}`, async (req, res) => {
+    try {
+      const { name } = req.params;
+      const context = req.query.context ? `--context=${req.query.context}` : '';
+      const namespace = req.query.namespace ? `-n ${req.query.namespace}` : '';
+
+      if (isReplit) {
+        return res.json({ logs: `[MOCK LOGS for ${name}]\n2026-02-20T07:30:00Z INFO Initializing...\n2026-02-20T07:30:01Z INFO Ready to serve requests.\n2026-02-20T07:35:12Z DEBUG Processing request ID 550e8400-e29b-41d4-a716-446655440000` });
+      }
+
+      const { stdout } = await execAsync(`kubectl logs ${name} ${context} ${namespace} --tail=100`);
+      res.json({ logs: stdout });
+    } catch (err) {
+      res.status(500).json({ message: String(err) });
+    }
+  });
+
+  app.get(`${api.k8s.podEnv.path}`, async (req, res) => {
+    try {
+      const { name } = req.params;
+      const context = req.query.context ? `--context=${req.query.context}` : '';
+      const namespace = req.query.namespace ? `-n ${req.query.namespace}` : '';
+
+      if (isReplit) {
+        return res.json({ env: `KUBERNETES_SERVICE_HOST=10.96.0.1\nKUBERNETES_SERVICE_PORT=443\nNODE_NAME=node-1\nPOD_IP=10.244.0.5\nAPP_VERSION=v1.2.3` });
+      }
+
+      const { stdout } = await execAsync(`kubectl exec ${name} ${context} ${namespace} -- env`);
+      res.json({ env: stdout });
+    } catch (err) {
+      res.status(500).json({ message: String(err) });
+    }
+  });
+
+  app.post(`${api.k8s.portForward.path}`, async (req, res) => {
+    try {
+      const { name } = req.params;
+      const { port } = api.k8s.portForward.input.parse(req.body);
+      const context = req.query.context ? `--context=${req.query.context}` : '';
+      const namespace = req.query.namespace ? `-n ${req.query.namespace}` : '';
+
+      if (isReplit) {
+        return res.json({ message: `Port forwarding started for ${name} on port ${port} (mock)` });
+      }
+
+      // Note: kubectl port-forward is usually a long-running process. 
+      // In a real app, we might want to manage these processes.
+      // For this quick tool, we'll just trigger it and let it run in background if possible, 
+      // but standard exec might hang. Usually we'd use a spawn or a manager.
+      exec(`kubectl port-forward ${name} ${port}:${port} ${context} ${namespace} &`);
+      res.json({ message: `Port forward command issued for ${name} on port ${port}` });
+    } catch (err) {
+      res.status(500).json({ message: String(err) });
+    }
+  });
+
   return httpServer;
 }
