@@ -1,21 +1,33 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
-import { useK8sContexts, useK8sNamespaces, useK8sPods, useK8sDeployments, useK8sServices, useDeletePod, usePodLogs, usePodEnv, usePortForward, K8sError } from "@/hooks/use-k8s";
+import {
+  useK8sContexts, useK8sNamespaces, useK8sPods, useK8sDeployments, useK8sServices,
+  useK8sConfigMaps, useK8sSecrets, useK8sIngresses, useK8sStatefulSets, useK8sDaemonSets,
+  useK8sJobs, useK8sCronJobs, useK8sNodes, useK8sHpa, useK8sPvcs,
+  useDeletePod, usePodLogs, usePodEnv, usePortForward, usePortForwards, useStopPortForward,
+  useScaleDeployment, useRestartDeployment,
+  K8sError,
+} from "@/hooks/use-k8s";
 import { ResourceTable } from "@/components/ResourceTable";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Box, Layers, Network, RefreshCw, Terminal, List, Share2, Trash2, Monitor, Cpu, Activity, ChevronRight, Zap } from "lucide-react";
+import {
+  Box, Layers, Network, RefreshCw, Terminal, List, Share2, Trash2, Monitor, Activity,
+  ChevronRight, Zap, Square, Star, FileText, Lock, Globe, Database, Clock, Server,
+  Gauge, HardDrive, RotateCw, Scaling, Image,
+} from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
+import { useTerminalStore } from "@/hooks/use-terminal-store";
 
 export default function Dashboard() {
-  const [currentContext, setCurrentContext] = useState<string>("");
-  const [currentNamespace, setCurrentNamespace] = useState<string>("e2");
+  const { context: currentContext, namespace: currentNamespace, setContext: handleSetContext, setNamespace: handleSetNamespace } = useTerminalStore();
   const [selectedPod, setSelectedPod] = useState<{ name: string; type: 'logs' | 'env' | 'forward' | null }>({ name: '', type: null });
   const [forwardPort, setForwardPort] = useState<string>("8080");
+  const [remotePort, setRemotePort] = useState<string>("80");
   const [activeTab, setActiveTab] = useState("pods");
   const [, navigate] = useLocation();
   const { toast } = useToast();
@@ -30,17 +42,35 @@ export default function Dashboard() {
   useEffect(() => {
     if (contexts && contexts.length > 0 && !currentContext) {
       const active = contexts.find(c => c.isCurrent);
-      setCurrentContext(active ? active.name : contexts[0].name);
+      const chosen = active || contexts[0];
+      handleSetContext(chosen.name);
     }
-  }, [contexts, currentContext]);
+  }, [contexts, currentContext, handleSetContext]);
 
   const { data: namespaces } = useK8sNamespaces(currentContext);
   const { data: pods, isLoading: podsLoading, isError: podsError, error: podsErrorObj, refetch: refetchPods } = useK8sPods(currentContext, currentNamespace);
   const { data: deployments, isLoading: deployLoading, isError: deployError, error: deployErrorObj, refetch: refetchDeploy } = useK8sDeployments(currentContext, currentNamespace);
   const { data: services, isLoading: servicesLoading, isError: servicesError, error: servicesErrorObj, refetch: refetchServices } = useK8sServices(currentContext, currentNamespace);
+  const { data: configmaps, isLoading: cmLoading, isError: cmError, error: cmErrorObj, refetch: refetchCM } = useK8sConfigMaps(currentContext, currentNamespace);
+  const { data: secrets, isLoading: secLoading, isError: secError, error: secErrorObj, refetch: refetchSec } = useK8sSecrets(currentContext, currentNamespace);
+  const { data: ingresses, isLoading: ingLoading, isError: ingError, error: ingErrorObj, refetch: refetchIng } = useK8sIngresses(currentContext, currentNamespace);
+  const { data: statefulsets, isLoading: stsLoading, isError: stsError, error: stsErrorObj, refetch: refetchSts } = useK8sStatefulSets(currentContext, currentNamespace);
+  const { data: daemonsets, isLoading: dsLoading, isError: dsError, error: dsErrorObj, refetch: refetchDs } = useK8sDaemonSets(currentContext, currentNamespace);
+  const { data: jobs, isLoading: jobsLoading, isError: jobsError, error: jobsErrorObj, refetch: refetchJobs } = useK8sJobs(currentContext, currentNamespace);
+  const { data: cronjobs, isLoading: cjLoading, isError: cjError, error: cjErrorObj, refetch: refetchCj } = useK8sCronJobs(currentContext, currentNamespace);
+  const { data: nodes, isLoading: nodesLoading, isError: nodesError, error: nodesErrorObj, refetch: refetchNodes } = useK8sNodes(currentContext);
+  const { data: hpa, isLoading: hpaLoading, isError: hpaError, error: hpaErrorObj, refetch: refetchHpa } = useK8sHpa(currentContext, currentNamespace);
+  const { data: pvcs, isLoading: pvcLoading, isError: pvcError, error: pvcErrorObj, refetch: refetchPvc } = useK8sPvcs(currentContext, currentNamespace);
 
   const deletePodMutation = useDeletePod();
   const portForwardMutation = usePortForward();
+  const scaleMutation = useScaleDeployment();
+  const restartMutation = useRestartDeployment();
+  const { data: portForwards } = usePortForwards();
+  const stopPfMutation = useStopPortForward();
+
+  const [scaleDialog, setScaleDialog] = useState<{ name: string; current: number } | null>(null);
+  const [scaleReplicas, setScaleReplicas] = useState("1");
 
   const { data: logsData, isLoading: logsLoading } = usePodLogs(
     selectedPod.name, currentContext, currentNamespace, selectedPod.type === 'logs'
@@ -50,9 +80,9 @@ export default function Dashboard() {
   );
 
   const handleRefresh = () => {
-    refetchPods();
-    refetchDeploy();
-    refetchServices();
+    refetchPods(); refetchDeploy(); refetchServices();
+    refetchCM(); refetchSec(); refetchIng(); refetchSts(); refetchDs();
+    refetchJobs(); refetchCj(); refetchNodes(); refetchHpa(); refetchPvc();
   };
 
   const handleDeletePod = async (name: string) => {
@@ -67,12 +97,43 @@ export default function Dashboard() {
   };
 
   const handlePortForward = async () => {
+    const local = parseInt(forwardPort);
+    const remote = parseInt(remotePort) || local;
+    if (!local || local < 1 || local > 65535) {
+      toast({ title: "Invalid Port", description: "Local port must be between 1 and 65535", variant: "destructive" });
+      return;
+    }
+    if (remote < 1 || remote > 65535) {
+      toast({ title: "Invalid Port", description: "Remote port must be between 1 and 65535", variant: "destructive" });
+      return;
+    }
     try {
-      await portForwardMutation.mutateAsync({ name: selectedPod.name, context: currentContext, namespace: currentNamespace, port: parseInt(forwardPort) });
-      toast({ title: "Port Forward Active", description: `localhost:${forwardPort} → ${selectedPod.name}` });
+      const result = await portForwardMutation.mutateAsync({
+        name: selectedPod.name, context: currentContext, namespace: currentNamespace,
+        port: local, remotePort: remote,
+      });
+      toast({ title: "Port Forward Active", description: result.message || `localhost:${local} → ${selectedPod.name}:${remote}` });
       setSelectedPod({ name: '', type: null });
-    } catch {
-      toast({ title: "Error", description: "Port forward failed", variant: "destructive" });
+    } catch (err: any) {
+      toast({ title: "Port Forward Failed", description: err?.message || "Failed to establish port forward", variant: "destructive" });
+    }
+  };
+
+  const handleScale = async () => {
+    if (!scaleDialog) return;
+    try {
+      await scaleMutation.mutateAsync({ name: scaleDialog.name, context: currentContext, namespace: currentNamespace, replicas: parseInt(scaleReplicas) });
+      toast({ title: "Scaled", description: `${scaleDialog.name} scaled to ${scaleReplicas} replicas` });
+      setScaleDialog(null);
+    } catch { toast({ title: "Error", description: "Scale failed", variant: "destructive" }); }
+  };
+
+  const handleRestart = async (name: string) => {
+    if (confirm(`Restart deployment ${name}?`)) {
+      try {
+        await restartMutation.mutateAsync({ name, context: currentContext, namespace: currentNamespace });
+        toast({ title: "Restarted", description: `${name} rolling restart initiated` });
+      } catch { toast({ title: "Error", description: "Restart failed", variant: "destructive" }); }
     }
   };
 
@@ -87,7 +148,7 @@ export default function Dashboard() {
 
   if (!currentContext && !contexts) {
     return (
-      <div className="h-screen w-full flex items-center justify-center bg-[#06080c]">
+      <div className="h-full w-full flex items-center justify-center bg-[#06080c]">
         <div className="flex flex-col items-center gap-4">
           <div className="relative">
             <div className="w-12 h-12 border-2 border-cyan-500/30 border-t-cyan-400 rounded-full animate-spin" />
@@ -101,12 +162,14 @@ export default function Dashboard() {
 
   const stats = [
     { label: "PODS", value: getStatValue(pods, podsLoading, podsError, podsErrorObj), icon: Box, color: "cyan", isError: podsError, isForbidden: podsErrorObj instanceof K8sError && podsErrorObj.isForbidden },
-    { label: "DEPLOYMENTS", value: getStatValue(deployments, deployLoading, deployError, deployErrorObj), icon: Layers, color: "violet", isError: deployError, isForbidden: deployErrorObj instanceof K8sError && deployErrorObj.isForbidden },
-    { label: "SERVICES", value: getStatValue(services, servicesLoading, servicesError, servicesErrorObj), icon: Network, color: "emerald", isError: servicesError, isForbidden: servicesErrorObj instanceof K8sError && servicesErrorObj.isForbidden },
+    { label: "DEPLOY", value: getStatValue(deployments, deployLoading, deployError, deployErrorObj), icon: Layers, color: "violet", isError: deployError, isForbidden: deployErrorObj instanceof K8sError && deployErrorObj.isForbidden },
+    { label: "SVC", value: getStatValue(services, servicesLoading, servicesError, servicesErrorObj), icon: Network, color: "emerald", isError: servicesError, isForbidden: servicesErrorObj instanceof K8sError && servicesErrorObj.isForbidden },
+    { label: "NODES", value: getStatValue(nodes, nodesLoading, nodesError, nodesErrorObj), icon: Server, color: "amber", isError: nodesError, isForbidden: nodesErrorObj instanceof K8sError && nodesErrorObj.isForbidden },
+    { label: "ING", value: getStatValue(ingresses, ingLoading, ingError, ingErrorObj), icon: Globe, color: "pink", isError: ingError, isForbidden: ingErrorObj instanceof K8sError && ingErrorObj.isForbidden },
   ];
 
   return (
-    <div className="flex flex-col h-screen bg-[#06080c] overflow-hidden font-mono text-slate-300 selection:bg-cyan-500/30">
+    <div className="flex flex-col h-full bg-[#06080c] overflow-hidden font-mono text-slate-300 selection:bg-cyan-500/30">
       {/* ══════ HEADER BAR ══════ */}
       <header className="relative z-10 border-b border-cyan-500/10 bg-[#080a10]/90 backdrop-blur-xl">
         {/* Top accent line */}
@@ -130,7 +193,7 @@ export default function Dashboard() {
           {/* Context Select */}
           <div className="flex items-center gap-2 pr-4 border-r border-white/5">
             <span className="text-[9px] uppercase tracking-[0.2em] text-slate-600 font-bold">CTX</span>
-            <Select value={currentContext} onValueChange={(v) => { setCurrentContext(v); setCurrentNamespace("default"); }}>
+            <Select value={currentContext} onValueChange={handleSetContext}>
               <SelectTrigger className="w-44 h-7 bg-transparent border-white/[0.06] hover:border-cyan-500/20 focus:ring-0 focus:ring-offset-0 text-[11px] font-mono text-cyan-400 rounded-sm px-2">
                 <SelectValue placeholder="select context" />
               </SelectTrigger>
@@ -139,6 +202,7 @@ export default function Dashboard() {
                   <SelectItem key={ctx.name} value={ctx.name} className="text-[11px] font-mono focus:bg-cyan-500/10 focus:text-cyan-300">
                     <div className="flex items-center gap-2">
                       {ctx.isCurrent && <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.7)]" />}
+                      {currentContext === ctx.name && <Star className="w-2.5 h-2.5 text-amber-400 fill-amber-400" />}
                       {ctx.name}
                     </div>
                   </SelectItem>
@@ -153,21 +217,21 @@ export default function Dashboard() {
           {/* Namespace Select */}
           <div className="flex items-center gap-2">
             <span className="text-[9px] uppercase tracking-[0.2em] text-slate-600 font-bold">NS</span>
-            <Select value={currentNamespace} onValueChange={setCurrentNamespace}>
+            <Select value={currentNamespace} onValueChange={handleSetNamespace}>
               <SelectTrigger className="w-44 h-7 bg-transparent border-white/[0.06] hover:border-cyan-500/20 focus:ring-0 focus:ring-offset-0 text-[11px] font-mono text-emerald-400 rounded-sm px-2">
                 <SelectValue placeholder="select namespace" />
-              </SelectTrigger>
+                </SelectTrigger>
               <SelectContent className="bg-[#0c0e14] border-cyan-500/10 text-slate-300 font-mono max-h-64">
                 <SelectItem value="all" className="text-[11px] font-mono focus:bg-cyan-500/10 focus:text-cyan-300">
                   * all namespaces
                 </SelectItem>
-                {namespaces?.map((ns) => (
+                  {namespaces?.map((ns) => (
                   <SelectItem key={ns.name} value={ns.name} className="text-[11px] font-mono focus:bg-cyan-500/10 focus:text-cyan-300">
-                    {ns.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                      {ns.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
           </div>
 
           {/* Right side */}
@@ -194,7 +258,7 @@ export default function Dashboard() {
 
         {/* Bottom accent line */}
         <div className="h-[1px] bg-gradient-to-r from-cyan-500/20 via-transparent to-emerald-500/20" />
-      </header>
+        </header>
 
       {/* ══════ MAIN CONTENT ══════ */}
       <main className="flex-1 overflow-auto relative">
@@ -206,7 +270,7 @@ export default function Dashboard() {
         
         <div className="relative p-5 max-w-[1600px] mx-auto space-y-5">
           {/* ── STAT CARDS ── */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-5 gap-3">
             {stats.map((stat, i) => (
               <motion.div
                 key={stat.label}
@@ -239,26 +303,37 @@ export default function Dashboard() {
                   <Zap className={`w-3 h-3 ${stat.isError ? 'text-red-500/20' : 'text-white/[0.04] group-hover:text-' + stat.color + '-500/20'} transition-colors`} />
                 </div>
               </motion.div>
-            ))}
-          </div>
+              ))}
+            </div>
 
           {/* ── RESOURCE TABS ── */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <div className="flex items-center gap-4 mb-4">
-              <TabsList className="bg-transparent border border-white/[0.04] p-0.5 h-8 rounded gap-0.5">
+              <TabsList className="bg-transparent border border-white/[0.04] p-0.5 h-8 rounded gap-0.5 flex-wrap">
                 {[
-                  { val: "pods", label: "PODS", color: "cyan" },
-                  { val: "deployments", label: "DEPLOY", color: "violet" },
-                  { val: "services", label: "SVC", color: "emerald" },
+                  { val: "pods", label: "Pods", icon: Box },
+                  { val: "deployments", label: "Deploy", icon: Layers },
+                  { val: "services", label: "Svc", icon: Network },
+                  { val: "statefulsets", label: "STS", icon: Database },
+                  { val: "daemonsets", label: "DS", icon: Layers },
+                  { val: "jobs", label: "Jobs", icon: Clock },
+                  { val: "cronjobs", label: "CronJ", icon: Clock },
+                  { val: "configmaps", label: "CM", icon: FileText },
+                  { val: "secrets", label: "Sec", icon: Lock },
+                  { val: "ingresses", label: "Ing", icon: Globe },
+                  { val: "nodes", label: "Nodes", icon: Server },
+                  { val: "hpa", label: "HPA", icon: Gauge },
+                  { val: "pvcs", label: "PVC", icon: HardDrive },
                 ].map(tab => (
                   <TabsTrigger
                     key={tab.val}
                     value={tab.val}
-                    className={`text-[10px] font-bold uppercase tracking-[0.15em] rounded-sm px-4 h-7 transition-all data-[state=inactive]:text-slate-600 data-[state=inactive]:hover:text-slate-400
-                      data-[state=active]:bg-${tab.color}-500/15 data-[state=active]:text-${tab.color}-400 data-[state=active]:shadow-none`}
+                    className="text-[10px] font-bold uppercase tracking-[0.1em] rounded-sm px-3 h-7 transition-all gap-1 data-[state=inactive]:text-slate-600 data-[state=inactive]:hover:text-slate-400
+                      data-[state=active]:bg-cyan-500/15 data-[state=active]:text-cyan-400 data-[state=active]:shadow-none"
                   >
+                    <tab.icon className="w-3 h-3" />
                     {tab.label}
-                  </TabsTrigger>
+                </TabsTrigger>
                 ))}
               </TabsList>
               
@@ -270,34 +345,55 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <AnimatePresence mode="wait">
-              <TabsContent value="pods" className="mt-0 outline-none">
+              <AnimatePresence mode="wait">
+              {/* ── PODS ── */}
+                <TabsContent value="pods" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-                  <ResourceTable
-                    data={pods}
-                    isLoading={podsLoading}
+                    <ResourceTable
+                      data={pods}
+                      isLoading={podsLoading}
                     isError={podsError}
                     error={podsErrorObj}
                     accentColor="cyan"
-                    columns={[
-                      { header: "Pod Name", accessorKey: "name", cell: (item) => (
+                      columns={[
+                      { header: "Pod", accessorKey: "name", cell: (item) => (
                         <button onClick={() => goToDetail("pod", item.name, item.namespace)} className="text-cyan-400/90 font-medium hover:text-cyan-300 hover:underline underline-offset-2 transition-colors text-left">
                           {item.name}
                         </button>
                       )},
-                      { header: "Namespace", accessorKey: "namespace", cell: (item) => (
-                        <span className="text-slate-500">{item.namespace}</span>
+                      { header: "NS", accessorKey: "namespace", cell: (item) => (
+                        <span className="text-slate-500 text-[10px]">{item.namespace}</span>
                       )},
-                      { header: "Status", accessorKey: "status" },
+                      { header: "Ready", accessorKey: "ready" as any, cell: (item: any) => {
+                        const ready = item.ready || "0/0";
+                        const [cur, tot] = ready.split("/");
+                        const ok = cur === tot && Number(cur) > 0;
+                        return <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-sm border ${ok ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}>{ready}</span>;
+                      }},
+                        { header: "Status", accessorKey: "status" },
+                      { header: "Image", accessorKey: "images" as any, cell: (item: any) => {
+                        const imgs: string[] = item.images || [];
+                        if (imgs.length === 0) return <span className="text-slate-700">-</span>;
+                        return (
+                          <div className="flex flex-col gap-0.5">
+                            {imgs.map((img: string, idx: number) => (
+                              <span key={idx} className="text-[10px] text-violet-400/80" title={img}>
+                                {img.split("/").pop()?.split("@")[0] || img}
+                              </span>
+                            ))}
+                          </div>
+                        );
+                      }},
+                      { header: "IP", accessorKey: "ip" as any, cell: (item: any) => (
+                        <span className="text-slate-500 tabular-nums text-[10px]">{item.ip || "-"}</span>
+                      )},
                       { header: "Restarts", accessorKey: "restarts", cell: (item) => (
-                        <span className={item.restarts > 0 ? 'text-amber-400' : 'text-slate-500'}>
-                          {item.restarts}
-                        </span>
+                        <span className={item.restarts > 0 ? 'text-amber-400 font-bold' : 'text-slate-600'}>{item.restarts}</span>
                       )},
                       { header: "Node", accessorKey: "node", cell: (item) => (
-                        <span className="text-slate-600 text-[11px]">{item.node}</span>
+                        <span className="text-slate-600 text-[10px]">{item.node}</span>
                       )},
-                      { header: "Age", accessorKey: "age" },
+                        { header: "Age", accessorKey: "age" },
                       { header: "", cell: (item) => (
                         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button className="p-1 rounded hover:bg-cyan-500/10 text-slate-600 hover:text-cyan-400 transition-colors" onClick={() => setSelectedPod({ name: item.name, type: 'logs' })} title="Logs">
@@ -306,20 +402,33 @@ export default function Dashboard() {
                           <button className="p-1 rounded hover:bg-violet-500/10 text-slate-600 hover:text-violet-400 transition-colors" onClick={() => setSelectedPod({ name: item.name, type: 'env' })} title="Env">
                             <List className="h-3 w-3" />
                           </button>
-                          <button className="p-1 rounded hover:bg-emerald-500/10 text-slate-600 hover:text-emerald-400 transition-colors" onClick={() => setSelectedPod({ name: item.name, type: 'forward' })} title="Forward">
+                          <button className="p-1 rounded hover:bg-emerald-500/10 text-slate-600 hover:text-emerald-400 transition-colors" onClick={() => {
+                            // Auto-populate remote port from container ports
+                            const pod = pods?.find(p => p.name === item.name);
+                            const cPorts = pod?.containerPorts;
+                            if (cPorts && cPorts.length > 0) {
+                              setRemotePort(String(cPorts[0].port));
+                              setForwardPort(String(cPorts[0].port));
+                            } else {
+                              setRemotePort("80");
+                              setForwardPort("8080");
+                            }
+                            setSelectedPod({ name: item.name, type: 'forward' });
+                          }} title="Port Forward">
                             <Share2 className="h-3 w-3" />
                           </button>
                           <button className="p-1 rounded hover:bg-red-500/10 text-slate-600 hover:text-red-400 transition-colors" onClick={() => handleDeletePod(item.name)} title="Delete">
                             <Trash2 className="h-3 w-3" />
                           </button>
-                        </div>
+                            </div>
                       )},
-                    ]}
-                  />
-                </motion.div>
-              </TabsContent>
+                      ]}
+                    />
+                  </motion.div>
+                </TabsContent>
 
-              <TabsContent value="deployments" className="mt-0 outline-none">
+              {/* ── DEPLOYMENTS ── */}
+                <TabsContent value="deployments" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                   <ResourceTable
                     data={deployments}
@@ -333,27 +442,48 @@ export default function Dashboard() {
                           {item.name}
                         </button>
                       )},
-                      { header: "Namespace", accessorKey: "namespace", cell: (item) => (
-                        <span className="text-slate-500">{item.namespace}</span>
+                      { header: "NS", accessorKey: "namespace", cell: (item) => (
+                        <span className="text-slate-500 text-[10px]">{item.namespace}</span>
                       )},
                       { header: "Ready", accessorKey: "ready", cell: (item) => {
                         const [current, total] = item.ready.split('/');
-                        const healthy = current === total;
+                        const healthy = current === total && Number(current) > 0;
+                        return <span className={`px-1.5 py-0.5 rounded-sm text-[10px] font-bold border ${healthy ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}>{item.ready}</span>;
+                      }},
+                      { header: "Image", accessorKey: "images" as any, cell: (item: any) => {
+                        const imgs: string[] = item.images || [];
+                        if (imgs.length === 0) return <span className="text-slate-700">-</span>;
                         return (
-                          <span className={`px-1.5 py-0.5 rounded-sm text-[10px] font-bold border ${healthy ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}>
-                            {item.ready}
-                          </span>
+                          <div className="flex flex-col gap-0.5">
+                            {imgs.map((img: string, idx: number) => (
+                              <span key={idx} className="text-[10px] text-violet-400/70" title={img}>
+                                {img.split("/").pop()?.split("@")[0] || img}
+                              </span>
+                            ))}
+                          </div>
                         );
                       }},
-                      { header: "Up-to-date", accessorKey: "upToDate" },
-                      { header: "Available", accessorKey: "available" },
+                      { header: "Strategy", accessorKey: "strategy" as any, cell: (item: any) => (
+                        <span className="text-[9px] font-bold uppercase tracking-wide text-slate-500 bg-white/[0.03] px-1.5 py-0.5 rounded-sm border border-white/[0.04]">{item.strategy || "Rolling"}</span>
+                      )},
                       { header: "Age", accessorKey: "age" },
+                      { header: "", cell: (item) => (
+                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button className="p-1 rounded hover:bg-cyan-500/10 text-slate-600 hover:text-cyan-400 transition-colors" onClick={() => { const [,t] = item.ready.split('/'); setScaleDialog({ name: item.name, current: Number(t) }); setScaleReplicas(t); }} title="Scale">
+                            <Scaling className="h-3 w-3" />
+                          </button>
+                          <button className="p-1 rounded hover:bg-amber-500/10 text-slate-600 hover:text-amber-400 transition-colors" onClick={() => handleRestart(item.name)} title="Restart">
+                            <RotateCw className="h-3 w-3" />
+                          </button>
+                        </div>
+                      )},
                     ]}
                   />
                 </motion.div>
-              </TabsContent>
+                </TabsContent>
 
-              <TabsContent value="services" className="mt-0 outline-none">
+              {/* ── SERVICES ── */}
+                <TabsContent value="services" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                   <ResourceTable
                     data={services}
@@ -363,29 +493,272 @@ export default function Dashboard() {
                     accentColor="emerald"
                     columns={[
                       { header: "Service", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("service", item.name, item.namespace)} className="text-emerald-400/90 font-medium hover:text-emerald-300 hover:underline underline-offset-2 transition-colors text-left">
-                          {item.name}
-                        </button>
+                        <button onClick={() => goToDetail("service", item.name, item.namespace)} className="text-emerald-400/90 font-medium hover:text-emerald-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
-                      { header: "Namespace", accessorKey: "namespace", cell: (item) => (
-                        <span className="text-slate-500">{item.namespace}</span>
-                      )},
-                      { header: "Type", accessorKey: "type", cell: (item) => (
-                        <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500 bg-white/[0.03] px-1.5 py-0.5 rounded-sm border border-white/[0.04]">{item.type}</span>
-                      )},
-                      { header: "Cluster IP", accessorKey: "clusterIP", cell: (item) => (
-                        <span className="text-slate-400 tabular-nums">{item.clusterIP}</span>
-                      )},
-                      { header: "Ports", accessorKey: "ports", cell: (item) => (
-                        <span className="text-cyan-500/70 text-[11px]">{item.ports}</span>
-                      )},
+                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-slate-500 text-[10px]">{item.namespace}</span> },
+                      { header: "Type", accessorKey: "type", cell: (item) => <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500 bg-white/[0.03] px-1.5 py-0.5 rounded-sm border border-white/[0.04]">{item.type}</span> },
+                      { header: "Cluster IP", accessorKey: "clusterIP", cell: (item) => <span className="text-slate-400 tabular-nums text-[10px]">{item.clusterIP}</span> },
+                      { header: "Ports", accessorKey: "ports", cell: (item) => <span className="text-cyan-500/70 text-[10px]">{item.ports}</span> },
                       { header: "Age", accessorKey: "age" },
                     ]}
                   />
                 </motion.div>
               </TabsContent>
-            </AnimatePresence>
-          </Tabs>
+
+              {/* ── STATEFULSETS ── */}
+              <TabsContent value="statefulsets" className="mt-0 outline-none">
+                <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+                  <ResourceTable
+                    data={statefulsets}
+                    isLoading={stsLoading}
+                    isError={stsError}
+                    error={stsErrorObj}
+                    accentColor="cyan"
+                    columns={[
+                      { header: "StatefulSet", accessorKey: "name", cell: (item) => (
+                        <button onClick={() => goToDetail("statefulset", item.name, item.namespace)} className="text-cyan-400/90 font-medium hover:text-cyan-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                      )},
+                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-slate-500 text-[10px]">{item.namespace}</span> },
+                      { header: "Ready", accessorKey: "ready", cell: (item) => {
+                        const [c, t] = item.ready.split("/");
+                        const ok = c === t && Number(c) > 0;
+                        return <span className={`px-1.5 py-0.5 rounded-sm text-[10px] font-bold border ${ok ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}>{item.ready}</span>;
+                      }},
+                      { header: "Replicas", accessorKey: "replicas" },
+                      { header: "Image", accessorKey: "images" as any, cell: (item: any) => {
+                        const imgs: string[] = item.images || [];
+                        if (imgs.length === 0) return <span className="text-slate-700">-</span>;
+                        return (
+                          <div className="flex flex-col gap-0.5">
+                            {imgs.map((img: string, idx: number) => (
+                              <span key={idx} className="text-[10px] text-violet-400/70" title={img}>
+                                {img.split("/").pop()?.split("@")[0] || img}
+                              </span>
+                            ))}
+                          </div>
+                        );
+                      }},
+                      { header: "Age", accessorKey: "age" },
+                    ]}
+                  />
+                </motion.div>
+              </TabsContent>
+
+              {/* ── DAEMONSETS ── */}
+              <TabsContent value="daemonsets" className="mt-0 outline-none">
+                <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+                  <ResourceTable
+                    data={daemonsets}
+                    isLoading={dsLoading}
+                    isError={dsError}
+                    error={dsErrorObj}
+                    accentColor="violet"
+                    columns={[
+                      { header: "DaemonSet", accessorKey: "name", cell: (item) => (
+                        <button onClick={() => goToDetail("daemonset", item.name, item.namespace)} className="text-violet-400/90 font-medium hover:text-violet-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                      )},
+                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-slate-500 text-[10px]">{item.namespace}</span> },
+                      { header: "Desired", accessorKey: "desired" },
+                      { header: "Current", accessorKey: "current" },
+                      { header: "Ready", accessorKey: "ready" },
+                      { header: "Available", accessorKey: "available" },
+                      { header: "Age", accessorKey: "age" },
+                    ]}
+                  />
+                </motion.div>
+              </TabsContent>
+
+              {/* ── JOBS ── */}
+              <TabsContent value="jobs" className="mt-0 outline-none">
+                <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+                  <ResourceTable
+                    data={jobs}
+                    isLoading={jobsLoading}
+                    isError={jobsError}
+                    error={jobsErrorObj}
+                    accentColor="amber"
+                    columns={[
+                      { header: "Job", accessorKey: "name", cell: (item) => (
+                        <button onClick={() => goToDetail("job", item.name, item.namespace)} className="text-amber-400/90 font-medium hover:text-amber-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                      )},
+                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-slate-500 text-[10px]">{item.namespace}</span> },
+                      { header: "Completions", accessorKey: "completions" },
+                      { header: "Duration", accessorKey: "duration" },
+                      { header: "Status", accessorKey: "status" },
+                      { header: "Age", accessorKey: "age" },
+                    ]}
+                  />
+                </motion.div>
+              </TabsContent>
+
+              {/* ── CRONJOBS ── */}
+              <TabsContent value="cronjobs" className="mt-0 outline-none">
+                <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+                  <ResourceTable
+                    data={cronjobs}
+                    isLoading={cjLoading}
+                    isError={cjError}
+                    error={cjErrorObj}
+                    accentColor="violet"
+                    columns={[
+                      { header: "CronJob", accessorKey: "name", cell: (item) => (
+                        <button onClick={() => goToDetail("cronjob", item.name, item.namespace)} className="text-violet-400/90 font-medium hover:text-violet-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                      )},
+                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-slate-500 text-[10px]">{item.namespace}</span> },
+                      { header: "Schedule", accessorKey: "schedule", cell: (item) => <span className="text-cyan-500/80 font-mono text-[10px]">{item.schedule}</span> },
+                      { header: "Suspend", accessorKey: "suspend" as any, cell: (item: any) => (
+                        <span className={`text-[10px] font-bold ${item.suspend ? 'text-amber-400' : 'text-emerald-400'}`}>{item.suspend ? "Yes" : "No"}</span>
+                      )},
+                      { header: "Active", accessorKey: "active" },
+                      { header: "Last Run", accessorKey: "lastSchedule" as any, cell: (item: any) => <span className="text-slate-600 text-[10px]">{item.lastSchedule || "-"}</span> },
+                      { header: "Age", accessorKey: "age" },
+                    ]}
+                  />
+                </motion.div>
+              </TabsContent>
+
+              {/* ── CONFIGMAPS ── */}
+              <TabsContent value="configmaps" className="mt-0 outline-none">
+                <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+                  <ResourceTable
+                    data={configmaps}
+                    isLoading={cmLoading}
+                    isError={cmError}
+                    error={cmErrorObj}
+                    accentColor="cyan"
+                    columns={[
+                      { header: "ConfigMap", accessorKey: "name", cell: (item) => (
+                        <button onClick={() => goToDetail("configmap", item.name, item.namespace)} className="text-cyan-400/90 font-medium hover:text-cyan-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                      )},
+                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-slate-500 text-[10px]">{item.namespace}</span> },
+                      { header: "Data Keys", accessorKey: "dataKeys", cell: (item) => <span className="text-amber-400/80 tabular-nums">{item.dataKeys}</span> },
+                      { header: "Age", accessorKey: "age" },
+                    ]}
+                  />
+                </motion.div>
+              </TabsContent>
+
+              {/* ── SECRETS ── */}
+              <TabsContent value="secrets" className="mt-0 outline-none">
+                <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+                  <ResourceTable
+                    data={secrets}
+                    isLoading={secLoading}
+                    isError={secError}
+                    error={secErrorObj}
+                    accentColor="violet"
+                    columns={[
+                      { header: "Secret", accessorKey: "name", cell: (item) => (
+                        <button onClick={() => goToDetail("secret", item.name, item.namespace)} className="text-violet-400/90 font-medium hover:text-violet-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                      )},
+                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-slate-500 text-[10px]">{item.namespace}</span> },
+                      { header: "Type", accessorKey: "type", cell: (item) => <span className="text-[10px] text-slate-500 bg-white/[0.03] px-1.5 py-0.5 rounded-sm border border-white/[0.04]">{item.type}</span> },
+                      { header: "Data", accessorKey: "dataKeys", cell: (item) => <span className="text-amber-400/80 tabular-nums">{item.dataKeys}</span> },
+                      { header: "Age", accessorKey: "age" },
+                    ]}
+                  />
+                </motion.div>
+              </TabsContent>
+
+              {/* ── INGRESSES ── */}
+              <TabsContent value="ingresses" className="mt-0 outline-none">
+                <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+                  <ResourceTable
+                    data={ingresses}
+                    isLoading={ingLoading}
+                    isError={ingError}
+                    error={ingErrorObj}
+                    accentColor="pink"
+                    columns={[
+                      { header: "Ingress", accessorKey: "name", cell: (item) => (
+                        <button onClick={() => goToDetail("ingress", item.name, item.namespace)} className="text-pink-400/90 font-medium hover:text-pink-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                      )},
+                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-slate-500 text-[10px]">{item.namespace}</span> },
+                      { header: "Hosts", accessorKey: "hosts", cell: (item) => <span className="text-cyan-400/80 text-[10px]">{item.hosts}</span> },
+                      { header: "Class", accessorKey: "className" as any, cell: (item: any) => <span className="text-slate-500 text-[10px]">{item.className || "-"}</span> },
+                      { header: "Ports", accessorKey: "ports" },
+                      { header: "Age", accessorKey: "age" },
+                    ]}
+                  />
+                </motion.div>
+              </TabsContent>
+
+              {/* ── NODES ── */}
+              <TabsContent value="nodes" className="mt-0 outline-none">
+                <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+                  <ResourceTable
+                    data={nodes}
+                    isLoading={nodesLoading}
+                    isError={nodesError}
+                    error={nodesErrorObj}
+                    accentColor="amber"
+                    columns={[
+                      { header: "Node", accessorKey: "name", cell: (item) => (
+                        <button onClick={() => goToDetail("node", item.name, "")} className="text-amber-400/90 font-medium hover:text-amber-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                      )},
+                      { header: "Status", accessorKey: "status" },
+                      { header: "Roles", accessorKey: "roles", cell: (item) => <span className="text-[10px] text-cyan-400/70">{item.roles}</span> },
+                      { header: "Version", accessorKey: "version", cell: (item) => <span className="text-slate-400 text-[10px]">{item.version}</span> },
+                      { header: "CPU", accessorKey: "cpu", cell: (item) => <span className="text-emerald-400/80 tabular-nums text-[10px]">{item.cpu}</span> },
+                      { header: "Memory", accessorKey: "memory", cell: (item) => <span className="text-violet-400/80 tabular-nums text-[10px]">{item.memory}</span> },
+                      { header: "OS", accessorKey: "os", cell: (item) => <span className="text-slate-600 text-[10px]">{item.os}</span> },
+                      { header: "Age", accessorKey: "age" },
+                    ]}
+                  />
+                </motion.div>
+              </TabsContent>
+
+              {/* ── HPA ── */}
+              <TabsContent value="hpa" className="mt-0 outline-none">
+                <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+                  <ResourceTable
+                    data={hpa}
+                    isLoading={hpaLoading}
+                    isError={hpaError}
+                    error={hpaErrorObj}
+                    accentColor="emerald"
+                    columns={[
+                      { header: "HPA", accessorKey: "name", cell: (item) => (
+                        <button onClick={() => goToDetail("hpa", item.name, item.namespace)} className="text-emerald-400/90 font-medium hover:text-emerald-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                      )},
+                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-slate-500 text-[10px]">{item.namespace}</span> },
+                      { header: "Reference", accessorKey: "reference", cell: (item) => <span className="text-cyan-400/70 text-[10px]">{item.reference}</span> },
+                      { header: "Min", accessorKey: "minReplicas" },
+                      { header: "Max", accessorKey: "maxReplicas" },
+                      { header: "Current", accessorKey: "currentReplicas", cell: (item) => <span className="text-amber-400/80 font-bold tabular-nums">{item.currentReplicas}</span> },
+                      { header: "Metrics", accessorKey: "metrics", cell: (item) => <span className="text-[10px] text-slate-400">{item.metrics}</span> },
+                      { header: "Age", accessorKey: "age" },
+                    ]}
+                  />
+                </motion.div>
+              </TabsContent>
+
+              {/* ── PVCs ── */}
+              <TabsContent value="pvcs" className="mt-0 outline-none">
+                <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+                  <ResourceTable
+                    data={pvcs}
+                    isLoading={pvcLoading}
+                    isError={pvcError}
+                    error={pvcErrorObj}
+                    accentColor="violet"
+                    columns={[
+                      { header: "PVC", accessorKey: "name", cell: (item) => (
+                        <button onClick={() => goToDetail("pvc", item.name, item.namespace)} className="text-violet-400/90 font-medium hover:text-violet-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                      )},
+                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-slate-500 text-[10px]">{item.namespace}</span> },
+                      { header: "Status", accessorKey: "status" },
+                      { header: "Volume", accessorKey: "volume", cell: (item) => <span className="text-slate-400 text-[10px]">{item.volume}</span> },
+                      { header: "Capacity", accessorKey: "capacity", cell: (item) => <span className="text-emerald-400/80 tabular-nums">{item.capacity}</span> },
+                      { header: "Access", accessorKey: "accessModes", cell: (item) => <span className="text-[10px] text-slate-500">{item.accessModes}</span> },
+                      { header: "Class", accessorKey: "storageClass", cell: (item) => <span className="text-[10px] text-slate-500">{item.storageClass}</span> },
+                      { header: "Age", accessorKey: "age" },
+                    ]}
+                  />
+                </motion.div>
+                </TabsContent>
+              </AnimatePresence>
+            </Tabs>
         </div>
       </main>
 
@@ -427,26 +800,169 @@ export default function Dashboard() {
             </DialogTitle>
           </DialogHeader>
           <div className="p-4 space-y-4">
-            <div className="space-y-2">
-              <label className="text-[9px] uppercase tracking-[0.2em] font-bold text-slate-600">Local Port</label>
-              <Input 
-                value={forwardPort} 
-                onChange={(e) => setForwardPort(e.target.value)}
-                className="bg-white/[0.02] border-white/[0.06] font-mono text-cyan-400 text-sm h-8 rounded-sm focus-visible:ring-cyan-500/20"
-                placeholder="8080"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <label className="text-[9px] uppercase tracking-[0.2em] font-bold text-slate-600">Local Port</label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={forwardPort}
+                  onChange={(e) => setForwardPort(e.target.value)}
+                  className="bg-white/[0.02] border-white/[0.06] font-mono text-cyan-400 text-sm h-8 rounded-sm focus-visible:ring-cyan-500/20"
+                  placeholder="8080"
+                />
+                <p className="text-[8px] text-slate-700">Your machine</p>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[9px] uppercase tracking-[0.2em] font-bold text-slate-600">Remote Port</label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={remotePort}
+                  onChange={(e) => setRemotePort(e.target.value)}
+                  className="bg-white/[0.02] border-white/[0.06] font-mono text-emerald-400 text-sm h-8 rounded-sm focus-visible:ring-emerald-500/20"
+                  placeholder="80"
+                />
+                {(() => {
+                  const pod = pods?.find(p => p.name === selectedPod.name);
+                  const cPorts = pod?.containerPorts;
+                  if (!cPorts || cPorts.length === 0) return <p className="text-[8px] text-amber-500/80">⚠ No ports declared in pod spec</p>;
+                  return (
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <span className="text-[8px] text-slate-700">Ports:</span>
+                      {cPorts.map((cp) => (
+                        <button
+                          key={cp.port}
+                          type="button"
+                          onClick={() => setRemotePort(String(cp.port))}
+                          className={`text-[9px] font-mono px-1.5 py-0.5 rounded-sm border transition-colors ${
+                            remotePort === String(cp.port)
+                              ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
+                              : 'bg-white/[0.02] border-white/[0.06] text-slate-500 hover:text-emerald-400 hover:border-emerald-500/20'
+                          }`}
+                        >
+                          {cp.port}{cp.name ? `/${cp.name}` : ''}
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+            <div className="text-[10px] text-slate-600 font-mono bg-white/[0.02] px-2.5 py-1.5 rounded-sm border border-white/[0.04]">
+              localhost:<span className="text-cyan-400">{forwardPort || '?'}</span>
+              <span className="text-slate-700 mx-1">→</span>
+              {selectedPod.name}:<span className="text-emerald-400">{remotePort || forwardPort || '?'}</span>
             </div>
             <div className="flex justify-end gap-2 pt-1">
               <Button variant="ghost" className="text-[10px] uppercase font-bold tracking-wider h-7 px-3 text-slate-500 hover:text-slate-300" onClick={() => setSelectedPod({ name: '', type: null })}>
                 Cancel
               </Button>
-              <Button className="bg-cyan-600 hover:bg-cyan-500 text-white text-[10px] uppercase font-bold tracking-wider h-7 px-4 rounded-sm" onClick={handlePortForward}>
-                Connect
+              <Button
+                className="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] uppercase font-bold tracking-wider h-7 px-4 rounded-sm"
+                onClick={handlePortForward}
+                disabled={portForwardMutation.isPending}
+              >
+                {portForwardMutation.isPending ? "Connecting..." : "Connect"}
               </Button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ══════ SCALE DIALOG ══════ */}
+      <Dialog open={!!scaleDialog} onOpenChange={() => setScaleDialog(null)}>
+        <DialogContent className="max-w-sm bg-[#06080c] border-cyan-500/10 p-0 overflow-hidden rounded-lg shadow-2xl">
+          <DialogHeader className="px-4 py-2.5 border-b border-white/5 bg-[#080a10]">
+            <DialogTitle className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 font-mono flex items-center gap-2">
+              <Scaling className="w-3.5 h-3.5 text-cyan-500" />
+              <span className="text-cyan-500">scale</span>
+              <span className="text-white/10">|</span>
+              <span className="text-slate-400">{scaleDialog?.name}</span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="p-4 space-y-4">
+            <div className="space-y-2">
+              <label className="text-[9px] uppercase tracking-[0.2em] font-bold text-slate-600">Replicas</label>
+              <Input 
+                type="number"
+                min={0}
+                value={scaleReplicas}
+                onChange={(e) => setScaleReplicas(e.target.value)}
+                className="bg-white/[0.02] border-white/[0.06] font-mono text-cyan-400 text-sm h-8 rounded-sm focus-visible:ring-cyan-500/20"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="ghost" className="text-[10px] uppercase font-bold tracking-wider h-7 px-3 text-slate-500 hover:text-slate-300" onClick={() => setScaleDialog(null)}>Cancel</Button>
+              <Button className="bg-cyan-600 hover:bg-cyan-500 text-white text-[10px] uppercase font-bold tracking-wider h-7 px-4 rounded-sm" onClick={handleScale}>Scale</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════ PORT FORWARD STATUS BAR ══════ */}
+      {portForwards && portForwards.length > 0 && (
+        <div className="border-t border-emerald-500/10 bg-[#080a10]/90 px-4 py-1.5 flex items-center gap-3 overflow-x-auto shrink-0">
+          <Share2 className="w-3 h-3 text-emerald-400 shrink-0" />
+          <span className="text-[9px] uppercase tracking-wider font-bold text-emerald-400/80 shrink-0">FORWARDS</span>
+          <div className="w-px h-4 bg-white/5" />
+          {portForwards.map((fwd) => {
+            const isDead = fwd.status === "dead" || fwd.status === "error";
+            return (
+              <div
+                key={fwd.id}
+                className={`flex items-center gap-2 px-2 py-0.5 rounded-sm shrink-0 border ${
+                  isDead
+                    ? 'bg-red-500/5 border-red-500/15'
+                    : 'bg-emerald-500/5 border-emerald-500/15'
+                }`}
+                title={isDead ? `Error: ${fwd.error || "Process died"}` : `Active — ${fwd.connections || 0} connections handled`}
+              >
+                <div className="relative">
+                  {isDead ? (
+                    <div className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                  ) : (
+                    <>
+                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                      <div className="absolute inset-0 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping opacity-50" />
+                    </>
+                  )}
+                </div>
+                <a
+                  href={`http://localhost:${fwd.localPort}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`text-[10px] font-mono hover:underline ${isDead ? 'text-red-400/90' : 'text-emerald-400/90'}`}
+                >
+                  :{fwd.localPort}
+                </a>
+                <span className="text-[9px] text-slate-600">{"\u2192"}</span>
+                <span className="text-[10px] font-mono text-slate-400">{fwd.pod}:{fwd.remotePort}</span>
+                {isDead && (
+                  <span className="text-[8px] text-red-400/70 uppercase font-bold">DEAD</span>
+                )}
+                <button
+                  onClick={async () => {
+                    try {
+                      await stopPfMutation.mutateAsync(fwd.id);
+                      toast({ title: "Stopped", description: `Port forward to ${fwd.pod} stopped.` });
+                    } catch {
+                      toast({ title: "Error", description: "Failed to stop", variant: "destructive" });
+                    }
+                  }}
+                  className="p-0.5 rounded hover:bg-red-500/10 text-slate-600 hover:text-red-400 transition-colors"
+                  title="Stop"
+                >
+                  <Square className="w-2.5 h-2.5" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
     </div>
   );
 }

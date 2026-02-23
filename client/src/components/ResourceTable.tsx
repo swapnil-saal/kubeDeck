@@ -10,6 +10,10 @@ interface Column<T> {
   header: string;
   accessorKey?: keyof T;
   cell?: (item: T) => React.ReactNode;
+  /** Hint for minimum width of this column, e.g. "180px" */
+  minWidth?: string;
+  /** If true, this column won't shrink and won't wrap */
+  nowrap?: boolean;
 }
 
 interface ResourceTableProps<T> {
@@ -57,6 +61,8 @@ export function ResourceTable<T extends { name: string; status?: string }>({
     String(item[searchKey]).toLowerCase().includes(search.toLowerCase())
   );
 
+  const colCount = columns.length;
+
   return (
     <div className="space-y-3">
       {/* Search bar */}
@@ -81,84 +87,94 @@ export function ResourceTable<T extends { name: string; status?: string }>({
         </div>
       </div>
 
-      {/* Table */}
-      <div className="rounded border border-white/[0.04] overflow-hidden bg-[#080a10]/50">
-        {/* Header */}
-        <div className="bg-white/[0.015] border-b border-white/[0.04]">
-          <div className="grid gap-0" style={{ gridTemplateColumns: columns.map((_, i) => i === 0 ? '2fr' : '1fr').join(' ') }}>
-            {columns.map((col, i) => (
-              <div key={i} className="px-3 py-2 text-[9px] uppercase tracking-[0.2em] font-bold text-slate-600">
-                {col.header}
-              </div>
-            ))}
+      {/* Table — real HTML table for auto column sizing */}
+      <div className="rounded border border-white/[0.04] overflow-x-auto bg-[#080a10]/50">
+        {isForbidden ? (
+          <div className="px-4 py-16 text-center">
+            <div className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-amber-500/5 border border-amber-500/10 mb-3">
+              <ShieldOff className="w-5 h-5 text-amber-500/60" />
+            </div>
+            <p className="text-[12px] text-amber-400/80 font-mono font-bold">ACCESS DENIED</p>
+            <p className="text-[10px] text-slate-600 mt-1.5 max-w-xs mx-auto leading-relaxed">
+              {error?.message || "Your service account does not have permission to list resources in this namespace."}
+            </p>
+            <p className="text-[9px] text-slate-700 mt-3 font-mono">
+              Try switching to a namespace you have access to.
+            </p>
           </div>
-        </div>
-
-        {/* Body */}
-        <div className="divide-y divide-white/[0.02]">
-          {isLoading ? (
-            Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="grid gap-0" style={{ gridTemplateColumns: columns.map((_, i) => i === 0 ? '2fr' : '1fr').join(' ') }}>
-                {columns.map((_, j) => (
-                  <div key={j} className="px-3 py-2.5">
-                    <Skeleton className="h-3 bg-white/[0.03] rounded-sm" style={{ width: `${40 + Math.random() * 40}%` }} />
-                  </div>
+        ) : isError ? (
+          <div className="px-4 py-16 text-center">
+            <div className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-red-500/5 border border-red-500/10 mb-3">
+              <AlertTriangle className="w-5 h-5 text-red-500/60" />
+            </div>
+            <p className="text-[12px] text-red-400/80 font-mono font-bold">FETCH FAILED</p>
+            <p className="text-[10px] text-slate-600 mt-1.5 max-w-sm mx-auto leading-relaxed">
+              {error?.message || "Failed to fetch resources. Check cluster connectivity."}
+            </p>
+          </div>
+        ) : (
+          <table className="w-full border-collapse text-[11px] font-mono table-auto">
+            <thead>
+              <tr className="bg-white/[0.015] border-b border-white/[0.04]">
+                {columns.map((col, i) => (
+                  <th
+                    key={i}
+                    className="px-3 py-2 text-left text-[9px] uppercase tracking-[0.2em] font-bold text-slate-600 whitespace-nowrap"
+                  >
+                    {col.header}
+                  </th>
                 ))}
-              </div>
-            ))
-          ) : isForbidden ? (
-            <div className="px-4 py-16 text-center">
-              <div className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-amber-500/5 border border-amber-500/10 mb-3">
-                <ShieldOff className="w-5 h-5 text-amber-500/60" />
-              </div>
-              <p className="text-[12px] text-amber-400/80 font-mono font-bold">ACCESS DENIED</p>
-              <p className="text-[10px] text-slate-600 mt-1.5 max-w-xs mx-auto leading-relaxed">
-                {error?.message || "Your service account does not have permission to list resources in this namespace."}
-              </p>
-              <p className="text-[9px] text-slate-700 mt-3 font-mono">
-                Try switching to a namespace you have access to.
-              </p>
-            </div>
-          ) : isError ? (
-            <div className="px-4 py-16 text-center">
-              <div className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-red-500/5 border border-red-500/10 mb-3">
-                <AlertTriangle className="w-5 h-5 text-red-500/60" />
-              </div>
-              <p className="text-[12px] text-red-400/80 font-mono font-bold">FETCH FAILED</p>
-              <p className="text-[10px] text-slate-600 mt-1.5 max-w-sm mx-auto leading-relaxed">
-                {error?.message || "Failed to fetch resources. Check cluster connectivity."}
-              </p>
-            </div>
-          ) : filteredData?.length === 0 ? (
-            <div className="px-4 py-12 text-center">
-              <p className="text-[11px] text-slate-600 font-mono">No resources found</p>
-            </div>
-          ) : (
-            filteredData?.map((item, i) => (
-              <motion.div
-                key={item.name}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: i * 0.015, duration: 0.2 }}
-                className="group grid gap-0 hover:bg-white/[0.015] transition-colors cursor-default"
-                style={{ gridTemplateColumns: columns.map((_, i) => i === 0 ? '2fr' : '1fr').join(' ') }}
-              >
-                {columns.map((col, j) => (
-                  <div key={j} className="px-3 py-2 text-[11px] font-mono text-slate-400 flex items-center truncate">
-                    {col.cell 
-                      ? col.cell(item) 
-                      : col.accessorKey === 'status' 
-                        ? <StatusBadge status={String(item[col.accessorKey!])} />
-                        : col.accessorKey === 'age'
-                          ? <span className="text-slate-600">{formatAge(String(item[col.accessorKey!]))}</span>
-                          : String(item[col.accessorKey!])
-                    }
-                  </div>
-                ))}
-              </motion.div>
-            ))
-          )}
-        </div>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                Array.from({ length: 8 }).map((_, i) => (
+                  <tr key={i} className="border-b border-white/[0.02]">
+                    {columns.map((_, j) => (
+                      <td key={j} className="px-3 py-2.5">
+                        <Skeleton className="h-3 bg-white/[0.03] rounded-sm" style={{ width: `${40 + Math.random() * 40}%` }} />
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              ) : filteredData?.length === 0 ? (
+                <tr>
+                  <td colSpan={colCount} className="px-4 py-12 text-center">
+                    <p className="text-[11px] text-slate-600 font-mono">No resources found</p>
+                  </td>
+                </tr>
+              ) : (
+                filteredData?.map((item, i) => (
+                  <motion.tr
+                    key={item.name + String(i)}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: Math.min(i * 0.01, 0.3), duration: 0.15 }}
+                    className="group border-b border-white/[0.02] hover:bg-white/[0.015] transition-colors cursor-default"
+                  >
+                    {columns.map((col, j) => (
+                      <td
+                        key={j}
+                        className="px-3 py-2 text-slate-400 whitespace-nowrap max-w-[350px]"
+                      >
+                        <div className="flex items-center">
+                          {col.cell 
+                            ? col.cell(item) 
+                            : col.accessorKey === 'status' 
+                              ? <StatusBadge status={String(item[col.accessorKey!])} />
+                              : col.accessorKey === 'age'
+                                ? <span className="text-slate-600">{formatAge(String(item[col.accessorKey!]))}</span>
+                                : <span className="truncate">{String(item[col.accessorKey!] ?? "-")}</span>
+                          }
+                        </div>
+                      </td>
+                    ))}
+                  </motion.tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );

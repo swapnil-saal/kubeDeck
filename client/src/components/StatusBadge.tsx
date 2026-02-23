@@ -10,7 +10,7 @@ export function StatusBadge({ status }: StatusBadgeProps) {
   let bgColor = "bg-slate-500/5";
   let borderColor = "border-slate-500/10";
   
-  if (["running", "ready", "active", "succeeded", "bound"].includes(normalized)) {
+  if (["running", "ready", "active", "succeeded", "bound", "complete", "available"].includes(normalized)) {
     dotColor = "bg-emerald-400";
     textColor = "text-emerald-400";
     bgColor = "bg-emerald-500/5";
@@ -20,7 +20,7 @@ export function StatusBadge({ status }: StatusBadgeProps) {
     textColor = "text-amber-400";
     bgColor = "bg-amber-500/5";
     borderColor = "border-amber-500/10";
-  } else if (["error", "crashloopbackoff", "failed", "imagepullbackoff", "errimagepull", "oomkilled"].includes(normalized)) {
+  } else if (["error", "crashloopbackoff", "failed", "imagepullbackoff", "errimagepull", "oomkilled", "notready", "lost"].includes(normalized)) {
     dotColor = "bg-red-400";
     textColor = "text-red-400";
     bgColor = "bg-red-500/5";
