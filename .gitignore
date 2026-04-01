@@ -11,3 +11,4 @@ release/
 *.dmg.blockmap
 *.zip.blockmap
 release
+release-notes.md
