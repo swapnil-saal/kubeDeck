@@ -155,7 +155,7 @@ export default function Dashboard() {
             <div className="w-12 h-12 border-2 border-cyan-500/30 border-t-cyan-400 rounded-full animate-spin" />
             <div className="absolute inset-0 w-12 h-12 border-2 border-transparent border-b-emerald-400/50 rounded-full animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }} />
           </div>
-          <p className="text-cyan-500/70 font-mono text-sm tracking-wider">INITIALIZING CLUSTER CONNECTION...</p>
+          <p className="text-cyan-700 dark:text-cyan-500 font-mono text-sm tracking-wider">INITIALIZING CLUSTER CONNECTION...</p>
         </div>
       </div>
     );
@@ -195,7 +195,7 @@ export default function Dashboard() {
           <div className="flex items-center gap-2 pr-4 border-r border-border">
             <span className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground font-bold">CTX</span>
             <Select value={currentContext} onValueChange={handleSetContext}>
-              <SelectTrigger className="w-44 h-7 bg-transparent border-border hover:border-primary/30 focus:ring-0 focus:ring-offset-0 text-[11px] font-mono text-cyan-400 rounded-sm px-2">
+              <SelectTrigger className="w-44 h-7 bg-transparent border-border hover:border-primary/30 focus:ring-0 focus:ring-offset-0 text-[11px] font-mono text-cyan-700 dark:text-cyan-400 rounded-sm px-2">
                 <SelectValue placeholder="select context" />
               </SelectTrigger>
               <SelectContent className="bg-popover border-border text-foreground font-mono">
@@ -219,7 +219,7 @@ export default function Dashboard() {
           <div className="flex items-center gap-2">
             <span className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground font-bold">NS</span>
             <Select value={currentNamespace} onValueChange={handleSetNamespace}>
-              <SelectTrigger className="w-44 h-7 bg-transparent border-border hover:border-primary/30 focus:ring-0 focus:ring-offset-0 text-[11px] font-mono text-emerald-400 rounded-sm px-2">
+              <SelectTrigger className="w-44 h-7 bg-transparent border-border hover:border-primary/30 focus:ring-0 focus:ring-offset-0 text-[11px] font-mono text-emerald-700 dark:text-emerald-400 rounded-sm px-2">
                 <SelectValue placeholder="select namespace" />
                 </SelectTrigger>
               <SelectContent className="bg-popover border-border text-foreground font-mono max-h-64">
@@ -254,7 +254,7 @@ export default function Dashboard() {
                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                 <div className="absolute inset-0 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping opacity-75" />
               </div>
-              <span className="text-[9px] uppercase tracking-[0.15em] font-bold text-emerald-400/80">LIVE</span>
+              <span className="text-[9px] uppercase tracking-[0.15em] font-bold text-emerald-700 dark:text-emerald-400">LIVE</span>
             </div>
           </div>
         </div>
@@ -331,8 +331,8 @@ export default function Dashboard() {
                   <TabsTrigger
                     key={tab.val}
                     value={tab.val}
-                    className="text-[10px] font-bold uppercase tracking-[0.1em] rounded-sm px-3 h-7 transition-all gap-1 data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-muted-foreground
-                      data-[state=active]:bg-cyan-500/15 data-[state=active]:text-cyan-400 data-[state=active]:shadow-none"
+                    className="text-[10px] font-bold uppercase tracking-[0.1em] rounded-sm px-3 h-7 transition-all gap-1 data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground
+                      data-[state=active]:bg-cyan-500/15 data-[state=active]:text-cyan-700 dark:data-[state=active]:text-cyan-400 data-[state=active]:shadow-none"
                   >
                     <tab.icon className="w-3 h-3" />
                     {tab.label}
@@ -360,7 +360,7 @@ export default function Dashboard() {
                     accentColor="cyan"
                       columns={[
                       { header: "Pod", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("pod", item.name, item.namespace)} className="text-cyan-400/90 font-medium hover:text-cyan-300 hover:underline underline-offset-2 transition-colors text-left">
+                        <button onClick={() => goToDetail("pod", item.name, item.namespace)} className="text-cyan-700 dark:text-cyan-400 font-medium hover:text-cyan-500 dark:hover:text-cyan-300 hover:underline underline-offset-2 transition-colors text-left">
                           {item.name}
                         </button>
                       )},
@@ -380,7 +380,7 @@ export default function Dashboard() {
                         return (
                           <div className="flex flex-col gap-0.5">
                             {imgs.map((img: string, idx: number) => (
-                              <span key={idx} className="text-[10px] text-violet-400/80" title={img}>
+                              <span key={idx} className="text-[10px] text-violet-700 dark:text-violet-400" title={img}>
                                 {img.split("/").pop()?.split("@")[0] || img}
                               </span>
                             ))}
@@ -441,7 +441,7 @@ export default function Dashboard() {
                     accentColor="violet"
                     columns={[
                       { header: "Deployment", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("deployment", item.name, item.namespace)} className="text-violet-400/90 font-medium hover:text-violet-300 hover:underline underline-offset-2 transition-colors text-left">
+                        <button onClick={() => goToDetail("deployment", item.name, item.namespace)} className="text-violet-700 dark:text-violet-400 font-medium hover:text-violet-500 dark:hover:text-violet-300 hover:underline underline-offset-2 transition-colors text-left">
                           {item.name}
                         </button>
                       )},
@@ -459,7 +459,7 @@ export default function Dashboard() {
                         return (
                           <div className="flex flex-col gap-0.5">
                             {imgs.map((img: string, idx: number) => (
-                              <span key={idx} className="text-[10px] text-violet-400/70" title={img}>
+                              <span key={idx} className="text-[10px] text-violet-700 dark:text-violet-400" title={img}>
                                 {img.split("/").pop()?.split("@")[0] || img}
                               </span>
                             ))}
@@ -472,7 +472,7 @@ export default function Dashboard() {
                       { header: "Age", accessorKey: "age" },
                       { header: "", cell: (item) => (
                         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button className="p-1 rounded hover:bg-cyan-500/10 text-muted-foreground hover:text-cyan-400 transition-colors" onClick={() => { const [,t] = item.ready.split('/'); setScaleDialog({ name: item.name, current: Number(t) }); setScaleReplicas(t); }} title="Scale">
+                          <button className="p-1 rounded hover:bg-cyan-500/10 text-muted-foreground hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors" onClick={() => { const [,t] = item.ready.split('/'); setScaleDialog({ name: item.name, current: Number(t) }); setScaleReplicas(t); }} title="Scale">
                             <Scaling className="h-3 w-3" />
                           </button>
                           <button className="p-1 rounded hover:bg-amber-500/10 text-muted-foreground hover:text-amber-400 transition-colors" onClick={() => handleRestart(item.name)} title="Restart">
@@ -496,12 +496,12 @@ export default function Dashboard() {
                     accentColor="emerald"
                     columns={[
                       { header: "Service", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("service", item.name, item.namespace)} className="text-emerald-400/90 font-medium hover:text-emerald-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                        <button onClick={() => goToDetail("service", item.name, item.namespace)} className="text-emerald-700 dark:text-emerald-400 font-medium hover:text-emerald-500 dark:hover:text-emerald-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
                       { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
                       { header: "Type", accessorKey: "type", cell: (item) => <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground bg-foreground/[0.04] px-1.5 py-0.5 rounded-sm border border-border">{item.type}</span> },
                       { header: "Cluster IP", accessorKey: "clusterIP", cell: (item) => <span className="text-muted-foreground tabular-nums text-[10px]">{item.clusterIP}</span> },
-                      { header: "Ports", accessorKey: "ports", cell: (item) => <span className="text-cyan-500/70 text-[10px]">{item.ports}</span> },
+                      { header: "Ports", accessorKey: "ports", cell: (item) => <span className="text-cyan-600 dark:text-cyan-500 text-[10px]">{item.ports}</span> },
                       { header: "Age", accessorKey: "age" },
                     ]}
                   />
@@ -519,7 +519,7 @@ export default function Dashboard() {
                     accentColor="cyan"
                     columns={[
                       { header: "StatefulSet", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("statefulset", item.name, item.namespace)} className="text-cyan-400/90 font-medium hover:text-cyan-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                        <button onClick={() => goToDetail("statefulset", item.name, item.namespace)} className="text-cyan-700 dark:text-cyan-400 font-medium hover:text-cyan-500 dark:hover:text-cyan-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
                       { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
                       { header: "Ready", accessorKey: "ready", cell: (item) => {
@@ -534,7 +534,7 @@ export default function Dashboard() {
                         return (
                           <div className="flex flex-col gap-0.5">
                             {imgs.map((img: string, idx: number) => (
-                              <span key={idx} className="text-[10px] text-violet-400/70" title={img}>
+                              <span key={idx} className="text-[10px] text-violet-700 dark:text-violet-400" title={img}>
                                 {img.split("/").pop()?.split("@")[0] || img}
                               </span>
                             ))}
@@ -542,7 +542,7 @@ export default function Dashboard() {
                         );
                       }},
                       { header: "Age", accessorKey: "age" },
-                    ]}
+                    ]}}
                   />
                 </motion.div>
               </TabsContent>
@@ -558,7 +558,7 @@ export default function Dashboard() {
                     accentColor="violet"
                     columns={[
                       { header: "DaemonSet", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("daemonset", item.name, item.namespace)} className="text-violet-400/90 font-medium hover:text-violet-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                        <button onClick={() => goToDetail("daemonset", item.name, item.namespace)} className="text-violet-700 dark:text-violet-400 font-medium hover:text-violet-500 dark:hover:text-violet-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
                       { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
                       { header: "Desired", accessorKey: "desired" },
@@ -582,7 +582,7 @@ export default function Dashboard() {
                     accentColor="amber"
                     columns={[
                       { header: "Job", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("job", item.name, item.namespace)} className="text-amber-400/90 font-medium hover:text-amber-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                        <button onClick={() => goToDetail("job", item.name, item.namespace)} className="text-amber-700 dark:text-amber-400 font-medium hover:text-amber-500 dark:hover:text-amber-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
                       { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
                       { header: "Completions", accessorKey: "completions" },
@@ -605,7 +605,7 @@ export default function Dashboard() {
                     accentColor="violet"
                     columns={[
                       { header: "CronJob", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("cronjob", item.name, item.namespace)} className="text-violet-400/90 font-medium hover:text-violet-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                        <button onClick={() => goToDetail("cronjob", item.name, item.namespace)} className="text-violet-700 dark:text-violet-400 font-medium hover:text-violet-500 dark:hover:text-violet-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
                       { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
                       { header: "Schedule", accessorKey: "schedule", cell: (item) => <span className="text-cyan-500/80 font-mono text-[10px]">{item.schedule}</span> },
@@ -631,7 +631,7 @@ export default function Dashboard() {
                     accentColor="cyan"
                     columns={[
                       { header: "ConfigMap", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("configmap", item.name, item.namespace)} className="text-cyan-400/90 font-medium hover:text-cyan-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                        <button onClick={() => goToDetail("configmap", item.name, item.namespace)} className="text-cyan-700 dark:text-cyan-400 font-medium hover:text-cyan-500 dark:hover:text-cyan-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
                       { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
                       { header: "Data Keys", accessorKey: "dataKeys", cell: (item) => <span className="text-amber-400/80 tabular-nums">{item.dataKeys}</span> },
@@ -652,7 +652,7 @@ export default function Dashboard() {
                     accentColor="violet"
                     columns={[
                       { header: "Secret", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("secret", item.name, item.namespace)} className="text-violet-400/90 font-medium hover:text-violet-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                        <button onClick={() => goToDetail("secret", item.name, item.namespace)} className="text-violet-700 dark:text-violet-400 font-medium hover:text-violet-500 dark:hover:text-violet-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
                       { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
                       { header: "Type", accessorKey: "type", cell: (item) => <span className="text-[10px] text-muted-foreground bg-foreground/[0.04] px-1.5 py-0.5 rounded-sm border border-border">{item.type}</span> },
@@ -674,7 +674,7 @@ export default function Dashboard() {
                     accentColor="pink"
                     columns={[
                       { header: "Ingress", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("ingress", item.name, item.namespace)} className="text-pink-400/90 font-medium hover:text-pink-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                        <button onClick={() => goToDetail("ingress", item.name, item.namespace)} className="text-pink-700 dark:text-pink-400 font-medium hover:text-pink-500 dark:hover:text-pink-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
                       { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
                       { header: "Hosts", accessorKey: "hosts", cell: (item) => <span className="text-cyan-400/80 text-[10px]">{item.hosts}</span> },
@@ -697,7 +697,7 @@ export default function Dashboard() {
                     accentColor="amber"
                     columns={[
                       { header: "Node", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("node", item.name, "")} className="text-amber-400/90 font-medium hover:text-amber-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                        <button onClick={() => goToDetail("node", item.name, "")} className="text-amber-700 dark:text-amber-400 font-medium hover:text-amber-500 dark:hover:text-amber-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
                       { header: "Status", accessorKey: "status" },
                       { header: "Roles", accessorKey: "roles", cell: (item) => <span className="text-[10px] text-cyan-400/70">{item.roles}</span> },
@@ -722,7 +722,7 @@ export default function Dashboard() {
                     accentColor="emerald"
                     columns={[
                       { header: "HPA", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("hpa", item.name, item.namespace)} className="text-emerald-400/90 font-medium hover:text-emerald-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                        <button onClick={() => goToDetail("hpa", item.name, item.namespace)} className="text-emerald-700 dark:text-emerald-400 font-medium hover:text-emerald-500 dark:hover:text-emerald-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
                       { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
                       { header: "Reference", accessorKey: "reference", cell: (item) => <span className="text-cyan-400/70 text-[10px]">{item.reference}</span> },
@@ -747,7 +747,7 @@ export default function Dashboard() {
                     accentColor="violet"
                     columns={[
                       { header: "PVC", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("pvc", item.name, item.namespace)} className="text-violet-400/90 font-medium hover:text-violet-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                        <button onClick={() => goToDetail("pvc", item.name, item.namespace)} className="text-violet-700 dark:text-violet-400 font-medium hover:text-violet-500 dark:hover:text-violet-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
                       { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
                       { header: "Status", accessorKey: "status" },

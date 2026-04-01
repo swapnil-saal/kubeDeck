@@ -6,25 +6,25 @@ export function StatusBadge({ status }: StatusBadgeProps) {
   const normalized = status.toLowerCase();
   
   let dotColor = "bg-slate-500";
-  let textColor = "text-slate-400";
-  let bgColor = "bg-slate-500/5";
-  let borderColor = "border-slate-500/10";
+  let textColor = "text-slate-600 dark:text-slate-400";
+  let bgColor = "bg-slate-500/10 dark:bg-slate-500/5";
+  let borderColor = "border-slate-500/20 dark:border-slate-500/10";
   
   if (["running", "ready", "active", "succeeded", "bound", "complete", "available"].includes(normalized)) {
-    dotColor = "bg-emerald-400";
-    textColor = "text-emerald-400";
-    bgColor = "bg-emerald-500/5";
-    borderColor = "border-emerald-500/10";
+    dotColor = "bg-emerald-500 dark:bg-emerald-400";
+    textColor = "text-emerald-700 dark:text-emerald-400";
+    bgColor = "bg-emerald-500/10 dark:bg-emerald-500/5";
+    borderColor = "border-emerald-500/20 dark:border-emerald-500/10";
   } else if (["pending", "containercreating", "terminating", "waiting"].includes(normalized)) {
-    dotColor = "bg-amber-400";
-    textColor = "text-amber-400";
-    bgColor = "bg-amber-500/5";
-    borderColor = "border-amber-500/10";
+    dotColor = "bg-amber-500 dark:bg-amber-400";
+    textColor = "text-amber-700 dark:text-amber-400";
+    bgColor = "bg-amber-500/10 dark:bg-amber-500/5";
+    borderColor = "border-amber-500/20 dark:border-amber-500/10";
   } else if (["error", "crashloopbackoff", "failed", "imagepullbackoff", "errimagepull", "oomkilled", "notready", "lost"].includes(normalized)) {
-    dotColor = "bg-red-400";
-    textColor = "text-red-400";
-    bgColor = "bg-red-500/5";
-    borderColor = "border-red-500/10";
+    dotColor = "bg-red-500 dark:bg-red-400";
+    textColor = "text-red-700 dark:text-red-400";
+    bgColor = "bg-red-500/10 dark:bg-red-500/5";
+    borderColor = "border-red-500/20 dark:border-red-500/10";
   }
 
   return (

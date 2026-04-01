@@ -17,22 +17,32 @@ import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 const TYPE_META: Record<string, { label: string; color: string; bgActive: string }> = {
-  pod:            { label: "POD",          color: "cyan",    bgActive: "bg-cyan-500/15 text-cyan-400" },
-  deployment:     { label: "DEPLOYMENT",   color: "violet",  bgActive: "bg-violet-500/15 text-violet-400" },
-  service:        { label: "SERVICE",      color: "emerald", bgActive: "bg-emerald-500/15 text-emerald-400" },
-  configmap:      { label: "CONFIGMAP",    color: "cyan",    bgActive: "bg-cyan-500/15 text-cyan-400" },
-  secret:         { label: "SECRET",       color: "violet",  bgActive: "bg-violet-500/15 text-violet-400" },
-  ingress:        { label: "INGRESS",      color: "pink",    bgActive: "bg-pink-500/15 text-pink-400" },
-  statefulset:    { label: "STATEFULSET",  color: "cyan",    bgActive: "bg-cyan-500/15 text-cyan-400" },
-  daemonset:      { label: "DAEMONSET",    color: "violet",  bgActive: "bg-violet-500/15 text-violet-400" },
-  job:            { label: "JOB",          color: "amber",   bgActive: "bg-amber-500/15 text-amber-400" },
-  cronjob:        { label: "CRONJOB",      color: "violet",  bgActive: "bg-violet-500/15 text-violet-400" },
-  node:           { label: "NODE",         color: "amber",   bgActive: "bg-amber-500/15 text-amber-400" },
-  hpa:            { label: "HPA",          color: "emerald", bgActive: "bg-emerald-500/15 text-emerald-400" },
-  pvc:            { label: "PVC",          color: "violet",  bgActive: "bg-violet-500/15 text-violet-400" },
+  pod:            { label: "POD",          color: "cyan",    bgActive: "bg-cyan-500/15 text-cyan-700 dark:text-cyan-400" },
+  deployment:     { label: "DEPLOYMENT",   color: "violet",  bgActive: "bg-violet-500/15 text-violet-700 dark:text-violet-400" },
+  service:        { label: "SERVICE",      color: "emerald", bgActive: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" },
+  configmap:      { label: "CONFIGMAP",    color: "cyan",    bgActive: "bg-cyan-500/15 text-cyan-700 dark:text-cyan-400" },
+  secret:         { label: "SECRET",       color: "violet",  bgActive: "bg-violet-500/15 text-violet-700 dark:text-violet-400" },
+  ingress:        { label: "INGRESS",      color: "pink",    bgActive: "bg-pink-500/15 text-pink-700 dark:text-pink-400" },
+  statefulset:    { label: "STATEFULSET",  color: "cyan",    bgActive: "bg-cyan-500/15 text-cyan-700 dark:text-cyan-400" },
+  daemonset:      { label: "DAEMONSET",    color: "violet",  bgActive: "bg-violet-500/15 text-violet-700 dark:text-violet-400" },
+  job:            { label: "JOB",          color: "amber",   bgActive: "bg-amber-500/15 text-amber-700 dark:text-amber-400" },
+  cronjob:        { label: "CRONJOB",      color: "violet",  bgActive: "bg-violet-500/15 text-violet-700 dark:text-violet-400" },
+  node:           { label: "NODE",         color: "amber",   bgActive: "bg-amber-500/15 text-amber-700 dark:text-amber-400" },
+  hpa:            { label: "HPA",          color: "emerald", bgActive: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" },
+  pvc:            { label: "PVC",          color: "violet",  bgActive: "bg-violet-500/15 text-violet-700 dark:text-violet-400" },
 };
 
 /* ── Helpers ─────────────────────────────────────── */
+
+const terminalColorClasses: Record<string, string> = {
+  slate:   "text-slate-700 dark:text-slate-300",
+  cyan:    "text-cyan-700 dark:text-cyan-400",
+  amber:   "text-amber-700 dark:text-amber-400",
+  emerald: "text-emerald-700 dark:text-emerald-400",
+  violet:  "text-violet-700 dark:text-violet-400",
+  red:     "text-red-700 dark:text-red-400",
+  pink:    "text-pink-700 dark:text-pink-400",
+};
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -57,7 +67,7 @@ function TerminalPane({ content, isLoading, color = "cyan", emptyMsg = "No data"
             <span className="animate-pulse">executing...</span>
           </div>
         ) : content ? (
-          <pre className={`whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-${color}-500/80`}>{content}</pre>
+          <pre className={`whitespace-pre-wrap font-mono text-[11px] leading-relaxed ${terminalColorClasses[color] ?? "text-foreground/80"}`}>{content}</pre>
         ) : (
           <p className="text-[11px] text-muted-foreground font-mono">{emptyMsg}</p>
         )}
@@ -98,7 +108,7 @@ function StreamingLogsPane({ name, context, namespace }: { name: string; context
         {logs.length === 0 ? (
           <div className="flex items-center gap-2 text-muted-foreground"><Terminal className="w-3.5 h-3.5" /><span>Waiting for log output...</span></div>
         ) : logs.map((line, i) => (
-          <div key={i} className={`hover:bg-foreground/[0.02] ${line.startsWith("[stderr]") ? "text-red-400/70" : "text-cyan-500/70"}`}>
+          <div key={i} className={`hover:bg-foreground/[0.02] ${line.startsWith("[stderr]") ? "text-red-600 dark:text-red-400/70" : "text-cyan-700 dark:text-cyan-500/70"}`}>
             <span className="text-muted-foreground/60 select-none mr-3 inline-block w-10 text-right tabular-nums">{i + 1}</span>{line}
           </div>
         ))}
@@ -372,7 +382,7 @@ export default function ResourceDetail() {
                   key={tab.id}
                   value={tab.id}
                   className={`text-[10px] font-bold uppercase tracking-[0.15em] rounded-sm px-4 h-7 transition-all gap-1.5
-                    data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-muted-foreground
+                    data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground
                     data-[state=active]:${meta.bgActive} data-[state=active]:shadow-none`}
                 >
                   <tab.icon className="w-3 h-3" />

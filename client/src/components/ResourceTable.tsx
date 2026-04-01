@@ -78,9 +78,9 @@ export function ResourceTable<T extends { name: string; status?: string }>({
         </div>
         <div className="text-[10px] text-muted-foreground ml-auto font-mono tabular-nums">
           {isForbidden ? (
-            <span className="text-amber-400 flex items-center gap-1"><ShieldOff className="w-3 h-3" /> access denied</span>
+            <span className="text-amber-700 dark:text-amber-400 flex items-center gap-1"><ShieldOff className="w-3 h-3" /> access denied</span>
           ) : isError ? (
-            <span className="text-red-400 flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> fetch error</span>
+            <span className="text-red-700 dark:text-red-400 flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> fetch error</span>
           ) : (
             <>{filteredData?.length ?? 0} resources</>
           )}

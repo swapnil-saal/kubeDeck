@@ -18,9 +18,12 @@ let mainWindow = null;
 function loadShellEnv() {
   const userShell = process.env.SHELL || "/bin/zsh";
   try {
-    const raw = execSync(`${userShell} -l -c 'printenv'`, {
-      timeout: 5000,
+    const raw = execSync(`${userShell} -l -i -c 'printenv' 2>/dev/null`, {
+      timeout: 8000,
       encoding: "utf-8",
+      // TERM=dumb suppresses p10k instant-prompt and other interactive-terminal
+      // checks so the shell starts cleanly without a real TTY attached.
+      env: { ...process.env, TERM: "dumb", P9K_DISABLE_CONFIGURATION_WIZARD: "true" },
     });
     for (const line of raw.split("\n")) {
       const eq = line.indexOf("=");
