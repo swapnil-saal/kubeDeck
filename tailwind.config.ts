@@ -16,6 +16,10 @@ export default {
         foreground: "hsl(var(--foreground) / <alpha-value>)",
         border: "hsl(var(--border) / <alpha-value>)",
         input: "hsl(var(--input) / <alpha-value>)",
+        surface: {
+          DEFAULT: "hsl(var(--surface) / <alpha-value>)",
+          inset: "hsl(var(--surface-inset) / <alpha-value>)",
+        },
         card: {
           DEFAULT: "hsl(var(--card) / <alpha-value>)",
           foreground: "hsl(var(--card-foreground) / <alpha-value>)",

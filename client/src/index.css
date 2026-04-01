@@ -8,6 +8,47 @@
   --font-sans: 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
+  --background: 220 16% 96%;
+  --foreground: 222 20% 14%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 222 20% 14%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 20% 14%;
+
+  --primary: 187 72% 34%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 220 14% 90%;
+  --secondary-foreground: 222 20% 20%;
+
+  --muted: 220 14% 92%;
+  --muted-foreground: 220 10% 42%;
+
+  --accent: 187 72% 34%;
+  --accent-foreground: 0 0% 100%;
+
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 220 13% 86%;
+  --input: 220 13% 86%;
+  --ring: 187 72% 34%;
+
+  --radius: 0.5rem;
+
+  --surface: 0 0% 100%;
+  --surface-inset: 220 14% 93%;
+
+  --chart-1: 187 72% 34%;
+  --chart-2: 160 65% 36%;
+  --chart-3: 258 55% 50%;
+  --chart-4: 38 75% 48%;
+  --chart-5: 340 65% 50%;
+}
+
+.dark {
   --background: 220 20% 4%;
   --foreground: 210 20% 90%;
 
@@ -36,20 +77,26 @@
   --input: 220 15% 12%;
   --ring: 187 80% 48%;
 
-  --radius: 0.375rem;
+  --surface: 220 20% 5.5%;
+  --surface-inset: 220 25% 3%;
+
+  --chart-1: 187 80% 48%;
+  --chart-2: 160 70% 50%;
+  --chart-3: 258 80% 68%;
+  --chart-4: 38 80% 60%;
+  --chart-5: 340 75% 60%;
 }
 
 @layer base {
   * {
     @apply border-border;
   }
-  
+
   body {
-    @apply bg-[#06080c] text-foreground antialiased;
-    font-family: var(--font-mono);
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
   }
-  
-  /* Minimal scrollbar */
+
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -58,32 +105,91 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    @apply bg-white/[0.06] rounded-full;
+    background: hsl(var(--muted-foreground) / 0.15);
+    border-radius: 9999px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-white/10;
+    background: hsl(var(--muted-foreground) / 0.25);
   }
-  
-  /* Firefox scrollbar */
+
   * {
     scrollbar-width: thin;
-    scrollbar-color: rgba(255,255,255,0.06) transparent;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.15) transparent;
   }
 
   code, pre, .font-mono {
     font-family: var(--font-mono);
   }
 
-  /* Selection */
   ::selection {
-    @apply bg-cyan-500/30 text-cyan-100;
+    @apply bg-primary/30;
   }
 }
 
 @layer components {
   .glass-panel {
-    @apply bg-white/[0.02] backdrop-blur-md border border-white/[0.04] shadow-xl;
+    @apply bg-foreground/[0.02] backdrop-blur-md border border-foreground/[0.04] shadow-xl;
   }
+
+  .grid-bg {
+    background-image:
+      linear-gradient(hsl(var(--primary) / 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--primary) / 0.04) 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
+}
+
+/* Light mode: boost accent text colors for readable contrast */
+html:not(.dark) .text-cyan-400,
+html:not(.dark) .text-cyan-300,
+html:not(.dark) [class*="text-cyan-400/"],
+html:not(.dark) [class*="text-cyan-500/"] {
+  color: rgb(8 145 178);
+}
+html:not(.dark) .hover\:text-cyan-300:hover,
+html:not(.dark) .hover\:text-cyan-400:hover {
+  color: rgb(14 116 144);
+}
+
+html:not(.dark) .text-emerald-400,
+html:not(.dark) .text-emerald-300,
+html:not(.dark) [class*="text-emerald-400/"] {
+  color: rgb(5 150 105);
+}
+html:not(.dark) .hover\:text-emerald-300:hover {
+  color: rgb(4 120 87);
+}
+
+html:not(.dark) .text-violet-400,
+html:not(.dark) .text-violet-300,
+html:not(.dark) [class*="text-violet-400/"] {
+  color: rgb(124 58 237);
+}
+html:not(.dark) .hover\:text-violet-300:hover {
+  color: rgb(109 40 217);
+}
+
+html:not(.dark) .text-amber-400,
+html:not(.dark) .text-amber-300,
+html:not(.dark) [class*="text-amber-400/"] {
+  color: rgb(217 119 6);
+}
+html:not(.dark) .hover\:text-amber-300:hover {
+  color: rgb(180 83 9);
+}
+
+html:not(.dark) .text-pink-400,
+html:not(.dark) .text-pink-300,
+html:not(.dark) [class*="text-pink-400/"] {
+  color: rgb(219 39 119);
+}
+html:not(.dark) .hover\:text-pink-300:hover {
+  color: rgb(190 24 93);
+}
+
+html:not(.dark) .text-red-400,
+html:not(.dark) [class*="text-red-400/"] {
+  color: rgb(220 38 38);
 }
 
 /* xterm.js overrides */

@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default function Dashboard() {
   const { context: currentContext, namespace: currentNamespace, setContext: handleSetContext, setNamespace: handleSetNamespace } = useTerminalStore();
@@ -148,7 +149,7 @@ export default function Dashboard() {
 
   if (!currentContext && !contexts) {
     return (
-      <div className="h-full w-full flex items-center justify-center bg-[#06080c]">
+      <div className="h-full w-full flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
           <div className="relative">
             <div className="w-12 h-12 border-2 border-cyan-500/30 border-t-cyan-400 rounded-full animate-spin" />
@@ -169,15 +170,15 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="flex flex-col h-full bg-[#06080c] overflow-hidden font-mono text-slate-300 selection:bg-cyan-500/30">
+    <div className="flex flex-col h-full bg-background overflow-hidden font-mono text-foreground selection:bg-primary/30">
       {/* ══════ HEADER BAR ══════ */}
-      <header className="relative z-10 border-b border-cyan-500/10 bg-[#080a10]/90 backdrop-blur-xl">
+      <header className="relative z-10 border-b border-border bg-surface/90 backdrop-blur-xl">
         {/* Top accent line */}
         <div className="h-[1px] bg-gradient-to-r from-transparent via-cyan-500/50 to-transparent" />
         
         <div className="flex items-center h-12 px-4 gap-0">
           {/* Logo */}
-          <div className="flex items-center gap-2.5 pr-5 border-r border-white/5">
+          <div className="flex items-center gap-2.5 pr-5 border-r border-border">
             <div className="relative flex items-center justify-center w-7 h-7">
               <Monitor className="w-4.5 h-4.5 text-cyan-400" />
               <div className="absolute inset-0 bg-cyan-500/10 rounded blur-sm" />
@@ -188,18 +189,18 @@ export default function Dashboard() {
           </div>
 
           {/* Separator */}
-          <ChevronRight className="w-3 h-3 text-white/10 mx-3" />
+          <ChevronRight className="w-3 h-3 text-muted-foreground/20 mx-3" />
 
           {/* Context Select */}
-          <div className="flex items-center gap-2 pr-4 border-r border-white/5">
-            <span className="text-[9px] uppercase tracking-[0.2em] text-slate-600 font-bold">CTX</span>
+          <div className="flex items-center gap-2 pr-4 border-r border-border">
+            <span className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground font-bold">CTX</span>
             <Select value={currentContext} onValueChange={handleSetContext}>
-              <SelectTrigger className="w-44 h-7 bg-transparent border-white/[0.06] hover:border-cyan-500/20 focus:ring-0 focus:ring-offset-0 text-[11px] font-mono text-cyan-400 rounded-sm px-2">
+              <SelectTrigger className="w-44 h-7 bg-transparent border-border hover:border-primary/30 focus:ring-0 focus:ring-offset-0 text-[11px] font-mono text-cyan-400 rounded-sm px-2">
                 <SelectValue placeholder="select context" />
               </SelectTrigger>
-              <SelectContent className="bg-[#0c0e14] border-cyan-500/10 text-slate-300 font-mono">
+              <SelectContent className="bg-popover border-border text-foreground font-mono">
                 {contexts?.map((ctx) => (
-                  <SelectItem key={ctx.name} value={ctx.name} className="text-[11px] font-mono focus:bg-cyan-500/10 focus:text-cyan-300">
+                  <SelectItem key={ctx.name} value={ctx.name} className="text-[11px] font-mono focus:bg-primary/10 focus:text-primary">
                     <div className="flex items-center gap-2">
                       {ctx.isCurrent && <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.7)]" />}
                       {currentContext === ctx.name && <Star className="w-2.5 h-2.5 text-amber-400 fill-amber-400" />}
@@ -212,21 +213,21 @@ export default function Dashboard() {
           </div>
 
           {/* Separator */}
-          <ChevronRight className="w-3 h-3 text-white/10 mx-3" />
+          <ChevronRight className="w-3 h-3 text-muted-foreground/20 mx-3" />
 
           {/* Namespace Select */}
           <div className="flex items-center gap-2">
-            <span className="text-[9px] uppercase tracking-[0.2em] text-slate-600 font-bold">NS</span>
+            <span className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground font-bold">NS</span>
             <Select value={currentNamespace} onValueChange={handleSetNamespace}>
-              <SelectTrigger className="w-44 h-7 bg-transparent border-white/[0.06] hover:border-cyan-500/20 focus:ring-0 focus:ring-offset-0 text-[11px] font-mono text-emerald-400 rounded-sm px-2">
+              <SelectTrigger className="w-44 h-7 bg-transparent border-border hover:border-primary/30 focus:ring-0 focus:ring-offset-0 text-[11px] font-mono text-emerald-400 rounded-sm px-2">
                 <SelectValue placeholder="select namespace" />
                 </SelectTrigger>
-              <SelectContent className="bg-[#0c0e14] border-cyan-500/10 text-slate-300 font-mono max-h-64">
-                <SelectItem value="all" className="text-[11px] font-mono focus:bg-cyan-500/10 focus:text-cyan-300">
+              <SelectContent className="bg-popover border-border text-foreground font-mono max-h-64">
+                <SelectItem value="all" className="text-[11px] font-mono focus:bg-primary/10 focus:text-primary">
                   * all namespaces
                 </SelectItem>
                   {namespaces?.map((ns) => (
-                  <SelectItem key={ns.name} value={ns.name} className="text-[11px] font-mono focus:bg-cyan-500/10 focus:text-cyan-300">
+                  <SelectItem key={ns.name} value={ns.name} className="text-[11px] font-mono focus:bg-primary/10 focus:text-primary">
                       {ns.name}
                     </SelectItem>
                   ))}
@@ -236,11 +237,13 @@ export default function Dashboard() {
 
           {/* Right side */}
           <div className="ml-auto flex items-center gap-2">
+            <ThemeToggle />
+
             <motion.button
               onClick={handleRefresh}
               whileTap={{ rotate: 180 }}
               transition={{ duration: 0.3 }}
-              className="p-1.5 hover:bg-white/5 rounded text-slate-500 hover:text-cyan-400 transition-all"
+              className="p-1.5 hover:bg-foreground/5 rounded text-muted-foreground hover:text-primary transition-all"
               title="Refresh"
             >
               <RefreshCw className="w-3.5 h-3.5" />
@@ -263,7 +266,7 @@ export default function Dashboard() {
       {/* ══════ MAIN CONTENT ══════ */}
       <main className="flex-1 overflow-auto relative">
         {/* Subtle grid background */}
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(6,182,212,0.015)_1px,transparent_1px),linear-gradient(90deg,rgba(6,182,212,0.015)_1px,transparent_1px)] bg-[size:48px_48px]" />
+        <div className="absolute inset-0 grid-bg" />
         {/* Gradient overlays */}
         <div className="absolute top-0 right-0 w-96 h-96 bg-cyan-500/[0.02] rounded-full blur-3xl" />
         <div className="absolute bottom-0 left-0 w-96 h-96 bg-violet-500/[0.02] rounded-full blur-3xl" />
@@ -282,7 +285,7 @@ export default function Dashboard() {
                     ? 'border-amber-500/20 bg-amber-500/[0.02] hover:border-amber-500/30'
                     : stat.isError 
                       ? 'border-red-500/20 bg-red-500/[0.03] hover:border-red-500/30' 
-                      : `border-white/[0.04] bg-white/[0.01] hover:border-${stat.color}-500/20 hover:bg-${stat.color}-500/[0.02]`
+                      : `border-border bg-foreground/[0.02] hover:border-${stat.color}-500/20 hover:bg-${stat.color}-500/[0.02]`
                   }`}
               >
                 {/* Top accent */}
@@ -294,13 +297,13 @@ export default function Dashboard() {
                       <stat.icon className="w-4 h-4" />
                     </div>
                     <div>
-                      <p className="text-[9px] uppercase tracking-[0.2em] text-slate-600 font-bold">{stat.label}</p>
-                      <p className={`text-2xl font-bold tabular-nums ${stat.isError ? 'text-red-400 text-lg' : 'text-slate-100'}`}>
+                      <p className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground font-bold">{stat.label}</p>
+                      <p className={`text-2xl font-bold tabular-nums ${stat.isError ? 'text-red-400 text-lg' : 'text-foreground'}`}>
                         {stat.value}
                       </p>
                     </div>
                   </div>
-                  <Zap className={`w-3 h-3 ${stat.isError ? 'text-red-500/20' : 'text-white/[0.04] group-hover:text-' + stat.color + '-500/20'} transition-colors`} />
+                  <Zap className={`w-3 h-3 ${stat.isError ? 'text-red-500/20' : 'text-foreground/[0.06] group-hover:text-' + stat.color + '-500/20'} transition-colors`} />
                 </div>
               </motion.div>
               ))}
@@ -309,7 +312,7 @@ export default function Dashboard() {
           {/* ── RESOURCE TABS ── */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <div className="flex items-center gap-4 mb-4">
-              <TabsList className="bg-transparent border border-white/[0.04] p-0.5 h-8 rounded gap-0.5 flex-wrap">
+              <TabsList className="bg-transparent border border-border p-0.5 h-8 rounded gap-0.5 flex-wrap">
                 {[
                   { val: "pods", label: "Pods", icon: Box },
                   { val: "deployments", label: "Deploy", icon: Layers },
@@ -328,7 +331,7 @@ export default function Dashboard() {
                   <TabsTrigger
                     key={tab.val}
                     value={tab.val}
-                    className="text-[10px] font-bold uppercase tracking-[0.1em] rounded-sm px-3 h-7 transition-all gap-1 data-[state=inactive]:text-slate-600 data-[state=inactive]:hover:text-slate-400
+                    className="text-[10px] font-bold uppercase tracking-[0.1em] rounded-sm px-3 h-7 transition-all gap-1 data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-muted-foreground
                       data-[state=active]:bg-cyan-500/15 data-[state=active]:text-cyan-400 data-[state=active]:shadow-none"
                   >
                     <tab.icon className="w-3 h-3" />
@@ -337,11 +340,11 @@ export default function Dashboard() {
                 ))}
               </TabsList>
               
-              <div className="ml-auto text-[10px] text-slate-600 font-mono flex items-center gap-1.5">
+              <div className="ml-auto text-[10px] text-muted-foreground font-mono flex items-center gap-1.5">
                 <Activity className="w-3 h-3" />
                 <span>{currentContext}</span>
-                <span className="text-white/10">/</span>
-                <span className="text-slate-500">{currentNamespace === 'all' ? '*' : currentNamespace}</span>
+                <span className="text-muted-foreground/20">/</span>
+                <span className="text-muted-foreground">{currentNamespace === 'all' ? '*' : currentNamespace}</span>
               </div>
             </div>
 
@@ -362,7 +365,7 @@ export default function Dashboard() {
                         </button>
                       )},
                       { header: "NS", accessorKey: "namespace", cell: (item) => (
-                        <span className="text-slate-500 text-[10px]">{item.namespace}</span>
+                        <span className="text-muted-foreground text-[10px]">{item.namespace}</span>
                       )},
                       { header: "Ready", accessorKey: "ready" as any, cell: (item: any) => {
                         const ready = item.ready || "0/0";
@@ -373,7 +376,7 @@ export default function Dashboard() {
                         { header: "Status", accessorKey: "status" },
                       { header: "Image", accessorKey: "images" as any, cell: (item: any) => {
                         const imgs: string[] = item.images || [];
-                        if (imgs.length === 0) return <span className="text-slate-700">-</span>;
+                        if (imgs.length === 0) return <span className="text-muted-foreground/60">-</span>;
                         return (
                           <div className="flex flex-col gap-0.5">
                             {imgs.map((img: string, idx: number) => (
@@ -385,24 +388,24 @@ export default function Dashboard() {
                         );
                       }},
                       { header: "IP", accessorKey: "ip" as any, cell: (item: any) => (
-                        <span className="text-slate-500 tabular-nums text-[10px]">{item.ip || "-"}</span>
+                        <span className="text-muted-foreground tabular-nums text-[10px]">{item.ip || "-"}</span>
                       )},
                       { header: "Restarts", accessorKey: "restarts", cell: (item) => (
-                        <span className={item.restarts > 0 ? 'text-amber-400 font-bold' : 'text-slate-600'}>{item.restarts}</span>
+                        <span className={item.restarts > 0 ? 'text-amber-400 font-bold' : 'text-muted-foreground'}>{item.restarts}</span>
                       )},
                       { header: "Node", accessorKey: "node", cell: (item) => (
-                        <span className="text-slate-600 text-[10px]">{item.node}</span>
+                        <span className="text-muted-foreground text-[10px]">{item.node}</span>
                       )},
                         { header: "Age", accessorKey: "age" },
                       { header: "", cell: (item) => (
                         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button className="p-1 rounded hover:bg-cyan-500/10 text-slate-600 hover:text-cyan-400 transition-colors" onClick={() => setSelectedPod({ name: item.name, type: 'logs' })} title="Logs">
+                          <button className="p-1 rounded hover:bg-cyan-500/10 text-muted-foreground hover:text-cyan-400 transition-colors" onClick={() => setSelectedPod({ name: item.name, type: 'logs' })} title="Logs">
                             <Terminal className="h-3 w-3" />
                           </button>
-                          <button className="p-1 rounded hover:bg-violet-500/10 text-slate-600 hover:text-violet-400 transition-colors" onClick={() => setSelectedPod({ name: item.name, type: 'env' })} title="Env">
+                          <button className="p-1 rounded hover:bg-violet-500/10 text-muted-foreground hover:text-violet-400 transition-colors" onClick={() => setSelectedPod({ name: item.name, type: 'env' })} title="Env">
                             <List className="h-3 w-3" />
                           </button>
-                          <button className="p-1 rounded hover:bg-emerald-500/10 text-slate-600 hover:text-emerald-400 transition-colors" onClick={() => {
+                          <button className="p-1 rounded hover:bg-emerald-500/10 text-muted-foreground hover:text-emerald-400 transition-colors" onClick={() => {
                             // Auto-populate remote port from container ports
                             const pod = pods?.find(p => p.name === item.name);
                             const cPorts = pod?.containerPorts;
@@ -417,7 +420,7 @@ export default function Dashboard() {
                           }} title="Port Forward">
                             <Share2 className="h-3 w-3" />
                           </button>
-                          <button className="p-1 rounded hover:bg-red-500/10 text-slate-600 hover:text-red-400 transition-colors" onClick={() => handleDeletePod(item.name)} title="Delete">
+                          <button className="p-1 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors" onClick={() => handleDeletePod(item.name)} title="Delete">
                             <Trash2 className="h-3 w-3" />
                           </button>
                             </div>
@@ -443,7 +446,7 @@ export default function Dashboard() {
                         </button>
                       )},
                       { header: "NS", accessorKey: "namespace", cell: (item) => (
-                        <span className="text-slate-500 text-[10px]">{item.namespace}</span>
+                        <span className="text-muted-foreground text-[10px]">{item.namespace}</span>
                       )},
                       { header: "Ready", accessorKey: "ready", cell: (item) => {
                         const [current, total] = item.ready.split('/');
@@ -452,7 +455,7 @@ export default function Dashboard() {
                       }},
                       { header: "Image", accessorKey: "images" as any, cell: (item: any) => {
                         const imgs: string[] = item.images || [];
-                        if (imgs.length === 0) return <span className="text-slate-700">-</span>;
+                        if (imgs.length === 0) return <span className="text-muted-foreground/60">-</span>;
                         return (
                           <div className="flex flex-col gap-0.5">
                             {imgs.map((img: string, idx: number) => (
@@ -464,15 +467,15 @@ export default function Dashboard() {
                         );
                       }},
                       { header: "Strategy", accessorKey: "strategy" as any, cell: (item: any) => (
-                        <span className="text-[9px] font-bold uppercase tracking-wide text-slate-500 bg-white/[0.03] px-1.5 py-0.5 rounded-sm border border-white/[0.04]">{item.strategy || "Rolling"}</span>
+                        <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground bg-foreground/[0.04] px-1.5 py-0.5 rounded-sm border border-border">{item.strategy || "Rolling"}</span>
                       )},
                       { header: "Age", accessorKey: "age" },
                       { header: "", cell: (item) => (
                         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button className="p-1 rounded hover:bg-cyan-500/10 text-slate-600 hover:text-cyan-400 transition-colors" onClick={() => { const [,t] = item.ready.split('/'); setScaleDialog({ name: item.name, current: Number(t) }); setScaleReplicas(t); }} title="Scale">
+                          <button className="p-1 rounded hover:bg-cyan-500/10 text-muted-foreground hover:text-cyan-400 transition-colors" onClick={() => { const [,t] = item.ready.split('/'); setScaleDialog({ name: item.name, current: Number(t) }); setScaleReplicas(t); }} title="Scale">
                             <Scaling className="h-3 w-3" />
                           </button>
-                          <button className="p-1 rounded hover:bg-amber-500/10 text-slate-600 hover:text-amber-400 transition-colors" onClick={() => handleRestart(item.name)} title="Restart">
+                          <button className="p-1 rounded hover:bg-amber-500/10 text-muted-foreground hover:text-amber-400 transition-colors" onClick={() => handleRestart(item.name)} title="Restart">
                             <RotateCw className="h-3 w-3" />
                           </button>
                         </div>
@@ -495,9 +498,9 @@ export default function Dashboard() {
                       { header: "Service", accessorKey: "name", cell: (item) => (
                         <button onClick={() => goToDetail("service", item.name, item.namespace)} className="text-emerald-400/90 font-medium hover:text-emerald-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
-                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-slate-500 text-[10px]">{item.namespace}</span> },
-                      { header: "Type", accessorKey: "type", cell: (item) => <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500 bg-white/[0.03] px-1.5 py-0.5 rounded-sm border border-white/[0.04]">{item.type}</span> },
-                      { header: "Cluster IP", accessorKey: "clusterIP", cell: (item) => <span className="text-slate-400 tabular-nums text-[10px]">{item.clusterIP}</span> },
+                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
+                      { header: "Type", accessorKey: "type", cell: (item) => <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground bg-foreground/[0.04] px-1.5 py-0.5 rounded-sm border border-border">{item.type}</span> },
+                      { header: "Cluster IP", accessorKey: "clusterIP", cell: (item) => <span className="text-muted-foreground tabular-nums text-[10px]">{item.clusterIP}</span> },
                       { header: "Ports", accessorKey: "ports", cell: (item) => <span className="text-cyan-500/70 text-[10px]">{item.ports}</span> },
                       { header: "Age", accessorKey: "age" },
                     ]}
@@ -518,7 +521,7 @@ export default function Dashboard() {
                       { header: "StatefulSet", accessorKey: "name", cell: (item) => (
                         <button onClick={() => goToDetail("statefulset", item.name, item.namespace)} className="text-cyan-400/90 font-medium hover:text-cyan-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
-                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-slate-500 text-[10px]">{item.namespace}</span> },
+                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
                       { header: "Ready", accessorKey: "ready", cell: (item) => {
                         const [c, t] = item.ready.split("/");
                         const ok = c === t && Number(c) > 0;
@@ -527,7 +530,7 @@ export default function Dashboard() {
                       { header: "Replicas", accessorKey: "replicas" },
                       { header: "Image", accessorKey: "images" as any, cell: (item: any) => {
                         const imgs: string[] = item.images || [];
-                        if (imgs.length === 0) return <span className="text-slate-700">-</span>;
+                        if (imgs.length === 0) return <span className="text-muted-foreground/60">-</span>;
                         return (
                           <div className="flex flex-col gap-0.5">
                             {imgs.map((img: string, idx: number) => (
@@ -557,7 +560,7 @@ export default function Dashboard() {
                       { header: "DaemonSet", accessorKey: "name", cell: (item) => (
                         <button onClick={() => goToDetail("daemonset", item.name, item.namespace)} className="text-violet-400/90 font-medium hover:text-violet-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
-                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-slate-500 text-[10px]">{item.namespace}</span> },
+                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
                       { header: "Desired", accessorKey: "desired" },
                       { header: "Current", accessorKey: "current" },
                       { header: "Ready", accessorKey: "ready" },
@@ -581,7 +584,7 @@ export default function Dashboard() {
                       { header: "Job", accessorKey: "name", cell: (item) => (
                         <button onClick={() => goToDetail("job", item.name, item.namespace)} className="text-amber-400/90 font-medium hover:text-amber-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
-                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-slate-500 text-[10px]">{item.namespace}</span> },
+                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
                       { header: "Completions", accessorKey: "completions" },
                       { header: "Duration", accessorKey: "duration" },
                       { header: "Status", accessorKey: "status" },
@@ -604,13 +607,13 @@ export default function Dashboard() {
                       { header: "CronJob", accessorKey: "name", cell: (item) => (
                         <button onClick={() => goToDetail("cronjob", item.name, item.namespace)} className="text-violet-400/90 font-medium hover:text-violet-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
-                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-slate-500 text-[10px]">{item.namespace}</span> },
+                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
                       { header: "Schedule", accessorKey: "schedule", cell: (item) => <span className="text-cyan-500/80 font-mono text-[10px]">{item.schedule}</span> },
                       { header: "Suspend", accessorKey: "suspend" as any, cell: (item: any) => (
                         <span className={`text-[10px] font-bold ${item.suspend ? 'text-amber-400' : 'text-emerald-400'}`}>{item.suspend ? "Yes" : "No"}</span>
                       )},
                       { header: "Active", accessorKey: "active" },
-                      { header: "Last Run", accessorKey: "lastSchedule" as any, cell: (item: any) => <span className="text-slate-600 text-[10px]">{item.lastSchedule || "-"}</span> },
+                      { header: "Last Run", accessorKey: "lastSchedule" as any, cell: (item: any) => <span className="text-muted-foreground text-[10px]">{item.lastSchedule || "-"}</span> },
                       { header: "Age", accessorKey: "age" },
                     ]}
                   />
@@ -630,7 +633,7 @@ export default function Dashboard() {
                       { header: "ConfigMap", accessorKey: "name", cell: (item) => (
                         <button onClick={() => goToDetail("configmap", item.name, item.namespace)} className="text-cyan-400/90 font-medium hover:text-cyan-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
-                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-slate-500 text-[10px]">{item.namespace}</span> },
+                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
                       { header: "Data Keys", accessorKey: "dataKeys", cell: (item) => <span className="text-amber-400/80 tabular-nums">{item.dataKeys}</span> },
                       { header: "Age", accessorKey: "age" },
                     ]}
@@ -651,8 +654,8 @@ export default function Dashboard() {
                       { header: "Secret", accessorKey: "name", cell: (item) => (
                         <button onClick={() => goToDetail("secret", item.name, item.namespace)} className="text-violet-400/90 font-medium hover:text-violet-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
-                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-slate-500 text-[10px]">{item.namespace}</span> },
-                      { header: "Type", accessorKey: "type", cell: (item) => <span className="text-[10px] text-slate-500 bg-white/[0.03] px-1.5 py-0.5 rounded-sm border border-white/[0.04]">{item.type}</span> },
+                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
+                      { header: "Type", accessorKey: "type", cell: (item) => <span className="text-[10px] text-muted-foreground bg-foreground/[0.04] px-1.5 py-0.5 rounded-sm border border-border">{item.type}</span> },
                       { header: "Data", accessorKey: "dataKeys", cell: (item) => <span className="text-amber-400/80 tabular-nums">{item.dataKeys}</span> },
                       { header: "Age", accessorKey: "age" },
                     ]}
@@ -673,9 +676,9 @@ export default function Dashboard() {
                       { header: "Ingress", accessorKey: "name", cell: (item) => (
                         <button onClick={() => goToDetail("ingress", item.name, item.namespace)} className="text-pink-400/90 font-medium hover:text-pink-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
-                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-slate-500 text-[10px]">{item.namespace}</span> },
+                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
                       { header: "Hosts", accessorKey: "hosts", cell: (item) => <span className="text-cyan-400/80 text-[10px]">{item.hosts}</span> },
-                      { header: "Class", accessorKey: "className" as any, cell: (item: any) => <span className="text-slate-500 text-[10px]">{item.className || "-"}</span> },
+                      { header: "Class", accessorKey: "className" as any, cell: (item: any) => <span className="text-muted-foreground text-[10px]">{item.className || "-"}</span> },
                       { header: "Ports", accessorKey: "ports" },
                       { header: "Age", accessorKey: "age" },
                     ]}
@@ -698,10 +701,10 @@ export default function Dashboard() {
                       )},
                       { header: "Status", accessorKey: "status" },
                       { header: "Roles", accessorKey: "roles", cell: (item) => <span className="text-[10px] text-cyan-400/70">{item.roles}</span> },
-                      { header: "Version", accessorKey: "version", cell: (item) => <span className="text-slate-400 text-[10px]">{item.version}</span> },
+                      { header: "Version", accessorKey: "version", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.version}</span> },
                       { header: "CPU", accessorKey: "cpu", cell: (item) => <span className="text-emerald-400/80 tabular-nums text-[10px]">{item.cpu}</span> },
                       { header: "Memory", accessorKey: "memory", cell: (item) => <span className="text-violet-400/80 tabular-nums text-[10px]">{item.memory}</span> },
-                      { header: "OS", accessorKey: "os", cell: (item) => <span className="text-slate-600 text-[10px]">{item.os}</span> },
+                      { header: "OS", accessorKey: "os", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.os}</span> },
                       { header: "Age", accessorKey: "age" },
                     ]}
                   />
@@ -721,12 +724,12 @@ export default function Dashboard() {
                       { header: "HPA", accessorKey: "name", cell: (item) => (
                         <button onClick={() => goToDetail("hpa", item.name, item.namespace)} className="text-emerald-400/90 font-medium hover:text-emerald-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
-                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-slate-500 text-[10px]">{item.namespace}</span> },
+                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
                       { header: "Reference", accessorKey: "reference", cell: (item) => <span className="text-cyan-400/70 text-[10px]">{item.reference}</span> },
                       { header: "Min", accessorKey: "minReplicas" },
                       { header: "Max", accessorKey: "maxReplicas" },
                       { header: "Current", accessorKey: "currentReplicas", cell: (item) => <span className="text-amber-400/80 font-bold tabular-nums">{item.currentReplicas}</span> },
-                      { header: "Metrics", accessorKey: "metrics", cell: (item) => <span className="text-[10px] text-slate-400">{item.metrics}</span> },
+                      { header: "Metrics", accessorKey: "metrics", cell: (item) => <span className="text-[10px] text-muted-foreground">{item.metrics}</span> },
                       { header: "Age", accessorKey: "age" },
                     ]}
                   />
@@ -746,12 +749,12 @@ export default function Dashboard() {
                       { header: "PVC", accessorKey: "name", cell: (item) => (
                         <button onClick={() => goToDetail("pvc", item.name, item.namespace)} className="text-violet-400/90 font-medium hover:text-violet-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
-                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-slate-500 text-[10px]">{item.namespace}</span> },
+                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
                       { header: "Status", accessorKey: "status" },
-                      { header: "Volume", accessorKey: "volume", cell: (item) => <span className="text-slate-400 text-[10px]">{item.volume}</span> },
+                      { header: "Volume", accessorKey: "volume", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.volume}</span> },
                       { header: "Capacity", accessorKey: "capacity", cell: (item) => <span className="text-emerald-400/80 tabular-nums">{item.capacity}</span> },
-                      { header: "Access", accessorKey: "accessModes", cell: (item) => <span className="text-[10px] text-slate-500">{item.accessModes}</span> },
-                      { header: "Class", accessorKey: "storageClass", cell: (item) => <span className="text-[10px] text-slate-500">{item.storageClass}</span> },
+                      { header: "Access", accessorKey: "accessModes", cell: (item) => <span className="text-[10px] text-muted-foreground">{item.accessModes}</span> },
+                      { header: "Class", accessorKey: "storageClass", cell: (item) => <span className="text-[10px] text-muted-foreground">{item.storageClass}</span> },
                       { header: "Age", accessorKey: "age" },
                     ]}
                   />
@@ -764,16 +767,16 @@ export default function Dashboard() {
 
       {/* ══════ LOGS / ENV DIALOG ══════ */}
       <Dialog open={selectedPod.type === 'logs' || selectedPod.type === 'env'} onOpenChange={() => setSelectedPod({ name: '', type: null })}>
-        <DialogContent className="max-w-5xl bg-[#06080c] border-cyan-500/10 p-0 overflow-hidden rounded-lg shadow-2xl shadow-cyan-500/5">
-          <DialogHeader className="px-4 py-2.5 border-b border-white/5 flex flex-row items-center justify-between space-y-0 bg-[#080a10]">
-            <DialogTitle className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 flex items-center gap-2 font-mono">
+        <DialogContent className="max-w-5xl bg-background border-border p-0 overflow-hidden rounded-lg shadow-2xl dark:shadow-cyan-500/5">
+          <DialogHeader className="px-4 py-2.5 border-b border-border flex flex-row items-center justify-between space-y-0 bg-surface">
+            <DialogTitle className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-2 font-mono">
               <Terminal className="w-3.5 h-3.5 text-cyan-500" />
               <span className="text-cyan-500">{selectedPod.type === 'logs' ? 'stdout' : 'env'}</span>
-              <span className="text-white/10">|</span>
-              <span className="text-slate-400">{selectedPod.name}</span>
+              <span className="text-muted-foreground/20">|</span>
+              <span className="text-muted-foreground">{selectedPod.name}</span>
             </DialogTitle>
           </DialogHeader>
-          <div className="p-4 bg-[#04060a] h-[500px] overflow-auto font-mono text-[12px] leading-relaxed">
+          <div className="p-4 bg-surface-inset h-[500px] overflow-auto font-mono text-[12px] leading-relaxed">
             {(logsLoading || envLoading) ? (
               <div className="flex items-center gap-2 text-cyan-500/50">
                 <span className="inline-block w-2 h-4 bg-cyan-500/50 animate-pulse" />
@@ -790,39 +793,39 @@ export default function Dashboard() {
 
       {/* ══════ PORT FORWARD DIALOG ══════ */}
       <Dialog open={selectedPod.type === 'forward'} onOpenChange={() => setSelectedPod({ name: '', type: null })}>
-        <DialogContent className="max-w-sm bg-[#06080c] border-cyan-500/10 p-0 overflow-hidden rounded-lg shadow-2xl">
-          <DialogHeader className="px-4 py-2.5 border-b border-white/5 bg-[#080a10]">
-            <DialogTitle className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 font-mono flex items-center gap-2">
+        <DialogContent className="max-w-sm bg-background border-border p-0 overflow-hidden rounded-lg shadow-2xl">
+          <DialogHeader className="px-4 py-2.5 border-b border-border bg-surface">
+            <DialogTitle className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground font-mono flex items-center gap-2">
               <Share2 className="w-3.5 h-3.5 text-emerald-500" />
               <span className="text-emerald-500">port-forward</span>
-              <span className="text-white/10">|</span>
-              <span className="text-slate-400">{selectedPod.name}</span>
+              <span className="text-muted-foreground/20">|</span>
+              <span className="text-muted-foreground">{selectedPod.name}</span>
             </DialogTitle>
           </DialogHeader>
           <div className="p-4 space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
-                <label className="text-[9px] uppercase tracking-[0.2em] font-bold text-slate-600">Local Port</label>
+                <label className="text-[9px] uppercase tracking-[0.2em] font-bold text-muted-foreground">Local Port</label>
                 <Input
                   type="number"
                   min={1}
                   max={65535}
                   value={forwardPort}
                   onChange={(e) => setForwardPort(e.target.value)}
-                  className="bg-white/[0.02] border-white/[0.06] font-mono text-cyan-400 text-sm h-8 rounded-sm focus-visible:ring-cyan-500/20"
+                  className="bg-foreground/[0.03] border-border font-mono text-cyan-400 text-sm h-8 rounded-sm focus-visible:ring-cyan-500/20"
                   placeholder="8080"
                 />
-                <p className="text-[8px] text-slate-700">Your machine</p>
+                <p className="text-[8px] text-muted-foreground/60">Your machine</p>
               </div>
               <div className="space-y-2">
-                <label className="text-[9px] uppercase tracking-[0.2em] font-bold text-slate-600">Remote Port</label>
+                <label className="text-[9px] uppercase tracking-[0.2em] font-bold text-muted-foreground">Remote Port</label>
                 <Input
                   type="number"
                   min={1}
                   max={65535}
                   value={remotePort}
                   onChange={(e) => setRemotePort(e.target.value)}
-                  className="bg-white/[0.02] border-white/[0.06] font-mono text-emerald-400 text-sm h-8 rounded-sm focus-visible:ring-emerald-500/20"
+                  className="bg-foreground/[0.03] border-border font-mono text-emerald-400 text-sm h-8 rounded-sm focus-visible:ring-emerald-500/20"
                   placeholder="80"
                 />
                 {(() => {
@@ -831,7 +834,7 @@ export default function Dashboard() {
                   if (!cPorts || cPorts.length === 0) return <p className="text-[8px] text-amber-500/80">⚠ No ports declared in pod spec</p>;
                   return (
                     <div className="flex items-center gap-1 flex-wrap">
-                      <span className="text-[8px] text-slate-700">Ports:</span>
+                      <span className="text-[8px] text-muted-foreground/60">Ports:</span>
                       {cPorts.map((cp) => (
                         <button
                           key={cp.port}
@@ -840,7 +843,7 @@ export default function Dashboard() {
                           className={`text-[9px] font-mono px-1.5 py-0.5 rounded-sm border transition-colors ${
                             remotePort === String(cp.port)
                               ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
-                              : 'bg-white/[0.02] border-white/[0.06] text-slate-500 hover:text-emerald-400 hover:border-emerald-500/20'
+                              : 'bg-foreground/[0.03] border-border text-muted-foreground hover:text-emerald-400 hover:border-emerald-500/20'
                           }`}
                         >
                           {cp.port}{cp.name ? `/${cp.name}` : ''}
@@ -851,13 +854,13 @@ export default function Dashboard() {
                 })()}
               </div>
             </div>
-            <div className="text-[10px] text-slate-600 font-mono bg-white/[0.02] px-2.5 py-1.5 rounded-sm border border-white/[0.04]">
+            <div className="text-[10px] text-muted-foreground font-mono bg-foreground/[0.03] px-2.5 py-1.5 rounded-sm border border-border">
               localhost:<span className="text-cyan-400">{forwardPort || '?'}</span>
-              <span className="text-slate-700 mx-1">→</span>
+              <span className="text-muted-foreground/60 mx-1">→</span>
               {selectedPod.name}:<span className="text-emerald-400">{remotePort || forwardPort || '?'}</span>
             </div>
             <div className="flex justify-end gap-2 pt-1">
-              <Button variant="ghost" className="text-[10px] uppercase font-bold tracking-wider h-7 px-3 text-slate-500 hover:text-slate-300" onClick={() => setSelectedPod({ name: '', type: null })}>
+              <Button variant="ghost" className="text-[10px] uppercase font-bold tracking-wider h-7 px-3 text-muted-foreground hover:text-foreground" onClick={() => setSelectedPod({ name: '', type: null })}>
                 Cancel
               </Button>
               <Button
@@ -874,28 +877,28 @@ export default function Dashboard() {
 
       {/* ══════ SCALE DIALOG ══════ */}
       <Dialog open={!!scaleDialog} onOpenChange={() => setScaleDialog(null)}>
-        <DialogContent className="max-w-sm bg-[#06080c] border-cyan-500/10 p-0 overflow-hidden rounded-lg shadow-2xl">
-          <DialogHeader className="px-4 py-2.5 border-b border-white/5 bg-[#080a10]">
-            <DialogTitle className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 font-mono flex items-center gap-2">
+        <DialogContent className="max-w-sm bg-background border-border p-0 overflow-hidden rounded-lg shadow-2xl">
+          <DialogHeader className="px-4 py-2.5 border-b border-border bg-surface">
+            <DialogTitle className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground font-mono flex items-center gap-2">
               <Scaling className="w-3.5 h-3.5 text-cyan-500" />
               <span className="text-cyan-500">scale</span>
-              <span className="text-white/10">|</span>
-              <span className="text-slate-400">{scaleDialog?.name}</span>
+              <span className="text-muted-foreground/20">|</span>
+              <span className="text-muted-foreground">{scaleDialog?.name}</span>
             </DialogTitle>
           </DialogHeader>
           <div className="p-4 space-y-4">
             <div className="space-y-2">
-              <label className="text-[9px] uppercase tracking-[0.2em] font-bold text-slate-600">Replicas</label>
+              <label className="text-[9px] uppercase tracking-[0.2em] font-bold text-muted-foreground">Replicas</label>
               <Input 
                 type="number"
                 min={0}
                 value={scaleReplicas}
                 onChange={(e) => setScaleReplicas(e.target.value)}
-                className="bg-white/[0.02] border-white/[0.06] font-mono text-cyan-400 text-sm h-8 rounded-sm focus-visible:ring-cyan-500/20"
+                className="bg-foreground/[0.03] border-border font-mono text-cyan-400 text-sm h-8 rounded-sm focus-visible:ring-cyan-500/20"
               />
             </div>
             <div className="flex justify-end gap-2 pt-1">
-              <Button variant="ghost" className="text-[10px] uppercase font-bold tracking-wider h-7 px-3 text-slate-500 hover:text-slate-300" onClick={() => setScaleDialog(null)}>Cancel</Button>
+              <Button variant="ghost" className="text-[10px] uppercase font-bold tracking-wider h-7 px-3 text-muted-foreground hover:text-foreground" onClick={() => setScaleDialog(null)}>Cancel</Button>
               <Button className="bg-cyan-600 hover:bg-cyan-500 text-white text-[10px] uppercase font-bold tracking-wider h-7 px-4 rounded-sm" onClick={handleScale}>Scale</Button>
             </div>
           </div>
@@ -904,10 +907,10 @@ export default function Dashboard() {
 
       {/* ══════ PORT FORWARD STATUS BAR ══════ */}
       {portForwards && portForwards.length > 0 && (
-        <div className="border-t border-emerald-500/10 bg-[#080a10]/90 px-4 py-1.5 flex items-center gap-3 overflow-x-auto shrink-0">
+        <div className="border-t border-border bg-surface/90 px-4 py-1.5 flex items-center gap-3 overflow-x-auto shrink-0">
           <Share2 className="w-3 h-3 text-emerald-400 shrink-0" />
           <span className="text-[9px] uppercase tracking-wider font-bold text-emerald-400/80 shrink-0">FORWARDS</span>
-          <div className="w-px h-4 bg-white/5" />
+          <div className="w-px h-4 bg-foreground/5" />
           {portForwards.map((fwd) => {
             const isDead = fwd.status === "dead" || fwd.status === "error";
             return (
@@ -938,8 +941,8 @@ export default function Dashboard() {
                 >
                   :{fwd.localPort}
                 </a>
-                <span className="text-[9px] text-slate-600">{"\u2192"}</span>
-                <span className="text-[10px] font-mono text-slate-400">{fwd.pod}:{fwd.remotePort}</span>
+                <span className="text-[9px] text-muted-foreground">{"\u2192"}</span>
+                <span className="text-[10px] font-mono text-muted-foreground">{fwd.pod}:{fwd.remotePort}</span>
                 {isDead && (
                   <span className="text-[8px] text-red-400/70 uppercase font-bold">DEAD</span>
                 )}
@@ -952,7 +955,7 @@ export default function Dashboard() {
                       toast({ title: "Error", description: "Failed to stop", variant: "destructive" });
                     }
                   }}
-                  className="p-0.5 rounded hover:bg-red-500/10 text-slate-600 hover:text-red-400 transition-colors"
+                  className="p-0.5 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors"
                   title="Stop"
                 >
                   <Square className="w-2.5 h-2.5" />
