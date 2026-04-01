@@ -542,7 +542,7 @@ export default function Dashboard() {
                         );
                       }},
                       { header: "Age", accessorKey: "age" },
-                    ]}}
+                    ]}
                   />
                 </motion.div>
               </TabsContent>
