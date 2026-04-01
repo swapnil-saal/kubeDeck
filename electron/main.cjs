@@ -1,9 +1,64 @@
 const { app, BrowserWindow, shell } = require("electron");
 const path = require("path");
 const http = require("http");
+const { execSync } = require("child_process");
 
 const PORT = 15173;
 let mainWindow = null;
+
+/**
+ * macOS GUI apps launch without sourcing .zshrc / .zprofile, so KUBECONFIG,
+ * auth credential helpers (kubelogin, aws-iam-authenticator, etc.) and any
+ * Homebrew-installed tools are missing from the environment.
+ *
+ * This function spawns a single login shell to capture the user's full env
+ * and merges it into process.env so that every subsequent spawn() call
+ * (kubectl, helm, …) sees the same environment as an interactive terminal.
+ */
+function loadShellEnv() {
+  const userShell = process.env.SHELL || "/bin/zsh";
+  try {
+    const raw = execSync(`${userShell} -l -c 'printenv'`, {
+      timeout: 5000,
+      encoding: "utf-8",
+    });
+    for (const line of raw.split("\n")) {
+      const eq = line.indexOf("=");
+      if (eq === -1) continue;
+      const key = line.slice(0, eq).trim();
+      const val = line.slice(eq + 1);
+      if (!key) continue;
+      if (key === "PATH") {
+        // Merge shell PATH with whatever Electron already has (de-duplicate)
+        const existing = (process.env.PATH || "").split(":");
+        const shellPaths = val.split(":");
+        const merged = [...new Set([...shellPaths, ...existing])];
+        process.env.PATH = merged.join(":");
+      } else if (!process.env[key] || key === "KUBECONFIG") {
+        // Shell value wins for KUBECONFIG; don't clobber vars Electron set
+        process.env[key] = val;
+      }
+    }
+    console.log("[env] Shell environment loaded from", userShell);
+  } catch (e) {
+    console.warn("[env] Could not load shell environment:", e.message);
+    // Fall back to manual common-path augmentation
+    const extraPaths = [
+      "/opt/homebrew/bin",
+      "/opt/homebrew/sbin",
+      "/usr/local/bin",
+      "/usr/local/sbin",
+      "/usr/bin",
+      "/bin",
+      path.join(process.env.HOME || "", ".krew", "bin"),
+    ];
+    const parts = (process.env.PATH || "").split(":");
+    for (const p of extraPaths) {
+      if (!parts.includes(p)) parts.push(p);
+    }
+    process.env.PATH = parts.join(":");
+  }
+}
 
 function waitForServer(url, timeout = 15000) {
   const start = Date.now();
@@ -53,23 +108,9 @@ function createWindow() {
 }
 
 async function startApp() {
-  // Augment PATH so kubectl/helm/etc. installed via Homebrew or common locations
-  // are found — Electron apps don't inherit the full shell PATH on macOS.
-  const extraPaths = [
-    "/opt/homebrew/bin",
-    "/opt/homebrew/sbin",
-    "/usr/local/bin",
-    "/usr/local/sbin",
-    "/usr/bin",
-    "/bin",
-    path.join(process.env.HOME || "", ".krew", "bin"),
-  ];
-  const currentPath = process.env.PATH || "";
-  const pathParts = currentPath.split(":");
-  for (const p of extraPaths) {
-    if (!pathParts.includes(p)) pathParts.push(p);
-  }
-  process.env.PATH = pathParts.join(":");
+  // Load the user's full login-shell environment (PATH, KUBECONFIG, auth
+  // helpers, etc.) before starting the Express server.
+  loadShellEnv();
 
   // Start the Express server
   process.env.PORT = String(PORT);
