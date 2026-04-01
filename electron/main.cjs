@@ -53,6 +53,24 @@ function createWindow() {
 }
 
 async function startApp() {
+  // Augment PATH so kubectl/helm/etc. installed via Homebrew or common locations
+  // are found — Electron apps don't inherit the full shell PATH on macOS.
+  const extraPaths = [
+    "/opt/homebrew/bin",
+    "/opt/homebrew/sbin",
+    "/usr/local/bin",
+    "/usr/local/sbin",
+    "/usr/bin",
+    "/bin",
+    path.join(process.env.HOME || "", ".krew", "bin"),
+  ];
+  const currentPath = process.env.PATH || "";
+  const pathParts = currentPath.split(":");
+  for (const p of extraPaths) {
+    if (!pathParts.includes(p)) pathParts.push(p);
+  }
+  process.env.PATH = pathParts.join(":");
+
   // Start the Express server
   process.env.PORT = String(PORT);
   process.env.NODE_ENV = "production";
