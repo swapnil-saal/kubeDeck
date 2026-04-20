@@ -1,81 +1,23 @@
 const { app, BrowserWindow, shell } = require("electron");
 const path = require("path");
 const http = require("http");
-const { execSync } = require("child_process");
 
-const PORT = 15173;
-let mainWindow = null;
+const isDev = !app.isPackaged;
+const PORT = process.env.PORT || 5000;
+const SERVER_URL = `http://127.0.0.1:${PORT}`;
 
-/**
- * macOS GUI apps launch without sourcing .zshrc / .zprofile, so KUBECONFIG,
- * auth credential helpers (kubelogin, aws-iam-authenticator, etc.) and any
- * Homebrew-installed tools are missing from the environment.
- *
- * This function spawns a single login shell to capture the user's full env
- * and merges it into process.env so that every subsequent spawn() call
- * (kubectl, helm, …) sees the same environment as an interactive terminal.
- */
-function loadShellEnv() {
-  const userShell = process.env.SHELL || "/bin/zsh";
-  try {
-    const raw = execSync(`${userShell} -l -i -c 'printenv' 2>/dev/null`, {
-      timeout: 8000,
-      encoding: "utf-8",
-      // TERM=dumb suppresses p10k instant-prompt and other interactive-terminal
-      // checks so the shell starts cleanly without a real TTY attached.
-      env: { ...process.env, TERM: "dumb", P9K_DISABLE_CONFIGURATION_WIZARD: "true" },
-    });
-    for (const line of raw.split("\n")) {
-      const eq = line.indexOf("=");
-      if (eq === -1) continue;
-      const key = line.slice(0, eq).trim();
-      const val = line.slice(eq + 1);
-      if (!key) continue;
-      if (key === "PATH") {
-        // Merge shell PATH with whatever Electron already has (de-duplicate)
-        const existing = (process.env.PATH || "").split(":");
-        const shellPaths = val.split(":");
-        const merged = [...new Set([...shellPaths, ...existing])];
-        process.env.PATH = merged.join(":");
-      } else if (!process.env[key] || key === "KUBECONFIG") {
-        // Shell value wins for KUBECONFIG; don't clobber vars Electron set
-        process.env[key] = val;
-      }
-    }
-    console.log("[env] Shell environment loaded from", userShell);
-  } catch (e) {
-    console.warn("[env] Could not load shell environment:", e.message);
-    // Fall back to manual common-path augmentation
-    const extraPaths = [
-      "/opt/homebrew/bin",
-      "/opt/homebrew/sbin",
-      "/usr/local/bin",
-      "/usr/local/sbin",
-      "/usr/bin",
-      "/bin",
-      path.join(process.env.HOME || "", ".krew", "bin"),
-    ];
-    const parts = (process.env.PATH || "").split(":");
-    for (const p of extraPaths) {
-      if (!parts.includes(p)) parts.push(p);
-    }
-    process.env.PATH = parts.join(":");
-  }
-}
-
-function waitForServer(url, timeout = 15000) {
-  const start = Date.now();
+function waitForServer(url, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
+    const deadline = Date.now() + timeoutMs;
     const check = () => {
       http
-        .get(url, (res) => {
-          if (res.statusCode === 200 || res.statusCode === 304) resolve();
-          else if (Date.now() - start > timeout) reject(new Error("Timeout"));
-          else setTimeout(check, 200);
-        })
+        .get(url, () => resolve())
         .on("error", () => {
-          if (Date.now() - start > timeout) reject(new Error("Timeout"));
-          else setTimeout(check, 200);
+          if (Date.now() > deadline) {
+            reject(new Error(`Server did not start within ${timeoutMs}ms`));
+            return;
+          }
+          setTimeout(check, 200);
         });
     };
     check();
@@ -83,66 +25,60 @@ function waitForServer(url, timeout = 15000) {
 }
 
 function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 1440,
+  const win = new BrowserWindow({
+    width: 1400,
     height: 900,
     minWidth: 900,
     minHeight: 600,
-    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
-    backgroundColor: "#06080c",
+    titleBarStyle: "hiddenInset",
+    trafficLightPosition: { x: 16, y: 16 },
+    backgroundColor: "#0d1117",
     show: false,
     webPreferences: {
-      nodeIntegration: false,
       contextIsolation: true,
+      nodeIntegration: false,
     },
   });
 
-  // Open external links in browser
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+  win.once("ready-to-show", () => win.show());
+
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith("http")) shell.openExternal(url);
     return { action: "deny" };
   });
 
-  mainWindow.on("closed", () => {
-    mainWindow = null;
-  });
+  win.loadURL(SERVER_URL);
 
-  return mainWindow;
+  if (isDev) {
+    win.webContents.openDevTools({ mode: "detach" });
+  }
 }
 
-async function startApp() {
-  // Load the user's full login-shell environment (PATH, KUBECONFIG, auth
-  // helpers, etc.) before starting the Express server.
-  loadShellEnv();
-
-  // Start the Express server
-  process.env.PORT = String(PORT);
-  process.env.NODE_ENV = "production";
-  require(path.join(__dirname, "..", "dist", "index.cjs"));
-
-  const win = createWindow();
-
-  try {
-    await waitForServer(`http://localhost:${PORT}/api/k8s/contexts`);
-  } catch {
-    // Server might still be starting, try loading anyway
-    console.log("Server wait timeout, attempting to load...");
+app.whenReady().then(async () => {
+  if (!isDev) {
+    process.env.NODE_ENV = "production";
+    require(path.join(__dirname, "..", "dist", "index.cjs"));
   }
 
-  win.loadURL(`http://localhost:${PORT}`);
-  win.once("ready-to-show", () => {
-    win.show();
-  });
-}
+  try {
+    await waitForServer(SERVER_URL);
+  } catch (err) {
+    console.error("Failed to connect to server:", err.message);
+    app.quit();
+    return;
+  }
 
-app.whenReady().then(startApp);
+  createWindow();
+});
 
 app.on("window-all-closed", () => {
-  app.quit();
+  if (process.platform !== "darwin") {
+    app.quit();
+  }
 });
 
 app.on("activate", () => {
-  if (mainWindow === null) {
-    startApp();
+  if (BrowserWindow.getAllWindows().length === 0) {
+    createWindow();
   }
 });

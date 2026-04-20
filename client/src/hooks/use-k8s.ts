@@ -4,6 +4,8 @@ import { api, buildUrl } from "@shared/routes";
 import type { RelatedResources, PortForwardEntry } from "@shared/routes";
 import { queryClient } from "@/lib/queryClient";
 
+const LIST_REFETCH_MS = 10_000;
+
 class K8sError extends Error {
   status: number;
   constructor(message: string, status: number) {
@@ -72,6 +74,7 @@ export function useK8sPods(context?: string, namespace?: string) {
       return k8sFetch(url, api.k8s.pods.responses[200]);
     },
     enabled: !!context,
+    refetchInterval: LIST_REFETCH_MS,
     retry: (fc, err) => err instanceof K8sError && err.isForbidden ? false : fc < 2,
   });
 }
@@ -84,6 +87,7 @@ export function useK8sDeployments(context?: string, namespace?: string) {
       return k8sFetch(url, api.k8s.deployments.responses[200]);
     },
     enabled: !!context,
+    refetchInterval: LIST_REFETCH_MS,
     retry: (fc, err) => err instanceof K8sError && err.isForbidden ? false : fc < 2,
   });
 }
@@ -96,6 +100,7 @@ export function useK8sServices(context?: string, namespace?: string) {
       return k8sFetch(url, api.k8s.services.responses[200]);
     },
     enabled: !!context,
+    refetchInterval: LIST_REFETCH_MS,
     retry: (fc, err) => err instanceof K8sError && err.isForbidden ? false : fc < 2,
   });
 }
@@ -106,7 +111,7 @@ export function useK8sConfigMaps(context?: string, namespace?: string) {
   return useQuery({
     queryKey: [api.k8s.configmaps.path, context, namespace],
     queryFn: () => k8sFetch(buildUrl(api.k8s.configmaps.path, { context: context || '', namespace: namespace || '' }), api.k8s.configmaps.responses[200]),
-    enabled: !!context, retry: (fc, err) => err instanceof K8sError && err.isForbidden ? false : fc < 2,
+    enabled: !!context, refetchInterval: LIST_REFETCH_MS, retry: (fc, err) => err instanceof K8sError && err.isForbidden ? false : fc < 2,
   });
 }
 
@@ -114,7 +119,7 @@ export function useK8sSecrets(context?: string, namespace?: string) {
   return useQuery({
     queryKey: [api.k8s.secrets.path, context, namespace],
     queryFn: () => k8sFetch(buildUrl(api.k8s.secrets.path, { context: context || '', namespace: namespace || '' }), api.k8s.secrets.responses[200]),
-    enabled: !!context, retry: (fc, err) => err instanceof K8sError && err.isForbidden ? false : fc < 2,
+    enabled: !!context, refetchInterval: LIST_REFETCH_MS, retry: (fc, err) => err instanceof K8sError && err.isForbidden ? false : fc < 2,
   });
 }
 
@@ -122,7 +127,7 @@ export function useK8sIngresses(context?: string, namespace?: string) {
   return useQuery({
     queryKey: [api.k8s.ingresses.path, context, namespace],
     queryFn: () => k8sFetch(buildUrl(api.k8s.ingresses.path, { context: context || '', namespace: namespace || '' }), api.k8s.ingresses.responses[200]),
-    enabled: !!context, retry: (fc, err) => err instanceof K8sError && err.isForbidden ? false : fc < 2,
+    enabled: !!context, refetchInterval: LIST_REFETCH_MS, retry: (fc, err) => err instanceof K8sError && err.isForbidden ? false : fc < 2,
   });
 }
 
@@ -130,7 +135,7 @@ export function useK8sStatefulSets(context?: string, namespace?: string) {
   return useQuery({
     queryKey: [api.k8s.statefulsets.path, context, namespace],
     queryFn: () => k8sFetch(buildUrl(api.k8s.statefulsets.path, { context: context || '', namespace: namespace || '' }), api.k8s.statefulsets.responses[200]),
-    enabled: !!context, retry: (fc, err) => err instanceof K8sError && err.isForbidden ? false : fc < 2,
+    enabled: !!context, refetchInterval: LIST_REFETCH_MS, retry: (fc, err) => err instanceof K8sError && err.isForbidden ? false : fc < 2,
   });
 }
 
@@ -138,7 +143,7 @@ export function useK8sDaemonSets(context?: string, namespace?: string) {
   return useQuery({
     queryKey: [api.k8s.daemonsets.path, context, namespace],
     queryFn: () => k8sFetch(buildUrl(api.k8s.daemonsets.path, { context: context || '', namespace: namespace || '' }), api.k8s.daemonsets.responses[200]),
-    enabled: !!context, retry: (fc, err) => err instanceof K8sError && err.isForbidden ? false : fc < 2,
+    enabled: !!context, refetchInterval: LIST_REFETCH_MS, retry: (fc, err) => err instanceof K8sError && err.isForbidden ? false : fc < 2,
   });
 }
 
@@ -146,7 +151,7 @@ export function useK8sJobs(context?: string, namespace?: string) {
   return useQuery({
     queryKey: [api.k8s.jobs.path, context, namespace],
     queryFn: () => k8sFetch(buildUrl(api.k8s.jobs.path, { context: context || '', namespace: namespace || '' }), api.k8s.jobs.responses[200]),
-    enabled: !!context, retry: (fc, err) => err instanceof K8sError && err.isForbidden ? false : fc < 2,
+    enabled: !!context, refetchInterval: LIST_REFETCH_MS, retry: (fc, err) => err instanceof K8sError && err.isForbidden ? false : fc < 2,
   });
 }
 
@@ -154,7 +159,7 @@ export function useK8sCronJobs(context?: string, namespace?: string) {
   return useQuery({
     queryKey: [api.k8s.cronjobs.path, context, namespace],
     queryFn: () => k8sFetch(buildUrl(api.k8s.cronjobs.path, { context: context || '', namespace: namespace || '' }), api.k8s.cronjobs.responses[200]),
-    enabled: !!context, retry: (fc, err) => err instanceof K8sError && err.isForbidden ? false : fc < 2,
+    enabled: !!context, refetchInterval: LIST_REFETCH_MS, retry: (fc, err) => err instanceof K8sError && err.isForbidden ? false : fc < 2,
   });
 }
 
@@ -162,7 +167,7 @@ export function useK8sNodes(context?: string) {
   return useQuery({
     queryKey: [api.k8s.nodes.path, context],
     queryFn: () => k8sFetch(buildUrl(api.k8s.nodes.path, { context: context || '' }), api.k8s.nodes.responses[200]),
-    enabled: !!context, retry: (fc, err) => err instanceof K8sError && err.isForbidden ? false : fc < 2,
+    enabled: !!context, refetchInterval: LIST_REFETCH_MS, retry: (fc, err) => err instanceof K8sError && err.isForbidden ? false : fc < 2,
   });
 }
 
@@ -170,7 +175,7 @@ export function useK8sHpa(context?: string, namespace?: string) {
   return useQuery({
     queryKey: [api.k8s.hpa.path, context, namespace],
     queryFn: () => k8sFetch(buildUrl(api.k8s.hpa.path, { context: context || '', namespace: namespace || '' }), api.k8s.hpa.responses[200]),
-    enabled: !!context, retry: (fc, err) => err instanceof K8sError && err.isForbidden ? false : fc < 2,
+    enabled: !!context, refetchInterval: LIST_REFETCH_MS, retry: (fc, err) => err instanceof K8sError && err.isForbidden ? false : fc < 2,
   });
 }
 
@@ -178,7 +183,7 @@ export function useK8sPvcs(context?: string, namespace?: string) {
   return useQuery({
     queryKey: [api.k8s.pvcs.path, context, namespace],
     queryFn: () => k8sFetch(buildUrl(api.k8s.pvcs.path, { context: context || '', namespace: namespace || '' }), api.k8s.pvcs.responses[200]),
-    enabled: !!context, retry: (fc, err) => err instanceof K8sError && err.isForbidden ? false : fc < 2,
+    enabled: !!context, refetchInterval: LIST_REFETCH_MS, retry: (fc, err) => err instanceof K8sError && err.isForbidden ? false : fc < 2,
   });
 }
 

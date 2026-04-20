@@ -8,83 +8,83 @@
   --font-sans: 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
-  --background: 220 16% 96%;
-  --foreground: 222 20% 14%;
+  --background: 220 14% 95%;
+  --foreground: 224 20% 12%;
 
   --card: 0 0% 100%;
-  --card-foreground: 222 20% 14%;
+  --card-foreground: 224 20% 12%;
 
   --popover: 0 0% 100%;
-  --popover-foreground: 222 20% 14%;
+  --popover-foreground: 224 20% 12%;
 
-  --primary: 187 72% 34%;
+  --primary: 200 80% 32%;
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 220 14% 90%;
-  --secondary-foreground: 222 20% 20%;
+  --secondary: 220 12% 88%;
+  --secondary-foreground: 224 20% 16%;
 
-  --muted: 220 14% 92%;
-  --muted-foreground: 220 10% 42%;
+  --muted: 220 12% 90%;
+  --muted-foreground: 220 8% 38%;
 
-  --accent: 187 72% 34%;
+  --accent: 200 80% 32%;
   --accent-foreground: 0 0% 100%;
 
-  --destructive: 0 72% 51%;
+  --destructive: 0 72% 48%;
   --destructive-foreground: 0 0% 100%;
 
-  --border: 220 13% 86%;
-  --input: 220 13% 86%;
-  --ring: 187 72% 34%;
+  --border: 220 12% 84%;
+  --input: 220 12% 84%;
+  --ring: 200 80% 40%;
 
   --radius: 0.5rem;
 
-  --surface: 0 0% 100%;
-  --surface-inset: 220 14% 93%;
+  --surface: 0 0% 99%;
+  --surface-inset: 220 12% 92%;
 
-  --chart-1: 187 72% 34%;
-  --chart-2: 160 65% 36%;
-  --chart-3: 258 55% 50%;
-  --chart-4: 38 75% 48%;
-  --chart-5: 340 65% 50%;
+  --chart-1: 200 80% 32%;
+  --chart-2: 160 65% 32%;
+  --chart-3: 258 55% 48%;
+  --chart-4: 38 75% 44%;
+  --chart-5: 340 65% 48%;
 }
 
 .dark {
-  --background: 220 20% 4%;
-  --foreground: 210 20% 90%;
+  --background: 222 22% 5%;
+  --foreground: 210 18% 88%;
 
-  --card: 220 20% 6%;
-  --card-foreground: 210 20% 90%;
+  --card: 222 22% 7%;
+  --card-foreground: 210 18% 88%;
 
-  --popover: 220 20% 5%;
-  --popover-foreground: 210 20% 90%;
+  --popover: 222 22% 6%;
+  --popover-foreground: 210 18% 88%;
 
-  --primary: 187 80% 48%;
-  --primary-foreground: 220 20% 4%;
+  --primary: 192 80% 50%;
+  --primary-foreground: 222 22% 5%;
 
-  --secondary: 220 15% 10%;
-  --secondary-foreground: 210 20% 90%;
+  --secondary: 222 16% 11%;
+  --secondary-foreground: 210 18% 88%;
 
-  --muted: 220 15% 12%;
-  --muted-foreground: 215 15% 55%;
+  --muted: 222 16% 13%;
+  --muted-foreground: 218 14% 52%;
 
-  --accent: 187 80% 48%;
-  --accent-foreground: 220 20% 4%;
+  --accent: 192 80% 50%;
+  --accent-foreground: 222 22% 5%;
 
-  --destructive: 0 62% 30%;
-  --destructive-foreground: 210 20% 90%;
+  --destructive: 0 58% 32%;
+  --destructive-foreground: 210 18% 88%;
 
-  --border: 220 15% 12%;
-  --input: 220 15% 12%;
-  --ring: 187 80% 48%;
+  --border: 222 16% 13%;
+  --input: 222 16% 13%;
+  --ring: 192 80% 50%;
 
-  --surface: 220 20% 5.5%;
-  --surface-inset: 220 25% 3%;
+  --surface: 222 22% 6.5%;
+  --surface-inset: 222 26% 3.5%;
 
-  --chart-1: 187 80% 48%;
-  --chart-2: 160 70% 50%;
-  --chart-3: 258 80% 68%;
-  --chart-4: 38 80% 60%;
-  --chart-5: 340 75% 60%;
+  --chart-1: 192 80% 50%;
+  --chart-2: 160 70% 48%;
+  --chart-3: 258 76% 66%;
+  --chart-4: 38 80% 58%;
+  --chart-5: 340 72% 58%;
 }
 
 @layer base {
@@ -136,6 +136,18 @@
       linear-gradient(hsl(var(--primary) / 0.04) 1px, transparent 1px),
       linear-gradient(90deg, hsl(var(--primary) / 0.04) 1px, transparent 1px);
     background-size: 48px 48px;
+  }
+
+  .app-header {
+    -webkit-app-region: drag;
+  }
+  .app-header button,
+  .app-header select,
+  .app-header input,
+  .app-header a,
+  .app-header [data-radix-collection-item],
+  .app-no-drag {
+    -webkit-app-region: no-drag;
   }
 }
 

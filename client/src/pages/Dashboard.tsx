@@ -172,24 +172,28 @@ export default function Dashboard() {
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden font-mono text-foreground selection:bg-primary/30">
       {/* ══════ HEADER BAR ══════ */}
-      <header className="relative z-10 border-b border-border bg-surface/90 backdrop-blur-xl">
+      <header className="app-header relative z-10 border-b border-border bg-surface/90 backdrop-blur-xl">
         {/* Top accent line */}
-        <div className="h-[1px] bg-gradient-to-r from-transparent via-cyan-500/50 to-transparent" />
+        <div className="h-[1px] bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
         
-        <div className="flex items-center h-12 px-4 gap-0">
+        <div className="flex items-center h-12 pl-20 pr-4 gap-0">
           {/* Logo */}
           <div className="flex items-center gap-2.5 pr-5 border-r border-border">
             <div className="relative flex items-center justify-center w-7 h-7">
-              <Monitor className="w-4.5 h-4.5 text-cyan-400" />
-              <div className="absolute inset-0 bg-cyan-500/10 rounded blur-sm" />
+              <Monitor className="w-4.5 h-4.5 text-primary" />
+              <div className="absolute inset-0 bg-primary/10 rounded blur-sm" />
             </div>
             <div className="flex flex-col">
-              <span className="text-[11px] font-bold tracking-[0.2em] text-cyan-400">KUBEDECK</span>
+              <span className="text-[11px] font-bold tracking-[0.2em] text-primary">KUBEDECK</span>
             </div>
           </div>
 
+          {/* Breadcrumb: Dashboard */}
+          <ChevronRight className="w-3 h-3 text-muted-foreground/30 mx-2" />
+          <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-foreground/80">Dashboard</span>
+
           {/* Separator */}
-          <ChevronRight className="w-3 h-3 text-muted-foreground/20 mx-3" />
+          <ChevronRight className="w-3 h-3 text-muted-foreground/30 mx-2" />
 
           {/* Context Select */}
           <div className="flex items-center gap-2 pr-4 border-r border-border">
@@ -249,18 +253,19 @@ export default function Dashboard() {
               <RefreshCw className="w-3.5 h-3.5" />
             </motion.button>
 
-            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/5 border border-emerald-500/15 rounded-sm">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/8 border border-emerald-500/20 rounded-sm" title="Auto-refreshing every 10s">
               <div className="relative">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                <div className="absolute inset-0 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping opacity-75" />
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                <div className="absolute inset-0 w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping opacity-60" />
               </div>
               <span className="text-[9px] uppercase tracking-[0.15em] font-bold text-emerald-700 dark:text-emerald-400">LIVE</span>
+              <span className="text-[8px] tabular-nums text-emerald-600/60 dark:text-emerald-400/50">10s</span>
             </div>
           </div>
         </div>
 
         {/* Bottom accent line */}
-        <div className="h-[1px] bg-gradient-to-r from-cyan-500/20 via-transparent to-emerald-500/20" />
+        <div className="h-[1px] bg-gradient-to-r from-primary/20 via-transparent to-emerald-500/20" />
         </header>
 
       {/* ══════ MAIN CONTENT ══════ */}
