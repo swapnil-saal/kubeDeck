@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import { queryClient } from "./lib/queryClient";
@@ -11,6 +11,7 @@ import ResourceDetail from "@/pages/ResourceDetail";
 import Settings from "@/pages/Settings";
 import NotFound from "@/pages/not-found";
 import { TerminalPanel } from "@/components/TerminalPanel";
+import { KubectlPalette } from "@/components/KubectlPalette";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
 
 function Routes() {
@@ -26,13 +27,18 @@ function Routes() {
 
 function AppShell() {
   const { context, namespace, terminalOpen, toggleTerminal } = useTerminalStore();
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const closePalette = useCallback(() => setPaletteOpen(false), []);
 
-  // Global keyboard shortcut: Ctrl+` to toggle terminal
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key === "`") {
         e.preventDefault();
         toggleTerminal();
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setPaletteOpen(prev => !prev);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -41,20 +47,20 @@ function AppShell() {
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
-      {/* Page content fills remaining space above terminal */}
       <div className="flex-1 overflow-auto min-h-0">
         <WouterRouter hook={useHashLocation}>
           <Routes />
         </WouterRouter>
       </div>
 
-      {/* Terminal available on every page */}
       <TerminalPanel
         context={context}
         namespace={namespace}
         isOpen={terminalOpen}
         onToggle={toggleTerminal}
       />
+
+      <KubectlPalette open={paletteOpen} onClose={closePalette} />
     </div>
   );
 }

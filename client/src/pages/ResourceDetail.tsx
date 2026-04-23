@@ -17,7 +17,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { AppHeader } from "@/components/AppHeader";
-import { CommandBar, buildDescribeCommand } from "@/components/CommandBar";
+import { CommandBar, buildDetailCommands } from "@/components/CommandBar";
 
 const TYPE_META: Record<string, { label: string }> = {
   pod: { label: "POD" }, deployment: { label: "DEPLOYMENT" }, service: { label: "SERVICE" },
@@ -157,6 +157,99 @@ function EnvViewer({ content, isLoading }: { content?: string; isLoading: boolea
   );
 }
 
+/* ── Log Analysis Engine ─────────────────────────── */
+
+interface LogInsight {
+  severity: "error" | "warning" | "info";
+  title: string;
+  detail: string;
+  count: number;
+  lineNumbers: number[];
+}
+
+const ERROR_PATTERNS: { pattern: RegExp; title: string; severity: "error" | "warning" }[] = [
+  { pattern: /OOMKill/i, title: "OOM Killed", severity: "error" },
+  { pattern: /out\s*of\s*memory/i, title: "Out of Memory", severity: "error" },
+  { pattern: /CrashLoopBackOff/i, title: "CrashLoopBackOff", severity: "error" },
+  { pattern: /panic:|PANIC:/i, title: "Panic / Crash", severity: "error" },
+  { pattern: /fatal|FATAL/i, title: "Fatal Error", severity: "error" },
+  { pattern: /Traceback \(most recent call last\)/i, title: "Python Traceback", severity: "error" },
+  { pattern: /Exception in thread/i, title: "Java Exception", severity: "error" },
+  { pattern: /segmentation fault|SIGSEGV/i, title: "Segfault", severity: "error" },
+  { pattern: /connection refused/i, title: "Connection Refused", severity: "error" },
+  { pattern: /ECONNREFUSED|ECONNRESET|ETIMEDOUT/i, title: "Network Error", severity: "error" },
+  { pattern: /could not connect|failed to connect/i, title: "Connection Failure", severity: "error" },
+  { pattern: /permission denied|access denied|unauthorized|403 Forbidden/i, title: "Permission Denied", severity: "error" },
+  { pattern: /ImagePullBackOff|ErrImagePull/i, title: "Image Pull Error", severity: "error" },
+  { pattern: /readiness probe failed|liveness probe failed/i, title: "Probe Failed", severity: "warning" },
+  { pattern: /error|ERROR|Error/g, title: "Error", severity: "error" },
+  { pattern: /warn|WARN|Warning/gi, title: "Warning", severity: "warning" },
+  { pattern: /timeout|timed out/i, title: "Timeout", severity: "warning" },
+  { pattern: /deprecated/i, title: "Deprecation Warning", severity: "warning" },
+  { pattern: /retry|retrying/i, title: "Retry Detected", severity: "warning" },
+];
+
+function analyzeLogs(lines: string[]): { insights: LogInsight[]; duplicateGroups: { line: string; count: number; first: number }[]; errorRate: { total: number; errors: number; pct: number } } {
+  const insightMap = new Map<string, LogInsight>();
+  let errorCount = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.trim()) continue;
+
+    let isError = false;
+    for (const { pattern, title, severity } of ERROR_PATTERNS) {
+      if (pattern.test(line)) {
+        pattern.lastIndex = 0;
+        const key = title;
+        const existing = insightMap.get(key);
+        if (existing) {
+          existing.count++;
+          if (existing.lineNumbers.length < 5) existing.lineNumbers.push(i + 1);
+        } else {
+          insightMap.set(key, { severity, title, detail: line.slice(0, 120).trim(), count: 1, lineNumbers: [i + 1] });
+        }
+        if (severity === "error") isError = true;
+      }
+    }
+    if (isError) errorCount++;
+  }
+
+  // Deduplicate lines — normalize by removing timestamps/IDs
+  const normalized = new Map<string, { line: string; count: number; first: number }>();
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const key = line.replace(/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^\s]*/g, "<TS>")
+                     .replace(/[0-9a-f]{8,}/gi, "<ID>")
+                     .replace(/\d+\.\d+\.\d+\.\d+/g, "<IP>")
+                     .replace(/:\d{2,5}/g, ":<PORT>");
+    const existing = normalized.get(key);
+    if (existing) {
+      existing.count++;
+    } else {
+      normalized.set(key, { line: line.slice(0, 120), count: 1, first: i + 1 });
+    }
+  }
+
+  const duplicateGroups = Array.from(normalized.values())
+    .filter(g => g.count > 2)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+
+  const insights = Array.from(insightMap.values()).sort((a, b) => {
+    if (a.severity === "error" && b.severity !== "error") return -1;
+    if (b.severity === "error" && a.severity !== "error") return 1;
+    return b.count - a.count;
+  });
+
+  return {
+    insights,
+    duplicateGroups,
+    errorRate: { total: lines.filter(l => l.trim()).length, errors: errorCount, pct: lines.length > 0 ? Math.round((errorCount / lines.filter(l => l.trim()).length) * 100) : 0 },
+  };
+}
+
 /* ── Log Viewer with search/grep ─────────────────── */
 
 function LogViewer({ content, isLoading, streaming, streamProps, grep, onGrepChange }: {
@@ -171,6 +264,7 @@ function LogViewer({ content, isLoading, streaming, streamProps, grep, onGrepCha
   const grepFilter = grep ?? internalGrep;
   const setGrepFilter = onGrepChange ?? setInternalGrep;
   const [follow, setFollow] = useState(true);
+  const [showAnalysis, setShowAnalysis] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const lines = useMemo(() => {
@@ -186,6 +280,11 @@ function LogViewer({ content, isLoading, streaming, streamProps, grep, onGrepCha
       .map((l, i) => ({ line: l, num: i + 1 }))
       .filter(({ line }) => line.toLowerCase().includes(lower));
   }, [lines, grepFilter]);
+
+  const analysis = useMemo(() => {
+    if (!showAnalysis || lines.length === 0) return null;
+    return analyzeLogs(lines);
+  }, [lines, showAnalysis]);
 
   useEffect(() => {
     if (follow && scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -205,6 +304,9 @@ function LogViewer({ content, isLoading, streaming, streamProps, grep, onGrepCha
       </>
     );
   }, [grepFilter]);
+
+  const severityColor = (s: string) => s === "error" ? "text-destructive" : s === "warning" ? "text-amber-500" : "text-foreground/60";
+  const severityBg = (s: string) => s === "error" ? "bg-destructive/8 border-destructive/20" : s === "warning" ? "bg-amber-500/8 border-amber-500/20" : "bg-foreground/[0.03] border-border";
 
   return (
     <div className="h-full flex flex-col">
@@ -226,6 +328,14 @@ function LogViewer({ content, isLoading, streaming, streamProps, grep, onGrepCha
           <span className="text-[9px] text-muted-foreground tabular-nums">
             {grepFilter ? `${filteredLines.length}/${lines.length}` : `${lines.length}`} lines
           </span>
+          {lines.length > 5 && (
+            <button
+              onClick={() => setShowAnalysis(!showAnalysis)}
+              className={`px-2 py-0.5 rounded-sm text-[9px] uppercase font-bold tracking-wider border transition-colors ${showAnalysis ? 'bg-foreground/8 text-foreground border-foreground/15' : 'bg-foreground/[0.03] text-muted-foreground border-border hover:text-foreground'}`}
+            >
+              Analyze
+            </button>
+          )}
           {streaming && (
             <>
               <button onClick={() => setFollow(!follow)} className={`px-2 py-0.5 rounded-sm text-[9px] uppercase font-bold tracking-wider border transition-colors ${follow ? 'bg-foreground/8 text-foreground border-foreground/15' : 'bg-foreground/[0.03] text-muted-foreground border-border'}`}>
@@ -237,6 +347,73 @@ function LogViewer({ content, isLoading, streaming, streamProps, grep, onGrepCha
           {lines.length > 0 && <CopyButton text={filteredLines.map(l => l.line).join("\n")} />}
         </div>
       </div>
+
+      {/* Analysis panel */}
+      {showAnalysis && analysis && (
+        <div className="border-b border-border bg-card/80 overflow-auto max-h-60 shrink-0">
+          <div className="p-3 space-y-3">
+            {/* Error rate summary */}
+            <div className="flex items-center gap-3">
+              <div className={`px-2 py-1 rounded border text-[10px] font-bold tabular-nums ${
+                analysis.errorRate.pct > 20 ? 'bg-destructive/10 border-destructive/20 text-destructive'
+                : analysis.errorRate.pct > 5 ? 'bg-amber-500/10 border-amber-500/20 text-amber-500'
+                : 'bg-foreground/[0.03] border-border text-foreground/60'
+              }`}>
+                {analysis.errorRate.pct}% error rate
+              </div>
+              <span className="text-[9px] text-muted-foreground">
+                {analysis.errorRate.errors} errors in {analysis.errorRate.total} lines
+              </span>
+              {analysis.insights.length === 0 && analysis.duplicateGroups.length === 0 && (
+                <span className="text-[9px] text-foreground/50 ml-2">✓ No significant issues detected</span>
+              )}
+            </div>
+
+            {/* Detected patterns */}
+            {analysis.insights.length > 0 && (
+              <div>
+                <p className="text-[9px] uppercase tracking-[0.2em] font-bold text-muted-foreground mb-1.5">DETECTED PATTERNS</p>
+                <div className="space-y-1">
+                  {analysis.insights.slice(0, 8).map((insight, i) => (
+                    <div key={i} className={`flex items-start gap-2 px-2 py-1.5 rounded border ${severityBg(insight.severity)}`}>
+                      <span className={`text-[9px] font-bold uppercase shrink-0 mt-px ${severityColor(insight.severity)}`}>
+                        {insight.severity === "error" ? "ERR" : "WRN"}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-[10px] font-bold text-foreground/80">{insight.title}</span>
+                        <span className="text-[9px] text-muted-foreground ml-2">×{insight.count}</span>
+                        <p className="text-[9px] text-muted-foreground truncate mt-0.5">{insight.detail}</p>
+                      </div>
+                      <button
+                        onClick={() => setGrepFilter(insight.title.toLowerCase().includes("error") ? "error" : insight.title.split(" ")[0])}
+                        className="text-[8px] text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded border border-border hover:bg-foreground/5 transition-colors shrink-0"
+                      >
+                        GREP
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Duplicate groups */}
+            {analysis.duplicateGroups.length > 0 && (
+              <div>
+                <p className="text-[9px] uppercase tracking-[0.2em] font-bold text-muted-foreground mb-1.5">REPEATED PATTERNS</p>
+                <div className="space-y-1">
+                  {analysis.duplicateGroups.slice(0, 5).map((group, i) => (
+                    <div key={i} className="flex items-center gap-2 px-2 py-1.5 rounded border border-border bg-foreground/[0.02]">
+                      <span className="text-[10px] font-bold text-foreground/60 tabular-nums shrink-0">×{group.count}</span>
+                      <span className="text-[9px] text-muted-foreground truncate font-mono">{group.line}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div ref={scrollRef} className="flex-1 overflow-auto p-4 bg-surface-inset rounded-b border border-t-0 border-border font-mono text-[11px] leading-relaxed"
         onScroll={() => { if (!scrollRef.current) return; const { scrollTop, scrollHeight, clientHeight } = scrollRef.current; if (scrollHeight - scrollTop - clientHeight > 100) setFollow(false); }}
       >
@@ -604,7 +781,7 @@ export default function ResourceDetail() {
       {/* ══════ PORT FORWARD STATUS BAR ══════ */}
       <PortForwardBar />
 
-      <CommandBar command={buildDescribeCommand(type, name, context, namespace)} />
+      <CommandBar commands={buildDetailCommands(type, name, context, namespace, activeTab)} />
     </div>
   );
 }

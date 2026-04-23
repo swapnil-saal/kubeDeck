@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useLocation } from "wouter";
 import { useHashParams } from "@/hooks/use-hash-params";
 import {
@@ -11,12 +11,12 @@ import {
 } from "@/hooks/use-k8s";
 import { ResourceTable } from "@/components/ResourceTable";
 import { AppHeader } from "@/components/AppHeader";
-import { CommandBar, buildKubectlCommand } from "@/components/CommandBar";
+import { CommandBar, buildListCommands } from "@/components/CommandBar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Box, Layers, Network, RefreshCw, Terminal, List, Share2, Trash2, Activity,
   Zap, Square, FileText, Lock, Globe, Database, Clock, Server,
-  Gauge, HardDrive, RotateCw, Scaling,
+  Gauge, HardDrive, RotateCw, Scaling, HeartPulse, AlertTriangle, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -197,13 +197,61 @@ export default function Dashboard() {
     </div>
   );
 
+  // ── Health Summary ──
+  const healthIssues = useMemo(() => {
+    const issues: { severity: "critical" | "warning" | "info"; message: string; tab: string }[] = [];
+
+    // Pod health
+    if (pods) {
+      const crashing = pods.filter(p => ["CrashLoopBackOff", "Error", "ImagePullBackOff", "ErrImagePull", "OOMKilled"].includes(p.status));
+      if (crashing.length > 0) issues.push({ severity: "critical", message: `${crashing.length} pod${crashing.length > 1 ? "s" : ""} in error state (${crashing.slice(0, 3).map(p => p.name.slice(0, 25)).join(", ")}${crashing.length > 3 ? "…" : ""})`, tab: "pods" });
+
+      const pending = pods.filter(p => ["Pending", "ContainerCreating"].includes(p.status));
+      if (pending.length > 0) issues.push({ severity: "warning", message: `${pending.length} pod${pending.length > 1 ? "s" : ""} pending`, tab: "pods" });
+
+      const highRestarts = pods.filter(p => p.restarts > 5);
+      if (highRestarts.length > 0) issues.push({ severity: "warning", message: `${highRestarts.length} pod${highRestarts.length > 1 ? "s" : ""} with >5 restarts (${highRestarts.slice(0, 2).map(p => `${p.name.slice(0, 20)}:${p.restarts}`).join(", ")})`, tab: "pods" });
+    }
+
+    // Deployment health
+    if (deployments) {
+      const unhealthy = deployments.filter(d => {
+        const [cur, tot] = d.ready.split("/");
+        return Number(cur) < Number(tot) || Number(tot) === 0;
+      });
+      if (unhealthy.length > 0) issues.push({ severity: "critical", message: `${unhealthy.length} deployment${unhealthy.length > 1 ? "s" : ""} not fully ready (${unhealthy.slice(0, 3).map(d => `${d.name.slice(0, 20)} ${d.ready}`).join(", ")})`, tab: "deployments" });
+    }
+
+    // Node health
+    if (nodes) {
+      const notReady = nodes.filter(n => n.status !== "Ready");
+      if (notReady.length > 0) issues.push({ severity: "critical", message: `${notReady.length} node${notReady.length > 1 ? "s" : ""} not ready (${notReady.map(n => n.name.slice(0, 20)).join(", ")})`, tab: "nodes" });
+    }
+
+    // Job failures
+    if (jobs) {
+      const failed = jobs.filter(j => j.status === "Failed");
+      if (failed.length > 0) issues.push({ severity: "warning", message: `${failed.length} failed job${failed.length > 1 ? "s" : ""}`, tab: "jobs" });
+    }
+
+    // PVC issues
+    if (pvcs) {
+      const pending = pvcs.filter(p => p.status !== "Bound");
+      if (pending.length > 0) issues.push({ severity: "warning", message: `${pending.length} PVC${pending.length > 1 ? "s" : ""} not bound`, tab: "pvcs" });
+    }
+
+    return issues;
+  }, [pods, deployments, nodes, jobs, pvcs]);
+
+  const [healthExpanded, setHealthExpanded] = useState(true);
+
   const tabToResource: Record<string, string> = {
     pods: "pods", deployments: "deployments", services: "services",
     statefulsets: "statefulsets", daemonsets: "daemonsets", jobs: "jobs",
     cronjobs: "cronjobs", configmaps: "configmaps", secrets: "secrets",
     ingresses: "ingresses", nodes: "nodes", hpa: "hpa", pvcs: "pvc",
   };
-  const currentCmd = buildKubectlCommand(tabToResource[activeTab] || activeTab, currentContext, currentNamespace);
+  const currentCmds = buildListCommands(tabToResource[activeTab] || activeTab, currentContext, currentNamespace);
 
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden font-mono text-foreground selection:bg-primary/30">
@@ -244,6 +292,60 @@ export default function Dashboard() {
               </motion.div>
               ))}
             </div>
+
+          {/* ── HEALTH SUMMARY ── */}
+          {!podsLoading && !deployLoading && !nodesLoading && (
+            <div className={`rounded-lg border overflow-hidden transition-all ${
+              healthIssues.length === 0
+                ? "border-foreground/10 bg-foreground/[0.02]"
+                : healthIssues.some(i => i.severity === "critical")
+                  ? "border-destructive/20 bg-destructive/[0.03]"
+                  : "border-amber-500/20 bg-amber-500/[0.03]"
+            }`}>
+              <button
+                onClick={() => setHealthExpanded(!healthExpanded)}
+                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left"
+              >
+                <HeartPulse className={`w-3.5 h-3.5 shrink-0 ${
+                  healthIssues.length === 0 ? "text-foreground/40" : healthIssues.some(i => i.severity === "critical") ? "text-destructive/70" : "text-amber-500/70"
+                }`} />
+                <span className="text-[10px] uppercase tracking-[0.15em] font-bold text-foreground/70">
+                  Cluster Health
+                </span>
+                {healthIssues.length === 0 ? (
+                  <span className="text-[10px] text-foreground/40 ml-1">All systems healthy</span>
+                ) : (
+                  <span className="text-[10px] text-foreground/60 ml-1">
+                    {healthIssues.filter(i => i.severity === "critical").length > 0 && (
+                      <span className="text-destructive/80 font-bold mr-2">{healthIssues.filter(i => i.severity === "critical").length} critical</span>
+                    )}
+                    {healthIssues.filter(i => i.severity === "warning").length > 0 && (
+                      <span className="text-amber-500/80 font-bold">{healthIssues.filter(i => i.severity === "warning").length} warning{healthIssues.filter(i => i.severity === "warning").length > 1 ? "s" : ""}</span>
+                    )}
+                  </span>
+                )}
+                <div className="ml-auto">
+                  {healthExpanded ? <ChevronUp className="w-3 h-3 text-muted-foreground/40" /> : <ChevronDown className="w-3 h-3 text-muted-foreground/40" />}
+                </div>
+              </button>
+
+              {healthExpanded && healthIssues.length > 0 && (
+                <div className="px-4 pb-3 space-y-1 border-t border-border/30 pt-2">
+                  {healthIssues.map((issue, i) => (
+                    <div key={i} className="flex items-start gap-2">
+                      <AlertTriangle className={`w-3 h-3 shrink-0 mt-0.5 ${issue.severity === "critical" ? "text-destructive/60" : "text-amber-500/60"}`} />
+                      <button
+                        onClick={() => setActiveTab(issue.tab)}
+                        className="text-[10px] text-foreground/70 hover:text-foreground text-left transition-colors"
+                      >
+                        {issue.message}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* ── RESOURCE TABS ── */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -928,7 +1030,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      <CommandBar command={currentCmd} />
+      <CommandBar commands={currentCmds} />
     </div>
   );
 }

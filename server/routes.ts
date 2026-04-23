@@ -1122,5 +1122,21 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  // ── Execute arbitrary kubectl command ─────────────
+  app.post("/api/kubectl/exec", async (req, res) => {
+    try {
+      const { command } = req.body;
+      if (!command || typeof command !== "string") {
+        return res.status(400).json({ message: "Missing command" });
+      }
+      // Strip leading "kubectl " if present
+      const raw = command.replace(/^kubectl\s+/, "");
+      const result = await runKubectlRaw(raw);
+      res.json({ stdout: result.stdout, stderr: result.stderr, code: result.code });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Execution failed" });
+    }
+  });
+
   return httpServer;
 }
