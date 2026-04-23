@@ -7,6 +7,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Dashboard from "@/pages/Dashboard";
 import ResourceDetail from "@/pages/ResourceDetail";
+import Settings from "@/pages/Settings";
 import NotFound from "@/pages/not-found";
 import { TerminalPanel } from "@/components/TerminalPanel";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
@@ -16,6 +17,7 @@ function Router() {
     <Switch>
       <Route path="/" component={Dashboard} />
       <Route path="/resource/:type/:name" component={ResourceDetail} />
+      <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>
   );

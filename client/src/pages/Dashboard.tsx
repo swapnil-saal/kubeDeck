@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import {
-  useK8sContexts, useK8sNamespaces, useK8sPods, useK8sDeployments, useK8sServices,
+  useK8sContexts, useK8sPods, useK8sDeployments, useK8sServices,
   useK8sConfigMaps, useK8sSecrets, useK8sIngresses, useK8sStatefulSets, useK8sDaemonSets,
   useK8sJobs, useK8sCronJobs, useK8sNodes, useK8sHpa, useK8sPvcs,
   useDeletePod, usePodLogs, usePodEnv, usePortForward, usePortForwards, useStopPortForward,
@@ -9,12 +9,12 @@ import {
   K8sError,
 } from "@/hooks/use-k8s";
 import { ResourceTable } from "@/components/ResourceTable";
+import { AppHeader } from "@/components/AppHeader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  Box, Layers, Network, RefreshCw, Terminal, List, Share2, Trash2, Monitor, Activity,
-  ChevronRight, Zap, Square, Star, FileText, Lock, Globe, Database, Clock, Server,
-  Gauge, HardDrive, RotateCw, Scaling, Image,
+  Box, Layers, Network, RefreshCw, Terminal, List, Share2, Trash2, Activity,
+  Zap, Square, FileText, Lock, Globe, Database, Clock, Server,
+  Gauge, HardDrive, RotateCw, Scaling,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -22,10 +22,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
-import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default function Dashboard() {
-  const { context: currentContext, namespace: currentNamespace, setContext: handleSetContext, setNamespace: handleSetNamespace } = useTerminalStore();
+  const { context: currentContext, namespace: currentNamespace, setContext: handleSetContext } = useTerminalStore();
   const [selectedPod, setSelectedPod] = useState<{ name: string; type: 'logs' | 'env' | 'forward' | null }>({ name: '', type: null });
   const [forwardPort, setForwardPort] = useState<string>("8080");
   const [remotePort, setRemotePort] = useState<string>("80");
@@ -48,7 +47,6 @@ export default function Dashboard() {
     }
   }, [contexts, currentContext, handleSetContext]);
 
-  const { data: namespaces } = useK8sNamespaces(currentContext);
   const { data: pods, isLoading: podsLoading, isError: podsError, error: podsErrorObj, refetch: refetchPods } = useK8sPods(currentContext, currentNamespace);
   const { data: deployments, isLoading: deployLoading, isError: deployError, error: deployErrorObj, refetch: refetchDeploy } = useK8sDeployments(currentContext, currentNamespace);
   const { data: services, isLoading: servicesLoading, isError: servicesError, error: servicesErrorObj, refetch: refetchServices } = useK8sServices(currentContext, currentNamespace);
@@ -169,104 +167,32 @@ export default function Dashboard() {
     { label: "ING", value: getStatValue(ingresses, ingLoading, ingError, ingErrorObj), icon: Globe, color: "pink", isError: ingError, isForbidden: ingErrorObj instanceof K8sError && ingErrorObj.isForbidden },
   ];
 
+  const headerRight = (
+    <div className="flex items-center gap-2">
+      <motion.button
+        onClick={handleRefresh}
+        whileTap={{ rotate: 180 }}
+        transition={{ duration: 0.3 }}
+        className="p-1.5 hover:bg-foreground/5 rounded text-muted-foreground hover:text-primary transition-all"
+        title="Refresh"
+      >
+        <RefreshCw className="w-3.5 h-3.5" />
+      </motion.button>
+
+      <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/8 border border-emerald-500/20 rounded-sm" title="Auto-refreshing every 10s">
+        <div className="relative">
+          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+          <div className="absolute inset-0 w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping opacity-60" />
+        </div>
+        <span className="text-[9px] uppercase tracking-[0.15em] font-bold text-emerald-700 dark:text-emerald-400">LIVE</span>
+        <span className="text-[8px] tabular-nums text-emerald-600/60 dark:text-emerald-400/50">10s</span>
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden font-mono text-foreground selection:bg-primary/30">
-      {/* ══════ HEADER BAR ══════ */}
-      <header className="app-header relative z-10 border-b border-border bg-surface/90 backdrop-blur-xl">
-        {/* Top accent line */}
-        <div className="h-[1px] bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
-        
-        <div className="flex items-center h-12 pl-20 pr-4 gap-0">
-          {/* Logo */}
-          <div className="flex items-center gap-2.5 pr-5 border-r border-border">
-            <div className="relative flex items-center justify-center w-7 h-7">
-              <Monitor className="w-4.5 h-4.5 text-primary" />
-              <div className="absolute inset-0 bg-primary/10 rounded blur-sm" />
-            </div>
-            <div className="flex flex-col">
-              <span className="text-[11px] font-bold tracking-[0.2em] text-primary">KUBEDECK</span>
-            </div>
-          </div>
-
-          {/* Breadcrumb: Dashboard */}
-          <ChevronRight className="w-3 h-3 text-muted-foreground/30 mx-2" />
-          <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-foreground/80">Dashboard</span>
-
-          {/* Separator */}
-          <ChevronRight className="w-3 h-3 text-muted-foreground/30 mx-2" />
-
-          {/* Context Select */}
-          <div className="flex items-center gap-2 pr-4 border-r border-border">
-            <span className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground font-bold">CTX</span>
-            <Select value={currentContext} onValueChange={handleSetContext}>
-              <SelectTrigger className="w-44 h-7 bg-transparent border-border hover:border-primary/30 focus:ring-0 focus:ring-offset-0 text-[11px] font-mono text-cyan-700 dark:text-cyan-400 rounded-sm px-2">
-                <SelectValue placeholder="select context" />
-              </SelectTrigger>
-              <SelectContent className="bg-popover border-border text-foreground font-mono">
-                {contexts?.map((ctx) => (
-                  <SelectItem key={ctx.name} value={ctx.name} className="text-[11px] font-mono focus:bg-primary/10 focus:text-primary">
-                    <div className="flex items-center gap-2">
-                      {ctx.isCurrent && <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.7)]" />}
-                      {currentContext === ctx.name && <Star className="w-2.5 h-2.5 text-amber-400 fill-amber-400" />}
-                      {ctx.name}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Separator */}
-          <ChevronRight className="w-3 h-3 text-muted-foreground/20 mx-3" />
-
-          {/* Namespace Select */}
-          <div className="flex items-center gap-2">
-            <span className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground font-bold">NS</span>
-            <Select value={currentNamespace} onValueChange={handleSetNamespace}>
-              <SelectTrigger className="w-44 h-7 bg-transparent border-border hover:border-primary/30 focus:ring-0 focus:ring-offset-0 text-[11px] font-mono text-emerald-700 dark:text-emerald-400 rounded-sm px-2">
-                <SelectValue placeholder="select namespace" />
-                </SelectTrigger>
-              <SelectContent className="bg-popover border-border text-foreground font-mono max-h-64">
-                <SelectItem value="all" className="text-[11px] font-mono focus:bg-primary/10 focus:text-primary">
-                  * all namespaces
-                </SelectItem>
-                  {namespaces?.map((ns) => (
-                  <SelectItem key={ns.name} value={ns.name} className="text-[11px] font-mono focus:bg-primary/10 focus:text-primary">
-                      {ns.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-          </div>
-
-          {/* Right side */}
-          <div className="ml-auto flex items-center gap-2">
-            <ThemeToggle />
-
-            <motion.button
-              onClick={handleRefresh}
-              whileTap={{ rotate: 180 }}
-              transition={{ duration: 0.3 }}
-              className="p-1.5 hover:bg-foreground/5 rounded text-muted-foreground hover:text-primary transition-all"
-              title="Refresh"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-            </motion.button>
-
-            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/8 border border-emerald-500/20 rounded-sm" title="Auto-refreshing every 10s">
-              <div className="relative">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                <div className="absolute inset-0 w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping opacity-60" />
-              </div>
-              <span className="text-[9px] uppercase tracking-[0.15em] font-bold text-emerald-700 dark:text-emerald-400">LIVE</span>
-              <span className="text-[8px] tabular-nums text-emerald-600/60 dark:text-emerald-400/50">10s</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Bottom accent line */}
-        <div className="h-[1px] bg-gradient-to-r from-primary/20 via-transparent to-emerald-500/20" />
-        </header>
+      <AppHeader breadcrumbs={[{ label: "Dashboard" }]} rightSlot={headerRight} />
 
       {/* ══════ MAIN CONTENT ══════ */}
       <main className="flex-1 overflow-auto relative">
@@ -278,7 +204,7 @@ export default function Dashboard() {
         
         <div className="relative p-5 max-w-[1600px] mx-auto space-y-5">
           {/* ── STAT CARDS ── */}
-          <div className="grid grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
             {stats.map((stat, i) => (
               <motion.div
                 key={stat.label}

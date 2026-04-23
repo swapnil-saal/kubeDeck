@@ -3,6 +3,7 @@ import {
   k8sContextSchema, k8sNamespaceSchema, k8sPodSchema, k8sDeploymentSchema, k8sServiceSchema,
   k8sConfigMapSchema, k8sSecretSchema, k8sIngressSchema, k8sStatefulSetSchema,
   k8sDaemonSetSchema, k8sJobSchema, k8sCronJobSchema, k8sNodeSchema, k8sHpaSchema, k8sPvcSchema,
+  settingsSchema, settingsInputSchema, kubeconfigFileSchema,
 } from './schema';
 
 export const errorSchemas = {
@@ -183,7 +184,25 @@ export const api = {
     terminal: {
       path: '/api/terminal' as const,
     },
-  }
+  },
+  settings: {
+    get: {
+      method: 'GET' as const,
+      path: '/api/settings' as const,
+      responses: { 200: settingsSchema },
+    },
+    update: {
+      method: 'PUT' as const,
+      path: '/api/settings' as const,
+      input: settingsInputSchema,
+      responses: { 200: z.object({ message: z.string() }) },
+    },
+    kubeconfigScan: {
+      method: 'GET' as const,
+      path: '/api/settings/kubeconfig/scan' as const,
+      responses: { 200: z.array(kubeconfigFileSchema) },
+    },
+  },
 };
 
 export function buildUrl(path: string, params?: Record<string, string | number>): string {
@@ -210,3 +229,5 @@ export type DeploymentsResponse = z.infer<typeof api.k8s.deployments.responses[2
 export type ServicesResponse = z.infer<typeof api.k8s.services.responses[200]>;
 export type RelatedResources = z.infer<typeof relatedResourceSchema>;
 export type PortForwardEntry = z.infer<typeof portForwardEntrySchema>;
+export type SettingsResponse = z.infer<typeof settingsSchema>;
+export type KubeconfigFileInfo = z.infer<typeof kubeconfigFileSchema>;
