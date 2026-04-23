@@ -153,12 +153,20 @@ export const k8sPvcSchema = z.object({
 
 // ── Settings schemas ────────────────────────────────
 
+export const aiProviderSchema = z.object({
+  provider: z.enum(["openai", "anthropic", "ollama", "custom"]),
+  apiKey: z.string(),
+  model: z.string(),
+  baseUrl: z.string(),
+});
+
 export const settingsSchema = z.object({
   kubeconfigPaths: z.array(z.string()),
   files: z.array(z.object({
     path: z.string(),
     exists: z.boolean(),
   })),
+  ai: aiProviderSchema.optional(),
 });
 
 export const settingsInputSchema = z.object({

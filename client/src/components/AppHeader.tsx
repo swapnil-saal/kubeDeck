@@ -1,6 +1,6 @@
 import { type ReactNode } from "react";
 import { useLocation } from "wouter";
-import { Monitor, ChevronRight, Settings, LayoutDashboard, Sparkles } from "lucide-react";
+import { Monitor, ChevronRight, Settings, LayoutDashboard, Sparkles, Bot } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
@@ -142,6 +142,14 @@ export function AppHeader({ breadcrumbs, rightSlot, showSelectors = true }: AppH
             <Sparkles className="w-3 h-3" />
             <span className="text-[10px] font-mono">kubectl</span>
             <kbd className="text-[8px] font-bold text-muted-foreground/40 border border-border/60 px-1 py-0.5 rounded">⌘K</kbd>
+          </button>
+          <button
+            onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "i", metaKey: true, shiftKey: true }))}
+            className="flex items-center gap-1.5 h-7 px-2.5 rounded-md border border-border/60 bg-foreground/[0.02] text-muted-foreground hover:text-foreground hover:border-foreground/15 transition-colors"
+            title="AI Chat (⌘⇧I)"
+          >
+            <Bot className="w-3 h-3" />
+            <span className="text-[10px] font-mono">AI</span>
           </button>
           <ThemeToggle />
           {rightSlot}

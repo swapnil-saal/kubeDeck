@@ -18,6 +18,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { AppHeader } from "@/components/AppHeader";
 import { CommandBar, buildDetailCommands } from "@/components/CommandBar";
+import { AiTroubleshootButton } from "@/components/AiTroubleshoot";
+import { AiExplainButton } from "@/components/AiExplainYaml";
 
 const TYPE_META: Record<string, { label: string }> = {
   pod: { label: "POD" }, deployment: { label: "DEPLOYMENT" }, service: { label: "SERVICE" },
@@ -718,11 +720,32 @@ export default function ResourceDetail() {
           <AnimatePresence mode="wait">
             <motion.div key={activeTab} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }} className="h-full">
               {activeTab === "describe" && (
-                <TerminalPane content={describeData?.content} isLoading={describeLoading}
-                  emptyMsg={describeError ? (describeErrorObj?.message || "Failed to describe") : "No data"} />
+                <div className="h-full flex flex-col">
+                  <div className="flex items-center justify-end gap-2 mb-2 shrink-0">
+                    <AiTroubleshootButton
+                      resourceType={type}
+                      name={name}
+                      namespace={namespace}
+                      context={context}
+                      describe={describeData?.content}
+                      events={eventsData?.content}
+                    />
+                  </div>
+                  <div className="flex-1 min-h-0">
+                    <TerminalPane content={describeData?.content} isLoading={describeLoading}
+                      emptyMsg={describeError ? (describeErrorObj?.message || "Failed to describe") : "No data"} />
+                  </div>
+                </div>
               )}
               {activeTab === "yaml" && (
-                <YamlViewer content={yamlData?.content} isLoading={yamlLoading} />
+                <div className="h-full flex flex-col">
+                  <div className="flex items-center justify-end gap-2 mb-2 shrink-0">
+                    <AiExplainButton yaml={yamlData?.content || ""} resourceType={type} />
+                  </div>
+                  <div className="flex-1 min-h-0">
+                    <YamlViewer content={yamlData?.content} isLoading={yamlLoading} />
+                  </div>
+                </div>
               )}
               {activeTab === "logs" && isPod && (
                 <StreamingLogsPane name={name} context={context} namespace={namespace} grep={grepFilter} onGrepChange={setGrepFilter} />

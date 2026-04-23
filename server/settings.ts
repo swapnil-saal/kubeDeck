@@ -5,13 +5,27 @@ import * as os from "os";
 const SETTINGS_DIR = path.join(os.homedir(), ".kubedeck");
 const SETTINGS_FILE = path.join(SETTINGS_DIR, "settings.json");
 
+export interface AiProviderSettings {
+  provider: "openai" | "anthropic" | "ollama" | "custom";
+  apiKey: string;
+  model: string;
+  baseUrl: string;
+}
+
 export interface KubeDeckSettings {
   kubeconfigPaths: string[];
+  ai?: AiProviderSettings;
 }
 
 function defaults(): KubeDeckSettings {
   return {
     kubeconfigPaths: [path.join(os.homedir(), ".kube", "config")],
+    ai: {
+      provider: "openai",
+      apiKey: "",
+      model: "gpt-4o-mini",
+      baseUrl: "",
+    },
   };
 }
 
@@ -23,7 +37,10 @@ export function loadSettings(): KubeDeckSettings {
     if (!Array.isArray(parsed.kubeconfigPaths) || parsed.kubeconfigPaths.length === 0) {
       return defaults();
     }
-    return { kubeconfigPaths: parsed.kubeconfigPaths };
+    return {
+      kubeconfigPaths: parsed.kubeconfigPaths,
+      ai: parsed.ai || defaults().ai,
+    };
   } catch {
     return defaults();
   }

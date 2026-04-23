@@ -12,6 +12,7 @@ import Settings from "@/pages/Settings";
 import NotFound from "@/pages/not-found";
 import { TerminalPanel } from "@/components/TerminalPanel";
 import { KubectlPalette } from "@/components/KubectlPalette";
+import { AiChat } from "@/components/AiChat";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
 
 function Routes() {
@@ -28,7 +29,9 @@ function Routes() {
 function AppShell() {
   const { context, namespace, terminalOpen, toggleTerminal } = useTerminalStore();
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const closePalette = useCallback(() => setPaletteOpen(false), []);
+  const toggleChat = useCallback(() => setChatOpen(prev => !prev), []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -39,6 +42,10 @@ function AppShell() {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
         setPaletteOpen(prev => !prev);
+      }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "i") {
+        e.preventDefault();
+        setChatOpen(prev => !prev);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -61,6 +68,7 @@ function AppShell() {
       />
 
       <KubectlPalette open={paletteOpen} onClose={closePalette} />
+      <AiChat open={chatOpen} onClose={toggleChat} />
     </div>
   );
 }

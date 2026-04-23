@@ -9,6 +9,7 @@ import { api } from "@shared/routes";
 import { randomUUID } from "crypto";
 import * as os from "os";
 import { loadSettings, saveSettings, getKubeconfigEnv, scanKubeconfigs } from "./settings";
+import { chatCompletion, streamChatCompletion } from "./ai";
 
 /** Quick TCP connect test — resolves true if something is listening on host:port */
 function tcpProbe(host: string, port: number, timeoutMs = 2000): Promise<boolean> {
@@ -1089,7 +1090,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         path: p,
         exists: existsSync(p),
       }));
-      res.json({ kubeconfigPaths: settings.kubeconfigPaths, files });
+      res.json({ kubeconfigPaths: settings.kubeconfigPaths, files, ai: settings.ai });
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to load settings" });
     }
@@ -1097,7 +1098,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.put("/api/settings", async (req, res) => {
     try {
-      const { kubeconfigPaths } = req.body;
+      const { kubeconfigPaths, ai } = req.body;
       if (!Array.isArray(kubeconfigPaths) || kubeconfigPaths.length === 0) {
         return res.status(400).json({ message: "kubeconfigPaths must be a non-empty array" });
       }
@@ -1106,7 +1107,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           return res.status(400).json({ message: `Invalid path: ${p}` });
         }
       }
-      saveSettings({ kubeconfigPaths });
+      const current = loadSettings();
+      saveSettings({ kubeconfigPaths, ai: ai || current.ai });
       res.json({ message: "Settings saved" });
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to save settings" });
@@ -1129,12 +1131,122 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!command || typeof command !== "string") {
         return res.status(400).json({ message: "Missing command" });
       }
-      // Strip leading "kubectl " if present
       const raw = command.replace(/^kubectl\s+/, "");
       const result = await runKubectlRaw(raw);
       res.json({ stdout: result.stdout, stderr: result.stderr, code: result.code });
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Execution failed" });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════
+  //  AI ENDPOINTS
+  // ═══════════════════════════════════════════════════
+
+  app.post("/api/ai/chat", async (req: Request, res: Response) => {
+    try {
+      const { messages, stream } = req.body;
+      if (!Array.isArray(messages)) {
+        return res.status(400).json({ message: "messages must be an array" });
+      }
+
+      if (stream) {
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+        });
+        try {
+          const { model } = await streamChatCompletion(messages, (text) => {
+            res.write(`data: ${JSON.stringify({ text })}\n\n`);
+          });
+          res.write(`data: ${JSON.stringify({ done: true, model })}\n\n`);
+        } catch (err: any) {
+          res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
+        }
+        res.end();
+        return;
+      }
+
+      const result = await chatCompletion(messages);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "AI request failed" });
+    }
+  });
+
+  app.post("/api/ai/troubleshoot", async (req, res) => {
+    try {
+      const { resourceType, name, namespace, context, describe, events, logs } = req.body;
+      if (!name) return res.status(400).json({ message: "Missing resource name" });
+
+      const systemPrompt = `You are a Kubernetes troubleshooting expert. Analyze the provided resource information and give a clear, actionable diagnosis. Structure your response as:
+1. **Status Summary** — One-line overview
+2. **Root Cause** — What's likely causing the issue
+3. **Action Items** — Numbered steps to fix, with kubectl commands where applicable
+4. **Risk Assessment** — Low/Medium/High and why
+
+Be concise. Use markdown formatting. If the resource looks healthy, say so briefly.`;
+
+      const userContent = [
+        `Resource: ${resourceType}/${name} in namespace ${namespace}${context ? ` (context: ${context})` : ""}`,
+        describe ? `\n### kubectl describe output:\n\`\`\`\n${describe.slice(0, 4000)}\n\`\`\`` : "",
+        events ? `\n### Events:\n\`\`\`\n${events.slice(0, 2000)}\n\`\`\`` : "",
+        logs ? `\n### Recent logs:\n\`\`\`\n${logs.slice(0, 3000)}\n\`\`\`` : "",
+      ].filter(Boolean).join("\n");
+
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+      });
+
+      try {
+        const { model } = await streamChatCompletion(
+          [{ role: "system", content: systemPrompt }, { role: "user", content: userContent }],
+          (text) => { res.write(`data: ${JSON.stringify({ text })}\n\n`); },
+        );
+        res.write(`data: ${JSON.stringify({ done: true, model })}\n\n`);
+      } catch (err: any) {
+        res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
+      }
+      res.end();
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Troubleshoot failed" });
+    }
+  });
+
+  app.post("/api/ai/explain-yaml", async (req, res) => {
+    try {
+      const { yaml, resourceType } = req.body;
+      if (!yaml) return res.status(400).json({ message: "Missing yaml content" });
+
+      const systemPrompt = `You are a Kubernetes YAML expert. Explain the provided ${resourceType || "resource"} YAML manifest in plain English. Structure your response as:
+1. **What This Is** — Brief description
+2. **Key Configuration** — Important settings and their implications
+3. **Notable Details** — Anything unusual, best-practice violations, or security concerns
+4. **Related Resources** — What this resource connects to
+
+Be concise and practical. Use markdown formatting.`;
+
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+      });
+
+      try {
+        const { model } = await streamChatCompletion(
+          [{ role: "system", content: systemPrompt }, { role: "user", content: `\`\`\`yaml\n${yaml.slice(0, 6000)}\n\`\`\`` }],
+          (text) => { res.write(`data: ${JSON.stringify({ text })}\n\n`); },
+        );
+        res.write(`data: ${JSON.stringify({ done: true, model })}\n\n`);
+      } catch (err: any) {
+        res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
+      }
+      res.end();
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Explain failed" });
     }
   });
 

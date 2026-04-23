@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTheme } from "next-themes";
 import {
   FolderOpen, Plus, Trash2, Search, CheckCircle2, XCircle,
-  Sun, Moon, Monitor as MonitorIcon, ExternalLink,
+  Sun, Moon, Monitor as MonitorIcon, ExternalLink, Bot, Eye, EyeOff, Save,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,49 @@ export default function Settings() {
   const { theme, setTheme } = useTheme();
 
   const paths = settings?.kubeconfigPaths ?? [];
+
+  // AI settings state
+  const [aiProvider, setAiProvider] = useState<string>("openai");
+  const [aiApiKey, setAiApiKey] = useState("");
+  const [aiModel, setAiModel] = useState("gpt-4o-mini");
+  const [aiBaseUrl, setAiBaseUrl] = useState("");
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [aiDirty, setAiDirty] = useState(false);
+
+  useEffect(() => {
+    if (settings?.ai) {
+      setAiProvider(settings.ai.provider || "openai");
+      setAiApiKey(settings.ai.apiKey || "");
+      setAiModel(settings.ai.model || "gpt-4o-mini");
+      setAiBaseUrl(settings.ai.baseUrl || "");
+      setAiDirty(false);
+    }
+  }, [settings?.ai]);
+
+  const PROVIDER_MODELS: Record<string, string[]> = {
+    openai: ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo", "o1-mini", "o1-preview"],
+    anthropic: ["claude-3-5-haiku-20241022", "claude-3-5-sonnet-20241022", "claude-3-opus-20240229"],
+    ollama: ["llama3.2", "llama3.1", "mistral", "codellama", "phi3", "gemma2"],
+    custom: [],
+  };
+
+  const handleAiSave = async () => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kubeconfigPaths: paths,
+          ai: { provider: aiProvider, apiKey: aiApiKey, model: aiModel, baseUrl: aiBaseUrl },
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to save");
+      toast({ title: "Saved", description: "AI settings updated" });
+      setAiDirty(false);
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
+  };
 
   const handleRemovePath = async (pathToRemove: string) => {
     const updated = paths.filter((p) => p !== pathToRemove);
@@ -215,6 +258,141 @@ export default function Settings() {
             </div>
           </section>
 
+          {/* ── AI Configuration ── */}
+          <section className="rounded-lg border border-border bg-surface/60 overflow-hidden">
+            <div className="px-5 py-3 border-b border-border bg-foreground/[0.02]">
+              <div className="flex items-center gap-2">
+                <Bot className="w-4 h-4 text-foreground/70" />
+                <h2 className="text-[11px] font-bold uppercase tracking-[0.15em] text-foreground">AI Configuration</h2>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Configure your LLM provider for AI features (troubleshoot, YAML explain, chat).
+              </p>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {/* Provider select */}
+              <div className="space-y-1.5">
+                <label className="text-[9px] uppercase tracking-[0.15em] font-bold text-muted-foreground">Provider</label>
+                <div className="flex gap-2">
+                  {(["openai", "anthropic", "ollama", "custom"] as const).map(p => (
+                    <button
+                      key={p}
+                      onClick={() => {
+                        setAiProvider(p);
+                        setAiDirty(true);
+                        if (p === "ollama") setAiModel(PROVIDER_MODELS.ollama[0]);
+                        else if (p === "openai") setAiModel(PROVIDER_MODELS.openai[0]);
+                        else if (p === "anthropic") setAiModel(PROVIDER_MODELS.anthropic[0]);
+                      }}
+                      className={`px-3 py-1.5 rounded border text-[10px] font-bold uppercase tracking-wider transition-all ${
+                        aiProvider === p
+                          ? "border-foreground/20 bg-foreground/8 text-foreground"
+                          : "border-border bg-foreground/[0.02] text-muted-foreground hover:text-foreground hover:border-foreground/10"
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* API Key */}
+              {aiProvider !== "ollama" && (
+                <div className="space-y-1.5">
+                  <label className="text-[9px] uppercase tracking-[0.15em] font-bold text-muted-foreground">API Key</label>
+                  <div className="relative">
+                    <Input
+                      type={showApiKey ? "text" : "password"}
+                      value={aiApiKey}
+                      onChange={e => { setAiApiKey(e.target.value); setAiDirty(true); }}
+                      placeholder={aiProvider === "openai" ? "sk-..." : aiProvider === "anthropic" ? "sk-ant-..." : "API key"}
+                      className="bg-foreground/[0.03] border-border text-[11px] font-mono h-8 rounded-sm pr-10 focus-visible:ring-primary/20"
+                    />
+                    <button
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {showApiKey ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Model */}
+              <div className="space-y-1.5">
+                <label className="text-[9px] uppercase tracking-[0.15em] font-bold text-muted-foreground">Model</label>
+                {PROVIDER_MODELS[aiProvider]?.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {PROVIDER_MODELS[aiProvider].map(m => (
+                      <button
+                        key={m}
+                        onClick={() => { setAiModel(m); setAiDirty(true); }}
+                        className={`px-2.5 py-1 rounded border text-[10px] font-mono transition-all ${
+                          aiModel === m
+                            ? "border-foreground/20 bg-foreground/8 text-foreground"
+                            : "border-border bg-foreground/[0.02] text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                    <Input
+                      value={PROVIDER_MODELS[aiProvider].includes(aiModel) ? "" : aiModel}
+                      onChange={e => { setAiModel(e.target.value); setAiDirty(true); }}
+                      placeholder="or type custom model..."
+                      className="bg-foreground/[0.03] border-border text-[10px] font-mono h-7 rounded-sm w-44 focus-visible:ring-primary/20"
+                    />
+                  </div>
+                ) : (
+                  <Input
+                    value={aiModel}
+                    onChange={e => { setAiModel(e.target.value); setAiDirty(true); }}
+                    placeholder="Model name (e.g. gpt-4o-mini)"
+                    className="bg-foreground/[0.03] border-border text-[11px] font-mono h-8 rounded-sm focus-visible:ring-primary/20"
+                  />
+                )}
+              </div>
+
+              {/* Base URL */}
+              {(aiProvider === "ollama" || aiProvider === "custom") && (
+                <div className="space-y-1.5">
+                  <label className="text-[9px] uppercase tracking-[0.15em] font-bold text-muted-foreground">
+                    Base URL {aiProvider === "ollama" && <span className="text-muted-foreground/50">(default: http://localhost:11434)</span>}
+                  </label>
+                  <Input
+                    value={aiBaseUrl}
+                    onChange={e => { setAiBaseUrl(e.target.value); setAiDirty(true); }}
+                    placeholder={aiProvider === "ollama" ? "http://localhost:11434" : "https://your-api.example.com/v1"}
+                    className="bg-foreground/[0.03] border-border text-[11px] font-mono h-8 rounded-sm focus-visible:ring-primary/20"
+                  />
+                </div>
+              )}
+
+              {/* Save button */}
+              <div className="pt-2 border-t border-border flex items-center gap-3">
+                <Button
+                  onClick={handleAiSave}
+                  disabled={!aiDirty}
+                  className="bg-foreground/10 hover:bg-foreground/15 text-foreground text-[10px] uppercase font-bold tracking-wider h-8 px-4 rounded-sm gap-1.5 border border-border disabled:opacity-30"
+                >
+                  <Save className="w-3 h-3" />
+                  Save AI Settings
+                </Button>
+                {!aiDirty && settings?.ai?.apiKey && (
+                  <span className="text-[9px] text-foreground/40 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" /> Configured
+                  </span>
+                )}
+                {!aiDirty && aiProvider === "ollama" && (
+                  <span className="text-[9px] text-foreground/40 flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" /> Ollama (no key needed)
+                  </span>
+                )}
+              </div>
+            </div>
+          </section>
+
           {/* ── Appearance ── */}
           <section className="rounded-lg border border-border bg-surface/60 overflow-hidden">
             <div className="px-5 py-3 border-b border-border bg-foreground/[0.02]">
@@ -258,7 +436,7 @@ export default function Settings() {
             <div className="p-5 space-y-3">
               <div className="flex items-center gap-3">
                 <span className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground w-20">Version</span>
-                <span className="text-[11px] text-foreground tabular-nums">1.1.0</span>
+                <span className="text-[11px] text-foreground tabular-nums">1.3.0</span>
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground w-20">Source</span>
