@@ -73,7 +73,7 @@ export function ResourceTable<T extends { name: string; status?: string }>({
             placeholder="filter resources..." 
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full h-7 pl-8 pr-3 bg-foreground/[0.03] border border-border rounded-sm text-[11px] font-mono text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary/30 transition-colors"
+            className="w-full h-7 pl-8 pr-3 bg-card border border-border/60 rounded-md text-[11px] font-mono text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 transition-all"
           />
         </div>
         <div className="text-[10px] text-muted-foreground ml-auto font-mono tabular-nums">
@@ -88,7 +88,7 @@ export function ResourceTable<T extends { name: string; status?: string }>({
       </div>
 
       {/* Table — real HTML table for auto column sizing */}
-      <div className="rounded border border-border overflow-x-auto bg-surface/50">
+      <div className="rounded-lg border border-border/60 overflow-x-auto bg-card/50">
         {isForbidden ? (
           <div className="px-4 py-16 text-center">
             <div className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-amber-500/5 border border-amber-500/10 mb-3">
@@ -115,7 +115,7 @@ export function ResourceTable<T extends { name: string; status?: string }>({
         ) : (
           <table className="w-full border-collapse text-[11px] font-mono table-auto">
             <thead>
-              <tr className="bg-foreground/[0.02] border-b border-border">
+              <tr className="bg-foreground/[0.03] border-b border-border/60">
                 {columns.map((col, i) => (
                   <th
                     key={i}
@@ -150,7 +150,7 @@ export function ResourceTable<T extends { name: string; status?: string }>({
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: Math.min(i * 0.01, 0.3), duration: 0.15 }}
-                    className="group border-b border-border/50 hover:bg-foreground/[0.02] transition-colors cursor-default"
+                    className="group border-b border-border/40 hover:bg-foreground/[0.03] transition-colors cursor-default"
                   >
                     {columns.map((col, j) => (
                       <td

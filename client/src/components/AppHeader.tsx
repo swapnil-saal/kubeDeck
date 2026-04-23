@@ -26,9 +26,7 @@ export function AppHeader({ breadcrumbs, rightSlot, showSelectors = true }: AppH
   const isActive = (path: string) => location === path;
 
   return (
-    <header className="app-header relative z-10 border-b border-border bg-surface/90 backdrop-blur-xl">
-      <div className="h-[1px] bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
-
+    <header className="app-header relative z-10 border-b border-border/60 bg-card/95 backdrop-blur-xl">
       <div className="flex items-center h-12 pl-20 pr-4 gap-0">
         {/* Logo */}
         <button
@@ -145,7 +143,6 @@ export function AppHeader({ breadcrumbs, rightSlot, showSelectors = true }: AppH
         </div>
       </div>
 
-      <div className="h-[1px] bg-gradient-to-r from-primary/20 via-transparent to-emerald-500/20" />
     </header>
   );
 }

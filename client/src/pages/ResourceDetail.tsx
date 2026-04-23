@@ -15,6 +15,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { AppHeader } from "@/components/AppHeader";
+import { CommandBar, buildDescribeCommand } from "@/components/CommandBar";
 
 const TYPE_META: Record<string, { label: string; color: string; bgActive: string }> = {
   pod:            { label: "POD",          color: "cyan",    bgActive: "bg-cyan-500/15 text-cyan-700 dark:text-cyan-400" },
@@ -439,6 +440,8 @@ export default function ResourceDetail() {
 
       {/* ══════ PORT FORWARD STATUS BAR ══════ */}
       <PortForwardBar />
+
+      <CommandBar command={buildDescribeCommand(type, name, context, namespace)} />
     </div>
   );
 }

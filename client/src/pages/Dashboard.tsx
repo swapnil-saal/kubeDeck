@@ -10,6 +10,7 @@ import {
 } from "@/hooks/use-k8s";
 import { ResourceTable } from "@/components/ResourceTable";
 import { AppHeader } from "@/components/AppHeader";
+import { CommandBar, buildKubectlCommand } from "@/components/CommandBar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Box, Layers, Network, RefreshCw, Terminal, List, Share2, Trash2, Activity,
@@ -153,7 +154,7 @@ export default function Dashboard() {
             <div className="w-12 h-12 border-2 border-cyan-500/30 border-t-cyan-400 rounded-full animate-spin" />
             <div className="absolute inset-0 w-12 h-12 border-2 border-transparent border-b-emerald-400/50 rounded-full animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }} />
           </div>
-          <p className="text-cyan-700 dark:text-cyan-500 font-mono text-sm tracking-wider">INITIALIZING CLUSTER CONNECTION...</p>
+          <p className="text-primary font-mono text-sm tracking-wider">INITIALIZING CLUSTER CONNECTION...</p>
         </div>
       </div>
     );
@@ -190,19 +191,21 @@ export default function Dashboard() {
     </div>
   );
 
+  const tabToResource: Record<string, string> = {
+    pods: "pods", deployments: "deployments", services: "services",
+    statefulsets: "statefulsets", daemonsets: "daemonsets", jobs: "jobs",
+    cronjobs: "cronjobs", configmaps: "configmaps", secrets: "secrets",
+    ingresses: "ingresses", nodes: "nodes", hpa: "hpa", pvcs: "pvc",
+  };
+  const currentCmd = buildKubectlCommand(tabToResource[activeTab] || activeTab, currentContext, currentNamespace);
+
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden font-mono text-foreground selection:bg-primary/30">
       <AppHeader breadcrumbs={[{ label: "Dashboard" }]} rightSlot={headerRight} />
 
       {/* ══════ MAIN CONTENT ══════ */}
       <main className="flex-1 overflow-auto relative">
-        {/* Subtle grid background */}
-        <div className="absolute inset-0 grid-bg" />
-        {/* Gradient overlays */}
-        <div className="absolute top-0 right-0 w-96 h-96 bg-cyan-500/[0.02] rounded-full blur-3xl" />
-        <div className="absolute bottom-0 left-0 w-96 h-96 bg-violet-500/[0.02] rounded-full blur-3xl" />
-        
-        <div className="relative p-5 max-w-[1600px] mx-auto space-y-5">
+        <div className="p-5 max-w-[1600px] mx-auto space-y-5">
           {/* ── STAT CARDS ── */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
             {stats.map((stat, i) => (
@@ -211,30 +214,27 @@ export default function Dashboard() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.08 }}
-                className={`group relative overflow-hidden rounded border transition-all duration-300 cursor-default
+                className={`group relative overflow-hidden rounded-lg transition-all duration-300 cursor-default
                   ${stat.isForbidden
-                    ? 'border-amber-500/20 bg-amber-500/[0.02] hover:border-amber-500/30'
+                    ? 'border border-amber-500/20 bg-amber-500/[0.04] hover:border-amber-500/30'
                     : stat.isError 
-                      ? 'border-red-500/20 bg-red-500/[0.03] hover:border-red-500/30' 
-                      : `border-border bg-foreground/[0.02] hover:border-${stat.color}-500/20 hover:bg-${stat.color}-500/[0.02]`
+                      ? 'border border-red-500/20 bg-red-500/[0.04] hover:border-red-500/30' 
+                      : `border border-border/60 bg-card hover:border-${stat.color}-500/30 hover:shadow-lg hover:shadow-${stat.color}-500/5`
                   }`}
               >
-                {/* Top accent */}
-                <div className={`h-[1px] ${stat.isError ? 'bg-red-500/30' : `bg-gradient-to-r from-${stat.color}-500/30 via-transparent to-transparent`}`} />
-                
-                <div className="px-4 py-3 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={`p-1.5 rounded ${stat.isError ? 'bg-red-500/10 text-red-400' : `bg-${stat.color}-500/10 text-${stat.color}-400`}`}>
+                <div className="px-4 py-3.5 flex items-center justify-between">
+                  <div className="flex items-center gap-3.5">
+                    <div className={`p-2 rounded-lg ${stat.isError ? 'bg-red-500/10 text-red-400' : `bg-${stat.color}-500/10 text-${stat.color}-400`}`}>
                       <stat.icon className="w-4 h-4" />
                     </div>
                     <div>
-                      <p className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground font-bold">{stat.label}</p>
-                      <p className={`text-2xl font-bold tabular-nums ${stat.isError ? 'text-red-400 text-lg' : 'text-foreground'}`}>
+                      <p className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground font-semibold">{stat.label}</p>
+                      <p className={`text-2xl font-bold tabular-nums leading-tight ${stat.isError ? 'text-red-400 text-lg' : 'text-foreground'}`}>
                         {stat.value}
                       </p>
                     </div>
                   </div>
-                  <Zap className={`w-3 h-3 ${stat.isError ? 'text-red-500/20' : 'text-foreground/[0.06] group-hover:text-' + stat.color + '-500/20'} transition-colors`} />
+                  <Zap className={`w-3 h-3 ${stat.isError ? 'text-red-500/20' : 'text-foreground/[0.04] group-hover:text-' + stat.color + '-500/20'} transition-colors`} />
                 </div>
               </motion.div>
               ))}
@@ -243,7 +243,7 @@ export default function Dashboard() {
           {/* ── RESOURCE TABS ── */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <div className="flex items-center gap-4 mb-4">
-              <TabsList className="bg-transparent border border-border p-0.5 h-8 rounded gap-0.5 flex-wrap">
+              <TabsList className="bg-card/50 border border-border/60 p-0.5 h-8 rounded-lg gap-0.5 flex-wrap">
                 {[
                   { val: "pods", label: "Pods", icon: Box },
                   { val: "deployments", label: "Deploy", icon: Layers },
@@ -262,8 +262,8 @@ export default function Dashboard() {
                   <TabsTrigger
                     key={tab.val}
                     value={tab.val}
-                    className="text-[10px] font-bold uppercase tracking-[0.1em] rounded-sm px-3 h-7 transition-all gap-1 data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground
-                      data-[state=active]:bg-cyan-500/15 data-[state=active]:text-cyan-700 dark:data-[state=active]:text-cyan-400 data-[state=active]:shadow-none"
+                    className="text-[10px] font-bold uppercase tracking-[0.1em] rounded-md px-3 h-7 transition-all gap-1 data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground
+                      data-[state=active]:bg-primary/12 data-[state=active]:text-primary data-[state=active]:shadow-none"
                   >
                     <tab.icon className="w-3 h-3" />
                     {tab.label}
@@ -897,6 +897,7 @@ export default function Dashboard() {
         </div>
       )}
 
+      <CommandBar command={currentCmd} />
     </div>
   );
 }
