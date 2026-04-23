@@ -49,42 +49,42 @@
 }
 
 .dark {
-  --background: 225 14% 11%;
-  --foreground: 216 12% 84%;
+  --background: 220 10% 10%;
+  --foreground: 220 6% 78%;
 
-  --card: 225 14% 13%;
-  --card-foreground: 216 12% 84%;
+  --card: 220 10% 12.5%;
+  --card-foreground: 220 6% 78%;
 
-  --popover: 225 14% 12%;
-  --popover-foreground: 216 12% 84%;
+  --popover: 220 10% 12%;
+  --popover-foreground: 220 6% 78%;
 
-  --primary: 190 70% 50%;
-  --primary-foreground: 225 14% 8%;
+  --primary: 220 6% 68%;
+  --primary-foreground: 220 10% 10%;
 
-  --secondary: 225 10% 16%;
-  --secondary-foreground: 216 12% 84%;
+  --secondary: 220 8% 16%;
+  --secondary-foreground: 220 6% 78%;
 
-  --muted: 225 10% 18%;
-  --muted-foreground: 220 8% 50%;
+  --muted: 220 8% 17%;
+  --muted-foreground: 220 5% 45%;
 
-  --accent: 190 70% 50%;
-  --accent-foreground: 225 14% 8%;
+  --accent: 220 6% 68%;
+  --accent-foreground: 220 10% 10%;
 
-  --destructive: 0 58% 38%;
-  --destructive-foreground: 216 12% 84%;
+  --destructive: 0 50% 42%;
+  --destructive-foreground: 220 6% 90%;
 
-  --border: 225 10% 18%;
-  --input: 225 10% 18%;
-  --ring: 190 70% 50%;
+  --border: 220 8% 17%;
+  --input: 220 8% 17%;
+  --ring: 220 6% 55%;
 
-  --surface: 225 14% 13%;
-  --surface-inset: 225 16% 9%;
+  --surface: 220 10% 12%;
+  --surface-inset: 220 12% 8.5%;
 
-  --chart-1: 190 70% 50%;
-  --chart-2: 160 60% 48%;
-  --chart-3: 258 60% 66%;
-  --chart-4: 38 70% 58%;
-  --chart-5: 340 65% 58%;
+  --chart-1: 220 6% 60%;
+  --chart-2: 220 6% 50%;
+  --chart-3: 220 6% 40%;
+  --chart-4: 220 6% 70%;
+  --chart-5: 220 6% 55%;
 }
 
 @layer base {
@@ -149,59 +149,6 @@
   .app-no-drag {
     -webkit-app-region: no-drag;
   }
-}
-
-/* Light mode: boost accent text colors for readable contrast */
-html:not(.dark) .text-cyan-400,
-html:not(.dark) .text-cyan-300,
-html:not(.dark) [class*="text-cyan-400/"],
-html:not(.dark) [class*="text-cyan-500/"] {
-  color: rgb(8 145 178);
-}
-html:not(.dark) .hover\:text-cyan-300:hover,
-html:not(.dark) .hover\:text-cyan-400:hover {
-  color: rgb(14 116 144);
-}
-
-html:not(.dark) .text-emerald-400,
-html:not(.dark) .text-emerald-300,
-html:not(.dark) [class*="text-emerald-400/"] {
-  color: rgb(5 150 105);
-}
-html:not(.dark) .hover\:text-emerald-300:hover {
-  color: rgb(4 120 87);
-}
-
-html:not(.dark) .text-violet-400,
-html:not(.dark) .text-violet-300,
-html:not(.dark) [class*="text-violet-400/"] {
-  color: rgb(124 58 237);
-}
-html:not(.dark) .hover\:text-violet-300:hover {
-  color: rgb(109 40 217);
-}
-
-html:not(.dark) .text-amber-400,
-html:not(.dark) .text-amber-300,
-html:not(.dark) [class*="text-amber-400/"] {
-  color: rgb(217 119 6);
-}
-html:not(.dark) .hover\:text-amber-300:hover {
-  color: rgb(180 83 9);
-}
-
-html:not(.dark) .text-pink-400,
-html:not(.dark) .text-pink-300,
-html:not(.dark) [class*="text-pink-400/"] {
-  color: rgb(219 39 119);
-}
-html:not(.dark) .hover\:text-pink-300:hover {
-  color: rgb(190 24 93);
-}
-
-html:not(.dark) .text-red-400,
-html:not(.dark) [class*="text-red-400/"] {
-  color: rgb(220 38 38);
 }
 
 /* xterm.js overrides */

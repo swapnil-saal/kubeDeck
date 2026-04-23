@@ -503,6 +503,23 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     } catch (err) { res.status(500).json({ message: String(err) }); }
   });
 
+  // ── Deployment Logs (aggregate all pod logs) ──────
+  app.get(api.k8s.deploymentLogs.path, async (req, res) => {
+    try {
+      const { name } = req.params;
+      const context = req.query.context ? `--context=${req.query.context}` : "";
+      const namespace = req.query.namespace ? `-n ${req.query.namespace}` : "";
+      const tail = req.query.tail ? `--tail=${req.query.tail}` : "--tail=300";
+      const result = await runKubectlRaw(
+        `logs deployment/${name} --all-containers=true --prefix ${context} ${namespace} ${tail}`
+      );
+      if (result.code !== 0) return handleForbidden(res, result.stderr, `Cannot view logs for deployment/${name}`);
+      res.json({ logs: result.stdout });
+    } catch (err) {
+      res.status(500).json({ message: String(err) });
+    }
+  });
+
   // ── Pod Logs (SSE realtime stream) ────────────────
   app.get(api.k8s.podLogsStream.path, (req: Request, res: Response) => {
     const name = String(req.params.name);

@@ -180,6 +180,11 @@ export const api = {
       method: 'GET' as const,
       path: '/api/k8s/pods/:name/logs/stream' as const,
     },
+    deploymentLogs: {
+      method: 'GET' as const,
+      path: '/api/k8s/deployments/:name/logs' as const,
+      responses: { 200: z.object({ logs: z.string() }), 500: errorSchemas.internal },
+    },
     // Terminal (WebSocket-based, path used for WS upgrade)
     terminal: {
       path: '/api/terminal' as const,

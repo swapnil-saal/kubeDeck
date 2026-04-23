@@ -151,8 +151,8 @@ export default function Dashboard() {
       <div className="h-full w-full flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
           <div className="relative">
-            <div className="w-12 h-12 border-2 border-cyan-500/30 border-t-cyan-400 rounded-full animate-spin" />
-            <div className="absolute inset-0 w-12 h-12 border-2 border-transparent border-b-emerald-400/50 rounded-full animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }} />
+            <div className="w-12 h-12 border-2 border-foreground/10 border-t-foreground/40 rounded-full animate-spin" />
+            <div className="absolute inset-0 w-12 h-12 border-2 border-transparent border-b-foreground/20 rounded-full animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }} />
           </div>
           <p className="text-primary font-mono text-sm tracking-wider">INITIALIZING CLUSTER CONNECTION...</p>
         </div>
@@ -161,11 +161,11 @@ export default function Dashboard() {
   }
 
   const stats = [
-    { label: "PODS", value: getStatValue(pods, podsLoading, podsError, podsErrorObj), icon: Box, color: "cyan", isError: podsError, isForbidden: podsErrorObj instanceof K8sError && podsErrorObj.isForbidden },
-    { label: "DEPLOY", value: getStatValue(deployments, deployLoading, deployError, deployErrorObj), icon: Layers, color: "violet", isError: deployError, isForbidden: deployErrorObj instanceof K8sError && deployErrorObj.isForbidden },
-    { label: "SVC", value: getStatValue(services, servicesLoading, servicesError, servicesErrorObj), icon: Network, color: "emerald", isError: servicesError, isForbidden: servicesErrorObj instanceof K8sError && servicesErrorObj.isForbidden },
-    { label: "NODES", value: getStatValue(nodes, nodesLoading, nodesError, nodesErrorObj), icon: Server, color: "amber", isError: nodesError, isForbidden: nodesErrorObj instanceof K8sError && nodesErrorObj.isForbidden },
-    { label: "ING", value: getStatValue(ingresses, ingLoading, ingError, ingErrorObj), icon: Globe, color: "pink", isError: ingError, isForbidden: ingErrorObj instanceof K8sError && ingErrorObj.isForbidden },
+    { label: "PODS", value: getStatValue(pods, podsLoading, podsError, podsErrorObj), icon: Box, isError: podsError, isForbidden: podsErrorObj instanceof K8sError && podsErrorObj.isForbidden },
+    { label: "DEPLOY", value: getStatValue(deployments, deployLoading, deployError, deployErrorObj), icon: Layers, isError: deployError, isForbidden: deployErrorObj instanceof K8sError && deployErrorObj.isForbidden },
+    { label: "SVC", value: getStatValue(services, servicesLoading, servicesError, servicesErrorObj), icon: Network, isError: servicesError, isForbidden: servicesErrorObj instanceof K8sError && servicesErrorObj.isForbidden },
+    { label: "NODES", value: getStatValue(nodes, nodesLoading, nodesError, nodesErrorObj), icon: Server, isError: nodesError, isForbidden: nodesErrorObj instanceof K8sError && nodesErrorObj.isForbidden },
+    { label: "ING", value: getStatValue(ingresses, ingLoading, ingError, ingErrorObj), icon: Globe, isError: ingError, isForbidden: ingErrorObj instanceof K8sError && ingErrorObj.isForbidden },
   ];
 
   const headerRight = (
@@ -180,13 +180,13 @@ export default function Dashboard() {
         <RefreshCw className="w-3.5 h-3.5" />
       </motion.button>
 
-      <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/8 border border-emerald-500/20 rounded-sm" title="Auto-refreshing every 10s">
+      <div className="flex items-center gap-1.5 px-2.5 py-1 bg-foreground/5 border border-border rounded-sm" title="Auto-refreshing every 10s">
         <div className="relative">
-          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-          <div className="absolute inset-0 w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping opacity-60" />
+          <div className="w-1.5 h-1.5 rounded-full bg-foreground/40" />
+          <div className="absolute inset-0 w-1.5 h-1.5 rounded-full bg-foreground/40 animate-ping opacity-40" />
         </div>
-        <span className="text-[9px] uppercase tracking-[0.15em] font-bold text-emerald-700 dark:text-emerald-400">LIVE</span>
-        <span className="text-[8px] tabular-nums text-emerald-600/60 dark:text-emerald-400/50">10s</span>
+        <span className="text-[9px] uppercase tracking-[0.15em] font-bold text-muted-foreground">LIVE</span>
+        <span className="text-[8px] tabular-nums text-muted-foreground/50">10s</span>
       </div>
     </div>
   );
@@ -214,27 +214,26 @@ export default function Dashboard() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.08 }}
-                className={`group relative overflow-hidden rounded-lg transition-all duration-300 cursor-default
+                className={`group relative overflow-hidden rounded-lg transition-all duration-200 cursor-default
                   ${stat.isForbidden
-                    ? 'border border-amber-500/20 bg-amber-500/[0.04] hover:border-amber-500/30'
+                    ? 'border border-muted bg-muted/30'
                     : stat.isError 
-                      ? 'border border-red-500/20 bg-red-500/[0.04] hover:border-red-500/30' 
-                      : `border border-border/60 bg-card hover:border-${stat.color}-500/30 hover:shadow-lg hover:shadow-${stat.color}-500/5`
+                      ? 'border border-destructive/30 bg-destructive/5' 
+                      : 'border border-border bg-card hover:border-foreground/15'
                   }`}
               >
                 <div className="px-4 py-3.5 flex items-center justify-between">
                   <div className="flex items-center gap-3.5">
-                    <div className={`p-2 rounded-lg ${stat.isError ? 'bg-red-500/10 text-red-400' : `bg-${stat.color}-500/10 text-${stat.color}-400`}`}>
+                    <div className={`p-2 rounded-lg ${stat.isError ? 'bg-destructive/10 text-destructive' : 'bg-foreground/5 text-muted-foreground'}`}>
                       <stat.icon className="w-4 h-4" />
                     </div>
                     <div>
                       <p className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground font-semibold">{stat.label}</p>
-                      <p className={`text-2xl font-bold tabular-nums leading-tight ${stat.isError ? 'text-red-400 text-lg' : 'text-foreground'}`}>
+                      <p className={`text-2xl font-bold tabular-nums leading-tight ${stat.isError ? 'text-destructive text-lg' : 'text-foreground'}`}>
                         {stat.value}
                       </p>
                     </div>
                   </div>
-                  <Zap className={`w-3 h-3 ${stat.isError ? 'text-red-500/20' : 'text-foreground/[0.04] group-hover:text-' + stat.color + '-500/20'} transition-colors`} />
                 </div>
               </motion.div>
               ))}
@@ -263,7 +262,7 @@ export default function Dashboard() {
                     key={tab.val}
                     value={tab.val}
                     className="text-[10px] font-bold uppercase tracking-[0.1em] rounded-md px-3 h-7 transition-all gap-1 data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground
-                      data-[state=active]:bg-primary/12 data-[state=active]:text-primary data-[state=active]:shadow-none"
+                      data-[state=active]:bg-foreground/8 data-[state=active]:text-foreground data-[state=active]:shadow-none"
                   >
                     <tab.icon className="w-3 h-3" />
                     {tab.label}
@@ -291,7 +290,7 @@ export default function Dashboard() {
                     accentColor="cyan"
                       columns={[
                       { header: "Pod", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("pod", item.name, item.namespace)} className="text-cyan-700 dark:text-cyan-400 font-medium hover:text-cyan-500 dark:hover:text-cyan-300 hover:underline underline-offset-2 transition-colors text-left">
+                        <button onClick={() => goToDetail("pod", item.name, item.namespace)} className="text-foreground/80 font-medium hover:text-foreground hover:underline underline-offset-2 transition-colors text-left">
                           {item.name}
                         </button>
                       )},
@@ -302,7 +301,7 @@ export default function Dashboard() {
                         const ready = item.ready || "0/0";
                         const [cur, tot] = ready.split("/");
                         const ok = cur === tot && Number(cur) > 0;
-                        return <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-sm border ${ok ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}>{ready}</span>;
+                        return <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-sm border ${ok ? 'bg-foreground/5 text-foreground/70 border-foreground/10' : 'bg-foreground/[0.03] text-muted-foreground border-border'}`}>{ready}</span>;
                       }},
                         { header: "Status", accessorKey: "status" },
                       { header: "Image", accessorKey: "images" as any, cell: (item: any) => {
@@ -311,7 +310,7 @@ export default function Dashboard() {
                         return (
                           <div className="flex flex-col gap-0.5">
                             {imgs.map((img: string, idx: number) => (
-                              <span key={idx} className="text-[10px] text-violet-700 dark:text-violet-400" title={img}>
+                              <span key={idx} className="text-[10px] text-muted-foreground" title={img}>
                                 {img.split("/").pop()?.split("@")[0] || img}
                               </span>
                             ))}
@@ -322,7 +321,7 @@ export default function Dashboard() {
                         <span className="text-muted-foreground tabular-nums text-[10px]">{item.ip || "-"}</span>
                       )},
                       { header: "Restarts", accessorKey: "restarts", cell: (item) => (
-                        <span className={item.restarts > 0 ? 'text-amber-400 font-bold' : 'text-muted-foreground'}>{item.restarts}</span>
+                        <span className={item.restarts > 0 ? 'text-foreground font-bold' : 'text-muted-foreground'}>{item.restarts}</span>
                       )},
                       { header: "Node", accessorKey: "node", cell: (item) => (
                         <span className="text-muted-foreground text-[10px]">{item.node}</span>
@@ -330,13 +329,13 @@ export default function Dashboard() {
                         { header: "Age", accessorKey: "age" },
                       { header: "", cell: (item) => (
                         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button className="p-1 rounded hover:bg-cyan-500/10 text-muted-foreground hover:text-cyan-400 transition-colors" onClick={() => setSelectedPod({ name: item.name, type: 'logs' })} title="Logs">
+                          <button className="p-1 rounded hover:bg-foreground/8 text-muted-foreground hover:text-foreground transition-colors" onClick={() => setSelectedPod({ name: item.name, type: 'logs' })} title="Logs">
                             <Terminal className="h-3 w-3" />
                           </button>
-                          <button className="p-1 rounded hover:bg-violet-500/10 text-muted-foreground hover:text-violet-400 transition-colors" onClick={() => setSelectedPod({ name: item.name, type: 'env' })} title="Env">
+                          <button className="p-1 rounded hover:bg-foreground/8 text-muted-foreground hover:text-foreground transition-colors" onClick={() => setSelectedPod({ name: item.name, type: 'env' })} title="Env">
                             <List className="h-3 w-3" />
                           </button>
-                          <button className="p-1 rounded hover:bg-emerald-500/10 text-muted-foreground hover:text-emerald-400 transition-colors" onClick={() => {
+                          <button className="p-1 rounded hover:bg-foreground/8 text-muted-foreground hover:text-foreground transition-colors" onClick={() => {
                             // Auto-populate remote port from container ports
                             const pod = pods?.find(p => p.name === item.name);
                             const cPorts = pod?.containerPorts;
@@ -351,7 +350,7 @@ export default function Dashboard() {
                           }} title="Port Forward">
                             <Share2 className="h-3 w-3" />
                           </button>
-                          <button className="p-1 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors" onClick={() => handleDeletePod(item.name)} title="Delete">
+                          <button className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors" onClick={() => handleDeletePod(item.name)} title="Delete">
                             <Trash2 className="h-3 w-3" />
                           </button>
                             </div>
@@ -372,7 +371,7 @@ export default function Dashboard() {
                     accentColor="violet"
                     columns={[
                       { header: "Deployment", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("deployment", item.name, item.namespace)} className="text-violet-700 dark:text-violet-400 font-medium hover:text-violet-500 dark:hover:text-violet-300 hover:underline underline-offset-2 transition-colors text-left">
+                        <button onClick={() => goToDetail("deployment", item.name, item.namespace)} className="text-foreground/80 font-medium hover:text-foreground hover:underline underline-offset-2 transition-colors text-left">
                           {item.name}
                         </button>
                       )},
@@ -382,7 +381,7 @@ export default function Dashboard() {
                       { header: "Ready", accessorKey: "ready", cell: (item) => {
                         const [current, total] = item.ready.split('/');
                         const healthy = current === total && Number(current) > 0;
-                        return <span className={`px-1.5 py-0.5 rounded-sm text-[10px] font-bold border ${healthy ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}>{item.ready}</span>;
+                        return <span className={`px-1.5 py-0.5 rounded-sm text-[10px] font-bold border ${healthy ? 'bg-foreground/5 text-foreground/70 border-foreground/10' : 'bg-foreground/[0.03] text-muted-foreground border-border'}`}>{item.ready}</span>;
                       }},
                       { header: "Image", accessorKey: "images" as any, cell: (item: any) => {
                         const imgs: string[] = item.images || [];
@@ -390,7 +389,7 @@ export default function Dashboard() {
                         return (
                           <div className="flex flex-col gap-0.5">
                             {imgs.map((img: string, idx: number) => (
-                              <span key={idx} className="text-[10px] text-violet-700 dark:text-violet-400" title={img}>
+                              <span key={idx} className="text-[10px] text-muted-foreground" title={img}>
                                 {img.split("/").pop()?.split("@")[0] || img}
                               </span>
                             ))}
@@ -403,10 +402,10 @@ export default function Dashboard() {
                       { header: "Age", accessorKey: "age" },
                       { header: "", cell: (item) => (
                         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button className="p-1 rounded hover:bg-cyan-500/10 text-muted-foreground hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors" onClick={() => { const [,t] = item.ready.split('/'); setScaleDialog({ name: item.name, current: Number(t) }); setScaleReplicas(t); }} title="Scale">
+                          <button className="p-1 rounded hover:bg-foreground/8 text-muted-foreground hover:text-foreground transition-colors" onClick={() => { const [,t] = item.ready.split('/'); setScaleDialog({ name: item.name, current: Number(t) }); setScaleReplicas(t); }} title="Scale">
                             <Scaling className="h-3 w-3" />
                           </button>
-                          <button className="p-1 rounded hover:bg-amber-500/10 text-muted-foreground hover:text-amber-400 transition-colors" onClick={() => handleRestart(item.name)} title="Restart">
+                          <button className="p-1 rounded hover:bg-foreground/8 text-muted-foreground hover:text-foreground transition-colors" onClick={() => handleRestart(item.name)} title="Restart">
                             <RotateCw className="h-3 w-3" />
                           </button>
                         </div>
@@ -427,12 +426,12 @@ export default function Dashboard() {
                     accentColor="emerald"
                     columns={[
                       { header: "Service", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("service", item.name, item.namespace)} className="text-emerald-700 dark:text-emerald-400 font-medium hover:text-emerald-500 dark:hover:text-emerald-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                        <button onClick={() => goToDetail("service", item.name, item.namespace)} className="text-foreground/80 font-medium hover:text-foreground hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
                       { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
                       { header: "Type", accessorKey: "type", cell: (item) => <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground bg-foreground/[0.04] px-1.5 py-0.5 rounded-sm border border-border">{item.type}</span> },
                       { header: "Cluster IP", accessorKey: "clusterIP", cell: (item) => <span className="text-muted-foreground tabular-nums text-[10px]">{item.clusterIP}</span> },
-                      { header: "Ports", accessorKey: "ports", cell: (item) => <span className="text-cyan-600 dark:text-cyan-500 text-[10px]">{item.ports}</span> },
+                      { header: "Ports", accessorKey: "ports", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.ports}</span> },
                       { header: "Age", accessorKey: "age" },
                     ]}
                   />
@@ -450,13 +449,13 @@ export default function Dashboard() {
                     accentColor="cyan"
                     columns={[
                       { header: "StatefulSet", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("statefulset", item.name, item.namespace)} className="text-cyan-700 dark:text-cyan-400 font-medium hover:text-cyan-500 dark:hover:text-cyan-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                        <button onClick={() => goToDetail("statefulset", item.name, item.namespace)} className="text-foreground/80 font-medium hover:text-foreground hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
                       { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
                       { header: "Ready", accessorKey: "ready", cell: (item) => {
                         const [c, t] = item.ready.split("/");
                         const ok = c === t && Number(c) > 0;
-                        return <span className={`px-1.5 py-0.5 rounded-sm text-[10px] font-bold border ${ok ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}>{item.ready}</span>;
+                        return <span className={`px-1.5 py-0.5 rounded-sm text-[10px] font-bold border ${ok ? 'bg-foreground/5 text-foreground/70 border-foreground/10' : 'bg-foreground/[0.03] text-muted-foreground border-border'}`}>{item.ready}</span>;
                       }},
                       { header: "Replicas", accessorKey: "replicas" },
                       { header: "Image", accessorKey: "images" as any, cell: (item: any) => {
@@ -465,7 +464,7 @@ export default function Dashboard() {
                         return (
                           <div className="flex flex-col gap-0.5">
                             {imgs.map((img: string, idx: number) => (
-                              <span key={idx} className="text-[10px] text-violet-700 dark:text-violet-400" title={img}>
+                              <span key={idx} className="text-[10px] text-muted-foreground" title={img}>
                                 {img.split("/").pop()?.split("@")[0] || img}
                               </span>
                             ))}
@@ -489,7 +488,7 @@ export default function Dashboard() {
                     accentColor="violet"
                     columns={[
                       { header: "DaemonSet", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("daemonset", item.name, item.namespace)} className="text-violet-700 dark:text-violet-400 font-medium hover:text-violet-500 dark:hover:text-violet-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                        <button onClick={() => goToDetail("daemonset", item.name, item.namespace)} className="text-foreground/80 font-medium hover:text-foreground hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
                       { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
                       { header: "Desired", accessorKey: "desired" },
@@ -513,7 +512,7 @@ export default function Dashboard() {
                     accentColor="amber"
                     columns={[
                       { header: "Job", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("job", item.name, item.namespace)} className="text-amber-700 dark:text-amber-400 font-medium hover:text-amber-500 dark:hover:text-amber-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                        <button onClick={() => goToDetail("job", item.name, item.namespace)} className="text-foreground/80 font-medium hover:text-foreground hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
                       { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
                       { header: "Completions", accessorKey: "completions" },
@@ -536,12 +535,12 @@ export default function Dashboard() {
                     accentColor="violet"
                     columns={[
                       { header: "CronJob", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("cronjob", item.name, item.namespace)} className="text-violet-700 dark:text-violet-400 font-medium hover:text-violet-500 dark:hover:text-violet-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                        <button onClick={() => goToDetail("cronjob", item.name, item.namespace)} className="text-foreground/80 font-medium hover:text-foreground hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
                       { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
-                      { header: "Schedule", accessorKey: "schedule", cell: (item) => <span className="text-cyan-500/80 font-mono text-[10px]">{item.schedule}</span> },
+                      { header: "Schedule", accessorKey: "schedule", cell: (item) => <span className="text-foreground/60 font-mono text-[10px]">{item.schedule}</span> },
                       { header: "Suspend", accessorKey: "suspend" as any, cell: (item: any) => (
-                        <span className={`text-[10px] font-bold ${item.suspend ? 'text-amber-400' : 'text-emerald-400'}`}>{item.suspend ? "Yes" : "No"}</span>
+                        <span className={`text-[10px] font-bold ${item.suspend ? 'text-foreground/70' : 'text-muted-foreground'}`}>{item.suspend ? "Yes" : "No"}</span>
                       )},
                       { header: "Active", accessorKey: "active" },
                       { header: "Last Run", accessorKey: "lastSchedule" as any, cell: (item: any) => <span className="text-muted-foreground text-[10px]">{item.lastSchedule || "-"}</span> },
@@ -562,10 +561,10 @@ export default function Dashboard() {
                     accentColor="cyan"
                     columns={[
                       { header: "ConfigMap", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("configmap", item.name, item.namespace)} className="text-cyan-700 dark:text-cyan-400 font-medium hover:text-cyan-500 dark:hover:text-cyan-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                        <button onClick={() => goToDetail("configmap", item.name, item.namespace)} className="text-foreground/80 font-medium hover:text-foreground hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
                       { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
-                      { header: "Data Keys", accessorKey: "dataKeys", cell: (item) => <span className="text-amber-400/80 tabular-nums">{item.dataKeys}</span> },
+                      { header: "Data Keys", accessorKey: "dataKeys", cell: (item) => <span className="text-muted-foreground tabular-nums">{item.dataKeys}</span> },
                       { header: "Age", accessorKey: "age" },
                     ]}
                   />
@@ -583,11 +582,11 @@ export default function Dashboard() {
                     accentColor="violet"
                     columns={[
                       { header: "Secret", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("secret", item.name, item.namespace)} className="text-violet-700 dark:text-violet-400 font-medium hover:text-violet-500 dark:hover:text-violet-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                        <button onClick={() => goToDetail("secret", item.name, item.namespace)} className="text-foreground/80 font-medium hover:text-foreground hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
                       { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
                       { header: "Type", accessorKey: "type", cell: (item) => <span className="text-[10px] text-muted-foreground bg-foreground/[0.04] px-1.5 py-0.5 rounded-sm border border-border">{item.type}</span> },
-                      { header: "Data", accessorKey: "dataKeys", cell: (item) => <span className="text-amber-400/80 tabular-nums">{item.dataKeys}</span> },
+                      { header: "Data", accessorKey: "dataKeys", cell: (item) => <span className="text-muted-foreground tabular-nums">{item.dataKeys}</span> },
                       { header: "Age", accessorKey: "age" },
                     ]}
                   />
@@ -605,10 +604,10 @@ export default function Dashboard() {
                     accentColor="pink"
                     columns={[
                       { header: "Ingress", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("ingress", item.name, item.namespace)} className="text-pink-700 dark:text-pink-400 font-medium hover:text-pink-500 dark:hover:text-pink-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                        <button onClick={() => goToDetail("ingress", item.name, item.namespace)} className="text-foreground/80 font-medium hover:text-foreground hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
                       { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
-                      { header: "Hosts", accessorKey: "hosts", cell: (item) => <span className="text-cyan-400/80 text-[10px]">{item.hosts}</span> },
+                      { header: "Hosts", accessorKey: "hosts", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.hosts}</span> },
                       { header: "Class", accessorKey: "className" as any, cell: (item: any) => <span className="text-muted-foreground text-[10px]">{item.className || "-"}</span> },
                       { header: "Ports", accessorKey: "ports" },
                       { header: "Age", accessorKey: "age" },
@@ -628,13 +627,13 @@ export default function Dashboard() {
                     accentColor="amber"
                     columns={[
                       { header: "Node", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("node", item.name, "")} className="text-amber-700 dark:text-amber-400 font-medium hover:text-amber-500 dark:hover:text-amber-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                        <button onClick={() => goToDetail("node", item.name, "")} className="text-foreground/80 font-medium hover:text-foreground hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
                       { header: "Status", accessorKey: "status" },
-                      { header: "Roles", accessorKey: "roles", cell: (item) => <span className="text-[10px] text-cyan-400/70">{item.roles}</span> },
+                      { header: "Roles", accessorKey: "roles", cell: (item) => <span className="text-[10px] text-muted-foreground">{item.roles}</span> },
                       { header: "Version", accessorKey: "version", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.version}</span> },
-                      { header: "CPU", accessorKey: "cpu", cell: (item) => <span className="text-emerald-400/80 tabular-nums text-[10px]">{item.cpu}</span> },
-                      { header: "Memory", accessorKey: "memory", cell: (item) => <span className="text-violet-400/80 tabular-nums text-[10px]">{item.memory}</span> },
+                      { header: "CPU", accessorKey: "cpu", cell: (item) => <span className="text-muted-foreground tabular-nums text-[10px]">{item.cpu}</span> },
+                      { header: "Memory", accessorKey: "memory", cell: (item) => <span className="text-muted-foreground tabular-nums text-[10px]">{item.memory}</span> },
                       { header: "OS", accessorKey: "os", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.os}</span> },
                       { header: "Age", accessorKey: "age" },
                     ]}
@@ -653,13 +652,13 @@ export default function Dashboard() {
                     accentColor="emerald"
                     columns={[
                       { header: "HPA", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("hpa", item.name, item.namespace)} className="text-emerald-700 dark:text-emerald-400 font-medium hover:text-emerald-500 dark:hover:text-emerald-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                        <button onClick={() => goToDetail("hpa", item.name, item.namespace)} className="text-foreground/80 font-medium hover:text-foreground hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
                       { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
-                      { header: "Reference", accessorKey: "reference", cell: (item) => <span className="text-cyan-400/70 text-[10px]">{item.reference}</span> },
+                      { header: "Reference", accessorKey: "reference", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.reference}</span> },
                       { header: "Min", accessorKey: "minReplicas" },
                       { header: "Max", accessorKey: "maxReplicas" },
-                      { header: "Current", accessorKey: "currentReplicas", cell: (item) => <span className="text-amber-400/80 font-bold tabular-nums">{item.currentReplicas}</span> },
+                      { header: "Current", accessorKey: "currentReplicas", cell: (item) => <span className="text-foreground/70 font-bold tabular-nums">{item.currentReplicas}</span> },
                       { header: "Metrics", accessorKey: "metrics", cell: (item) => <span className="text-[10px] text-muted-foreground">{item.metrics}</span> },
                       { header: "Age", accessorKey: "age" },
                     ]}
@@ -678,12 +677,12 @@ export default function Dashboard() {
                     accentColor="violet"
                     columns={[
                       { header: "PVC", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("pvc", item.name, item.namespace)} className="text-violet-700 dark:text-violet-400 font-medium hover:text-violet-500 dark:hover:text-violet-300 hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
+                        <button onClick={() => goToDetail("pvc", item.name, item.namespace)} className="text-foreground/80 font-medium hover:text-foreground hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
                       )},
                       { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
                       { header: "Status", accessorKey: "status" },
                       { header: "Volume", accessorKey: "volume", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.volume}</span> },
-                      { header: "Capacity", accessorKey: "capacity", cell: (item) => <span className="text-emerald-400/80 tabular-nums">{item.capacity}</span> },
+                      { header: "Capacity", accessorKey: "capacity", cell: (item) => <span className="text-muted-foreground tabular-nums">{item.capacity}</span> },
                       { header: "Access", accessorKey: "accessModes", cell: (item) => <span className="text-[10px] text-muted-foreground">{item.accessModes}</span> },
                       { header: "Class", accessorKey: "storageClass", cell: (item) => <span className="text-[10px] text-muted-foreground">{item.storageClass}</span> },
                       { header: "Age", accessorKey: "age" },
@@ -698,23 +697,23 @@ export default function Dashboard() {
 
       {/* ══════ LOGS / ENV DIALOG ══════ */}
       <Dialog open={selectedPod.type === 'logs' || selectedPod.type === 'env'} onOpenChange={() => setSelectedPod({ name: '', type: null })}>
-        <DialogContent className="max-w-5xl bg-background border-border p-0 overflow-hidden rounded-lg shadow-2xl dark:shadow-cyan-500/5">
+        <DialogContent className="max-w-5xl bg-background border-border p-0 overflow-hidden rounded-lg shadow-2xl dark:shadow-foreground/5">
           <DialogHeader className="px-4 py-2.5 border-b border-border flex flex-row items-center justify-between space-y-0 bg-surface">
             <DialogTitle className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-2 font-mono">
-              <Terminal className="w-3.5 h-3.5 text-cyan-500" />
-              <span className="text-cyan-500">{selectedPod.type === 'logs' ? 'stdout' : 'env'}</span>
+              <Terminal className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-foreground/70">{selectedPod.type === 'logs' ? 'stdout' : 'env'}</span>
               <span className="text-muted-foreground/20">|</span>
               <span className="text-muted-foreground">{selectedPod.name}</span>
             </DialogTitle>
           </DialogHeader>
           <div className="p-4 bg-surface-inset h-[500px] overflow-auto font-mono text-[12px] leading-relaxed">
             {(logsLoading || envLoading) ? (
-              <div className="flex items-center gap-2 text-cyan-500/50">
-                <span className="inline-block w-2 h-4 bg-cyan-500/50 animate-pulse" />
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <span className="inline-block w-2 h-4 bg-foreground/20 animate-pulse" />
                 <span className="animate-pulse">executing...</span>
               </div>
             ) : (
-              <pre className={`whitespace-pre-wrap ${selectedPod.type === 'logs' ? 'text-cyan-500/80' : 'text-amber-500/80'}`}>
+              <pre className={`whitespace-pre-wrap ${'text-foreground/60'}`}>
                 {selectedPod.type === 'logs' ? logsData?.logs : envData?.env}
               </pre>
             )}
@@ -727,8 +726,8 @@ export default function Dashboard() {
         <DialogContent className="max-w-sm bg-background border-border p-0 overflow-hidden rounded-lg shadow-2xl">
           <DialogHeader className="px-4 py-2.5 border-b border-border bg-surface">
             <DialogTitle className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground font-mono flex items-center gap-2">
-              <Share2 className="w-3.5 h-3.5 text-emerald-500" />
-              <span className="text-emerald-500">port-forward</span>
+              <Share2 className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-foreground/70">port-forward</span>
               <span className="text-muted-foreground/20">|</span>
               <span className="text-muted-foreground">{selectedPod.name}</span>
             </DialogTitle>
@@ -743,7 +742,7 @@ export default function Dashboard() {
                   max={65535}
                   value={forwardPort}
                   onChange={(e) => setForwardPort(e.target.value)}
-                  className="bg-foreground/[0.03] border-border font-mono text-cyan-400 text-sm h-8 rounded-sm focus-visible:ring-cyan-500/20"
+                  className="bg-foreground/[0.03] border-border font-mono text-foreground text-sm h-8 rounded-sm"
                   placeholder="8080"
                 />
                 <p className="text-[8px] text-muted-foreground/60">Your machine</p>
@@ -756,13 +755,13 @@ export default function Dashboard() {
                   max={65535}
                   value={remotePort}
                   onChange={(e) => setRemotePort(e.target.value)}
-                  className="bg-foreground/[0.03] border-border font-mono text-emerald-400 text-sm h-8 rounded-sm focus-visible:ring-emerald-500/20"
+                  className="bg-foreground/[0.03] border-border font-mono text-foreground text-sm h-8 rounded-sm"
                   placeholder="80"
                 />
                 {(() => {
                   const pod = pods?.find(p => p.name === selectedPod.name);
                   const cPorts = pod?.containerPorts;
-                  if (!cPorts || cPorts.length === 0) return <p className="text-[8px] text-amber-500/80">⚠ No ports declared in pod spec</p>;
+                  if (!cPorts || cPorts.length === 0) return <p className="text-[8px] text-muted-foreground">⚠ No ports declared in pod spec</p>;
                   return (
                     <div className="flex items-center gap-1 flex-wrap">
                       <span className="text-[8px] text-muted-foreground/60">Ports:</span>
@@ -773,8 +772,8 @@ export default function Dashboard() {
                           onClick={() => setRemotePort(String(cp.port))}
                           className={`text-[9px] font-mono px-1.5 py-0.5 rounded-sm border transition-colors ${
                             remotePort === String(cp.port)
-                              ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
-                              : 'bg-foreground/[0.03] border-border text-muted-foreground hover:text-emerald-400 hover:border-emerald-500/20'
+                              ? 'bg-foreground/10 border-foreground/20 text-foreground'
+                              : 'bg-foreground/[0.03] border-border text-muted-foreground hover:text-foreground hover:border-foreground/20'
                           }`}
                         >
                           {cp.port}{cp.name ? `/${cp.name}` : ''}
@@ -786,16 +785,16 @@ export default function Dashboard() {
               </div>
             </div>
             <div className="text-[10px] text-muted-foreground font-mono bg-foreground/[0.03] px-2.5 py-1.5 rounded-sm border border-border">
-              localhost:<span className="text-cyan-400">{forwardPort || '?'}</span>
+              localhost:<span className="text-foreground">{forwardPort || '?'}</span>
               <span className="text-muted-foreground/60 mx-1">→</span>
-              {selectedPod.name}:<span className="text-emerald-400">{remotePort || forwardPort || '?'}</span>
+              {selectedPod.name}:<span className="text-foreground">{remotePort || forwardPort || '?'}</span>
             </div>
             <div className="flex justify-end gap-2 pt-1">
               <Button variant="ghost" className="text-[10px] uppercase font-bold tracking-wider h-7 px-3 text-muted-foreground hover:text-foreground" onClick={() => setSelectedPod({ name: '', type: null })}>
                 Cancel
               </Button>
               <Button
-                className="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] uppercase font-bold tracking-wider h-7 px-4 rounded-sm"
+                className="bg-foreground/10 hover:bg-foreground/15 text-foreground border border-border text-[10px] uppercase font-bold tracking-wider h-7 px-4 rounded-md"
                 onClick={handlePortForward}
                 disabled={portForwardMutation.isPending}
               >
@@ -811,8 +810,8 @@ export default function Dashboard() {
         <DialogContent className="max-w-sm bg-background border-border p-0 overflow-hidden rounded-lg shadow-2xl">
           <DialogHeader className="px-4 py-2.5 border-b border-border bg-surface">
             <DialogTitle className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground font-mono flex items-center gap-2">
-              <Scaling className="w-3.5 h-3.5 text-cyan-500" />
-              <span className="text-cyan-500">scale</span>
+              <Scaling className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-foreground/70">scale</span>
               <span className="text-muted-foreground/20">|</span>
               <span className="text-muted-foreground">{scaleDialog?.name}</span>
             </DialogTitle>
@@ -825,12 +824,12 @@ export default function Dashboard() {
                 min={0}
                 value={scaleReplicas}
                 onChange={(e) => setScaleReplicas(e.target.value)}
-                className="bg-foreground/[0.03] border-border font-mono text-cyan-400 text-sm h-8 rounded-sm focus-visible:ring-cyan-500/20"
+                className="bg-foreground/[0.03] border-border font-mono text-foreground text-sm h-8 rounded-sm"
               />
             </div>
             <div className="flex justify-end gap-2 pt-1">
               <Button variant="ghost" className="text-[10px] uppercase font-bold tracking-wider h-7 px-3 text-muted-foreground hover:text-foreground" onClick={() => setScaleDialog(null)}>Cancel</Button>
-              <Button className="bg-cyan-600 hover:bg-cyan-500 text-white text-[10px] uppercase font-bold tracking-wider h-7 px-4 rounded-sm" onClick={handleScale}>Scale</Button>
+              <Button className="bg-foreground/10 hover:bg-foreground/15 text-foreground border border-border text-[10px] uppercase font-bold tracking-wider h-7 px-4 rounded-md" onClick={handleScale}>Scale</Button>
             </div>
           </div>
         </DialogContent>
@@ -839,8 +838,8 @@ export default function Dashboard() {
       {/* ══════ PORT FORWARD STATUS BAR ══════ */}
       {portForwards && portForwards.length > 0 && (
         <div className="border-t border-border bg-surface/90 px-4 py-1.5 flex items-center gap-3 overflow-x-auto shrink-0">
-          <Share2 className="w-3 h-3 text-emerald-400 shrink-0" />
-          <span className="text-[9px] uppercase tracking-wider font-bold text-emerald-400/80 shrink-0">FORWARDS</span>
+          <Share2 className="w-3 h-3 text-foreground/50 shrink-0" />
+          <span className="text-[9px] uppercase tracking-wider font-bold text-foreground/50 shrink-0">FORWARDS</span>
           <div className="w-px h-4 bg-foreground/5" />
           {portForwards.map((fwd) => {
             const isDead = fwd.status === "dead" || fwd.status === "error";
@@ -849,18 +848,18 @@ export default function Dashboard() {
                 key={fwd.id}
                 className={`flex items-center gap-2 px-2 py-0.5 rounded-sm shrink-0 border ${
                   isDead
-                    ? 'bg-red-500/5 border-red-500/15'
-                    : 'bg-emerald-500/5 border-emerald-500/15'
+                    ? 'bg-destructive/5 border-destructive/15'
+                    : 'bg-foreground/5 border-border'
                 }`}
                 title={isDead ? `Error: ${fwd.error || "Process died"}` : `Active — ${fwd.connections || 0} connections handled`}
               >
                 <div className="relative">
                   {isDead ? (
-                    <div className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                    <div className="w-1.5 h-1.5 rounded-full bg-destructive/60" />
                   ) : (
                     <>
-                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                      <div className="absolute inset-0 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping opacity-50" />
+                      <div className="w-1.5 h-1.5 rounded-full bg-foreground/40" />
+                      <div className="absolute inset-0 w-1.5 h-1.5 rounded-full bg-foreground/40 animate-ping opacity-40" />
                     </>
                   )}
                 </div>
@@ -868,14 +867,14 @@ export default function Dashboard() {
                   href={`http://localhost:${fwd.localPort}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className={`text-[10px] font-mono hover:underline ${isDead ? 'text-red-400/90' : 'text-emerald-400/90'}`}
+                  className={`text-[10px] font-mono hover:underline ${isDead ? 'text-destructive/80' : 'text-foreground/70'}`}
                 >
                   :{fwd.localPort}
                 </a>
                 <span className="text-[9px] text-muted-foreground">{"\u2192"}</span>
                 <span className="text-[10px] font-mono text-muted-foreground">{fwd.pod}:{fwd.remotePort}</span>
                 {isDead && (
-                  <span className="text-[8px] text-red-400/70 uppercase font-bold">DEAD</span>
+                  <span className="text-[8px] text-destructive/70 uppercase font-bold">DEAD</span>
                 )}
                 <button
                   onClick={async () => {
@@ -886,7 +885,7 @@ export default function Dashboard() {
                       toast({ title: "Error", description: "Failed to stop", variant: "destructive" });
                     }
                   }}
-                  className="p-0.5 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors"
+                  className="p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
                   title="Stop"
                 >
                   <Square className="w-2.5 h-2.5" />

@@ -1,6 +1,6 @@
 import { type ReactNode } from "react";
 import { useLocation } from "wouter";
-import { Monitor, ChevronRight, Settings, LayoutDashboard, Star } from "lucide-react";
+import { Monitor, ChevronRight, Settings, LayoutDashboard } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
@@ -33,11 +33,8 @@ export function AppHeader({ breadcrumbs, rightSlot, showSelectors = true }: AppH
           onClick={() => navigate("/")}
           className="flex items-center gap-2.5 pr-4 border-r border-border hover:opacity-80 transition-opacity"
         >
-          <div className="relative flex items-center justify-center w-7 h-7">
-            <Monitor className="w-4.5 h-4.5 text-primary" />
-            <div className="absolute inset-0 bg-primary/10 rounded blur-sm" />
-          </div>
-          <span className="text-[11px] font-bold tracking-[0.2em] text-primary">KUBEDECK</span>
+          <Monitor className="w-4 h-4 text-foreground/70" />
+          <span className="text-[11px] font-bold tracking-[0.2em] text-foreground/80">KUBEDECK</span>
         </button>
 
         {/* Nav links */}
@@ -46,7 +43,7 @@ export function AppHeader({ breadcrumbs, rightSlot, showSelectors = true }: AppH
             onClick={() => navigate("/")}
             className={`p-1.5 rounded transition-all ${
               isActive("/")
-                ? "bg-primary/10 text-primary"
+                ? "bg-foreground/8 text-foreground"
                 : "text-muted-foreground hover:text-foreground hover:bg-foreground/5"
             }`}
             title="Dashboard"
@@ -57,7 +54,7 @@ export function AppHeader({ breadcrumbs, rightSlot, showSelectors = true }: AppH
             onClick={() => navigate("/settings")}
             className={`p-1.5 rounded transition-all ${
               isActive("/settings")
-                ? "bg-primary/10 text-primary"
+                ? "bg-foreground/8 text-foreground"
                 : "text-muted-foreground hover:text-foreground hover:bg-foreground/5"
             }`}
             title="Settings"
@@ -96,15 +93,14 @@ export function AppHeader({ breadcrumbs, rightSlot, showSelectors = true }: AppH
             <div className="flex items-center gap-2 pr-4 border-r border-border">
               <span className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground font-bold">CTX</span>
               <Select value={currentContext} onValueChange={setContext}>
-                <SelectTrigger className="w-44 h-7 bg-transparent border-border hover:border-primary/30 focus:ring-0 focus:ring-offset-0 text-[11px] font-mono text-cyan-700 dark:text-cyan-400 rounded-sm px-2">
+                <SelectTrigger className="w-44 h-7 bg-transparent border-border hover:border-foreground/20 focus:ring-0 focus:ring-offset-0 text-[11px] font-mono text-foreground rounded-sm px-2">
                   <SelectValue placeholder="select context" />
                 </SelectTrigger>
                 <SelectContent className="bg-popover border-border text-foreground font-mono">
                   {contexts?.map((ctx) => (
-                    <SelectItem key={ctx.name} value={ctx.name} className="text-[11px] font-mono focus:bg-primary/10 focus:text-primary">
+                    <SelectItem key={ctx.name} value={ctx.name} className="text-[11px] font-mono focus:bg-foreground/8 focus:text-foreground">
                       <div className="flex items-center gap-2">
-                        {ctx.isCurrent && <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.7)]" />}
-                        {currentContext === ctx.name && <Star className="w-2.5 h-2.5 text-amber-400 fill-amber-400" />}
+                        {ctx.isCurrent && <div className="w-1.5 h-1.5 rounded-full bg-foreground/40" />}
                         {ctx.name}
                       </div>
                     </SelectItem>
@@ -118,15 +114,15 @@ export function AppHeader({ breadcrumbs, rightSlot, showSelectors = true }: AppH
             <div className="flex items-center gap-2">
               <span className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground font-bold">NS</span>
               <Select value={currentNamespace} onValueChange={setNamespace}>
-                <SelectTrigger className="w-44 h-7 bg-transparent border-border hover:border-primary/30 focus:ring-0 focus:ring-offset-0 text-[11px] font-mono text-emerald-700 dark:text-emerald-400 rounded-sm px-2">
+                <SelectTrigger className="w-44 h-7 bg-transparent border-border hover:border-foreground/20 focus:ring-0 focus:ring-offset-0 text-[11px] font-mono text-foreground rounded-sm px-2">
                   <SelectValue placeholder="select namespace" />
                 </SelectTrigger>
                 <SelectContent className="bg-popover border-border text-foreground font-mono max-h-64">
-                  <SelectItem value="all" className="text-[11px] font-mono focus:bg-primary/10 focus:text-primary">
+                  <SelectItem value="all" className="text-[11px] font-mono focus:bg-foreground/8 focus:text-foreground">
                     * all namespaces
                   </SelectItem>
                   {namespaces?.map((ns) => (
-                    <SelectItem key={ns.name} value={ns.name} className="text-[11px] font-mono focus:bg-primary/10 focus:text-primary">
+                    <SelectItem key={ns.name} value={ns.name} className="text-[11px] font-mono focus:bg-foreground/8 focus:text-foreground">
                       {ns.name}
                     </SelectItem>
                   ))}

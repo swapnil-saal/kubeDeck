@@ -23,7 +23,7 @@ export function CommandBar({ command }: CommandBarProps) {
         <span className="text-[8px] uppercase tracking-[0.2em] font-bold text-muted-foreground/60 select-none">CMD</span>
       </div>
       <div className="flex-1 min-w-0 px-3 flex items-center">
-        <code className="text-[10px] text-cyan-600 dark:text-cyan-400/80 truncate font-mono select-all">
+        <code className="text-[10px] text-foreground/70 truncate font-mono select-all">
           {command}
         </code>
       </div>

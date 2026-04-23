@@ -250,6 +250,18 @@ export function usePodLogs(name: string, context: string, namespace: string, ena
   });
 }
 
+export function useDeploymentLogs(name: string, context: string, namespace: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['deploymentLogs', name, context, namespace],
+    queryFn: () => {
+      const url = buildUrl(api.k8s.deploymentLogs.path, { name, context, namespace });
+      return k8sFetchJson<{ logs: string }>(url);
+    },
+    enabled,
+    retry: false,
+  });
+}
+
 export function usePodEnv(name: string, context: string, namespace: string, enabled: boolean, container?: string) {
   return useQuery({
     queryKey: [api.k8s.podEnv.path, name, context, namespace, container],
