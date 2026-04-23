@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useParams, useLocation, useSearch } from "wouter";
+import { useHashParams } from "@/hooks/use-hash-params";
 import {
   useResourceDescribe, useResourceYaml, useResourceEvents,
   usePodLogs, usePodEnv, useStreamingLogs, useResourceRelated,
@@ -158,13 +159,17 @@ function EnvViewer({ content, isLoading }: { content?: string; isLoading: boolea
 
 /* ── Log Viewer with search/grep ─────────────────── */
 
-function LogViewer({ content, isLoading, streaming, streamProps }: {
+function LogViewer({ content, isLoading, streaming, streamProps, grep, onGrepChange }: {
   content?: string;
   isLoading: boolean;
   streaming?: boolean;
   streamProps?: { logs: string[]; isConnected: boolean; clear: () => void };
+  grep?: string;
+  onGrepChange?: (value: string) => void;
 }) {
-  const [grepFilter, setGrepFilter] = useState("");
+  const [internalGrep, setInternalGrep] = useState("");
+  const grepFilter = grep ?? internalGrep;
+  const setGrepFilter = onGrepChange ?? setInternalGrep;
   const [follow, setFollow] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -252,16 +257,16 @@ function LogViewer({ content, isLoading, streaming, streamProps }: {
 
 /* ── Streaming Logs wrapper ──────────────────────── */
 
-function StreamingLogsPane({ name, context, namespace }: { name: string; context: string; namespace: string }) {
+function StreamingLogsPane({ name, context, namespace, grep, onGrepChange }: { name: string; context: string; namespace: string; grep?: string; onGrepChange?: (v: string) => void }) {
   const { logs, isConnected, clear } = useStreamingLogs(name, context, namespace, true);
-  return <LogViewer content="" isLoading={false} streaming streamProps={{ logs, isConnected, clear }} />;
+  return <LogViewer content="" isLoading={false} streaming streamProps={{ logs, isConnected, clear }} grep={grep} onGrepChange={onGrepChange} />;
 }
 
 /* ── Deployment Logs (aggregate) ─────────────────── */
 
-function DeploymentLogsPane({ name, context, namespace }: { name: string; context: string; namespace: string }) {
+function DeploymentLogsPane({ name, context, namespace, grep, onGrepChange }: { name: string; context: string; namespace: string; grep?: string; onGrepChange?: (v: string) => void }) {
   const { data, isLoading } = useDeploymentLogs(name, context, namespace, true);
-  return <LogViewer content={data?.logs} isLoading={isLoading} />;
+  return <LogViewer content={data?.logs} isLoading={isLoading} grep={grep} onGrepChange={onGrepChange} />;
 }
 
 /* ── Related Resources Panel ─────────────────────── */
@@ -442,7 +447,12 @@ export default function ResourceDetail() {
   const isPod = type === "pod";
   const isDeployment = type === "deployment";
 
-  const [activeTab, setActiveTab] = useState("describe");
+  const { get: getParam, set: setParam } = useHashParams();
+  const activeTab = getParam("tab") || "describe";
+  const setActiveTab = useCallback((tab: string) => setParam("tab", tab === "describe" ? null : tab), [setParam]);
+  const grepFilter = getParam("grep") || "";
+  const setGrepFilter = useCallback((g: string) => setParam("grep", g || null), [setParam]);
+
   const [editing, setEditing] = useState(false);
   const [editYaml, setEditYaml] = useState("");
   const { toast } = useToast();
@@ -538,10 +548,10 @@ export default function ResourceDetail() {
                 <YamlViewer content={yamlData?.content} isLoading={yamlLoading} />
               )}
               {activeTab === "logs" && isPod && (
-                <StreamingLogsPane name={name} context={context} namespace={namespace} />
+                <StreamingLogsPane name={name} context={context} namespace={namespace} grep={grepFilter} onGrepChange={setGrepFilter} />
               )}
               {activeTab === "logs" && isDeployment && (
-                <DeploymentLogsPane name={name} context={context} namespace={namespace} />
+                <DeploymentLogsPane name={name} context={context} namespace={namespace} grep={grepFilter} onGrepChange={setGrepFilter} />
               )}
               {activeTab === "env" && isPod && (
                 <EnvViewer content={envData?.env} isLoading={envLoading} />

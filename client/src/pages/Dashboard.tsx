@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
+import { useHashParams } from "@/hooks/use-hash-params";
 import {
   useK8sContexts, useK8sPods, useK8sDeployments, useK8sServices,
   useK8sConfigMaps, useK8sSecrets, useK8sIngresses, useK8sStatefulSets, useK8sDaemonSets,
@@ -29,9 +30,14 @@ export default function Dashboard() {
   const [selectedPod, setSelectedPod] = useState<{ name: string; type: 'logs' | 'env' | 'forward' | null }>({ name: '', type: null });
   const [forwardPort, setForwardPort] = useState<string>("8080");
   const [remotePort, setRemotePort] = useState<string>("80");
-  const [activeTab, setActiveTab] = useState("pods");
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const { get: getParam, set: setParam } = useHashParams();
+
+  const activeTab = getParam("tab") || "pods";
+  const setActiveTab = useCallback((tab: string) => setParam("tab", tab === "pods" ? null : tab), [setParam]);
+  const searchFilter = getParam("q") || "";
+  const setSearchFilter = useCallback((q: string) => setParam("q", q || null), [setParam]);
 
   const goToDetail = (type: string, name: string, ns?: string) => {
     const namespace = ns || currentNamespace;
@@ -283,6 +289,8 @@ export default function Dashboard() {
                 <TabsContent value="pods" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                     <ResourceTable
+                      search={searchFilter}
+                      onSearchChange={setSearchFilter}
                       data={pods}
                       isLoading={podsLoading}
                     isError={podsError}
@@ -364,6 +372,8 @@ export default function Dashboard() {
                 <TabsContent value="deployments" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                   <ResourceTable
+                    search={searchFilter}
+                    onSearchChange={setSearchFilter}
                     data={deployments}
                     isLoading={deployLoading}
                     isError={deployError}
@@ -419,6 +429,8 @@ export default function Dashboard() {
                 <TabsContent value="services" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                   <ResourceTable
+                    search={searchFilter}
+                    onSearchChange={setSearchFilter}
                     data={services}
                     isLoading={servicesLoading}
                     isError={servicesError}
@@ -442,6 +454,8 @@ export default function Dashboard() {
               <TabsContent value="statefulsets" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                   <ResourceTable
+                    search={searchFilter}
+                    onSearchChange={setSearchFilter}
                     data={statefulsets}
                     isLoading={stsLoading}
                     isError={stsError}
@@ -481,6 +495,8 @@ export default function Dashboard() {
               <TabsContent value="daemonsets" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                   <ResourceTable
+                    search={searchFilter}
+                    onSearchChange={setSearchFilter}
                     data={daemonsets}
                     isLoading={dsLoading}
                     isError={dsError}
@@ -505,6 +521,8 @@ export default function Dashboard() {
               <TabsContent value="jobs" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                   <ResourceTable
+                    search={searchFilter}
+                    onSearchChange={setSearchFilter}
                     data={jobs}
                     isLoading={jobsLoading}
                     isError={jobsError}
@@ -528,6 +546,8 @@ export default function Dashboard() {
               <TabsContent value="cronjobs" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                   <ResourceTable
+                    search={searchFilter}
+                    onSearchChange={setSearchFilter}
                     data={cronjobs}
                     isLoading={cjLoading}
                     isError={cjError}
@@ -554,6 +574,8 @@ export default function Dashboard() {
               <TabsContent value="configmaps" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                   <ResourceTable
+                    search={searchFilter}
+                    onSearchChange={setSearchFilter}
                     data={configmaps}
                     isLoading={cmLoading}
                     isError={cmError}
@@ -575,6 +597,8 @@ export default function Dashboard() {
               <TabsContent value="secrets" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                   <ResourceTable
+                    search={searchFilter}
+                    onSearchChange={setSearchFilter}
                     data={secrets}
                     isLoading={secLoading}
                     isError={secError}
@@ -597,6 +621,8 @@ export default function Dashboard() {
               <TabsContent value="ingresses" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                   <ResourceTable
+                    search={searchFilter}
+                    onSearchChange={setSearchFilter}
                     data={ingresses}
                     isLoading={ingLoading}
                     isError={ingError}
@@ -620,6 +646,8 @@ export default function Dashboard() {
               <TabsContent value="nodes" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                   <ResourceTable
+                    search={searchFilter}
+                    onSearchChange={setSearchFilter}
                     data={nodes}
                     isLoading={nodesLoading}
                     isError={nodesError}
@@ -645,6 +673,8 @@ export default function Dashboard() {
               <TabsContent value="hpa" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                   <ResourceTable
+                    search={searchFilter}
+                    onSearchChange={setSearchFilter}
                     data={hpa}
                     isLoading={hpaLoading}
                     isError={hpaError}
@@ -670,6 +700,8 @@ export default function Dashboard() {
               <TabsContent value="pvcs" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                   <ResourceTable
+                    search={searchFilter}
+                    onSearchChange={setSearchFilter}
                     data={pvcs}
                     isLoading={pvcLoading}
                     isError={pvcError}

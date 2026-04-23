@@ -1,7 +1,7 @@
 import { StatusBadge } from "./StatusBadge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Search, AlertTriangle, ShieldOff } from "lucide-react";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import { formatDistanceToNow } from "date-fns";
 import { K8sError } from "@/hooks/use-k8s";
@@ -24,6 +24,10 @@ interface ResourceTableProps<T> {
   error?: Error | null;
   searchKey?: keyof T;
   accentColor?: string;
+  /** Controlled search value. If provided, the table uses this instead of internal state. */
+  search?: string;
+  /** Called when the user types in the search box (controlled mode). */
+  onSearchChange?: (value: string) => void;
 }
 
 function formatAge(timestamp: string): string {
@@ -52,14 +56,18 @@ export function ResourceTable<T extends { name: string; status?: string }>({
   isError,
   error,
   searchKey = "name",
-  accentColor = "cyan"
+  accentColor = "cyan",
+  search: controlledSearch,
+  onSearchChange,
 }: ResourceTableProps<T>) {
-  const [search, setSearch] = useState("");
+  const [internalSearch, setInternalSearch] = useState("");
+  const search = controlledSearch ?? internalSearch;
+  const setSearch = onSearchChange ?? setInternalSearch;
   const isForbidden = error instanceof K8sError && error.isForbidden;
 
-  const filteredData = data?.filter(item => 
+  const filteredData = useMemo(() => data?.filter(item => 
     String(item[searchKey]).toLowerCase().includes(search.toLowerCase())
-  );
+  ), [data, searchKey, search]);
 
   const colCount = columns.length;
 
