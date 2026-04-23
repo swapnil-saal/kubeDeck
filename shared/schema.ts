@@ -151,6 +151,26 @@ export const k8sPvcSchema = z.object({
   age: z.string(),
 });
 
+// ── Settings schemas ────────────────────────────────
+
+export const settingsSchema = z.object({
+  kubeconfigPaths: z.array(z.string()),
+  files: z.array(z.object({
+    path: z.string(),
+    exists: z.boolean(),
+  })),
+});
+
+export const settingsInputSchema = z.object({
+  kubeconfigPaths: z.array(z.string()).min(1),
+});
+
+export const kubeconfigFileSchema = z.object({
+  path: z.string(),
+  exists: z.boolean(),
+  contexts: z.array(z.string()),
+});
+
 // ── Types ───────────────────────────────────────────
 
 export type K8sContext = z.infer<typeof k8sContextSchema>;
@@ -168,3 +188,6 @@ export type K8sCronJob = z.infer<typeof k8sCronJobSchema>;
 export type K8sNode = z.infer<typeof k8sNodeSchema>;
 export type K8sHpa = z.infer<typeof k8sHpaSchema>;
 export type K8sPvc = z.infer<typeof k8sPvcSchema>;
+export type Settings = z.infer<typeof settingsSchema>;
+export type SettingsInput = z.infer<typeof settingsInputSchema>;
+export type KubeconfigFile = z.infer<typeof kubeconfigFileSchema>;

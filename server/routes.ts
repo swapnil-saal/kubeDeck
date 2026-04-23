@@ -2,12 +2,13 @@ import type { Express, Request, Response } from "express";
 import { type Server } from "http";
 import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from "child_process";
 import { WebSocketServer, WebSocket } from "ws";
-import { writeFileSync } from "fs";
+import { writeFileSync, existsSync } from "fs";
 import * as path from "path";
 import * as net from "net";
 import { api } from "@shared/routes";
 import { randomUUID } from "crypto";
 import * as os from "os";
+import { loadSettings, saveSettings, getKubeconfigEnv, scanKubeconfigs } from "./settings";
 
 /** Quick TCP connect test — resolves true if something is listening on host:port */
 function tcpProbe(host: string, port: number, timeoutMs = 2000): Promise<boolean> {
@@ -62,9 +63,9 @@ interface KubectlResult {
   [key: string]: any;
 }
 
-function spawnCommand(cmd: string, args: string[]): Promise<{ stdout: string; stderr: string; code: number }> {
+function spawnCommand(cmd: string, args: string[], envOverride?: Record<string, string>): Promise<{ stdout: string; stderr: string; code: number }> {
   return new Promise((resolve) => {
-    const proc = spawn(cmd, args);
+    const proc = spawn(cmd, args, envOverride ? { env: { ...process.env, ...envOverride } } : undefined);
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
     proc.stdout.on("data", (chunk) => stdoutChunks.push(chunk));
@@ -80,7 +81,7 @@ function spawnCommand(cmd: string, args: string[]): Promise<{ stdout: string; st
 
 async function runKubectl(command: string): Promise<KubectlResult> {
   const args = command.trim().split(/\s+/).concat("-o", "json");
-  const { stdout, stderr, code } = await spawnCommand("kubectl", args);
+  const { stdout, stderr, code } = await spawnCommand("kubectl", args, getKubeconfigEnv());
   if (code !== 0) {
     const combined = `${stderr} ${stdout}`.toLowerCase();
     if (combined.includes("forbidden")) {
@@ -99,7 +100,7 @@ async function runKubectl(command: string): Promise<KubectlResult> {
 }
 
 async function runKubectlRaw(command: string): Promise<{ stdout: string; stderr: string; code: number }> {
-  return spawnCommand("kubectl", command.trim().split(/\s+/));
+  return spawnCommand("kubectl", command.trim().split(/\s+/), getKubeconfigEnv());
 }
 
 function getNamespaceFlag(ns: string | undefined): string {
@@ -1060,6 +1061,48 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     ws.on("close", () => {
       try { shell.kill(); } catch {}
     });
+  });
+
+  // ── Settings endpoints ────────────────────────────
+
+  app.get("/api/settings", async (_req, res) => {
+    try {
+      const settings = loadSettings();
+      const files = settings.kubeconfigPaths.map((p) => ({
+        path: p,
+        exists: existsSync(p),
+      }));
+      res.json({ kubeconfigPaths: settings.kubeconfigPaths, files });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to load settings" });
+    }
+  });
+
+  app.put("/api/settings", async (req, res) => {
+    try {
+      const { kubeconfigPaths } = req.body;
+      if (!Array.isArray(kubeconfigPaths) || kubeconfigPaths.length === 0) {
+        return res.status(400).json({ message: "kubeconfigPaths must be a non-empty array" });
+      }
+      for (const p of kubeconfigPaths) {
+        if (typeof p !== "string" || !p.trim()) {
+          return res.status(400).json({ message: `Invalid path: ${p}` });
+        }
+      }
+      saveSettings({ kubeconfigPaths });
+      res.json({ message: "Settings saved" });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to save settings" });
+    }
+  });
+
+  app.get("/api/settings/kubeconfig/scan", async (_req, res) => {
+    try {
+      const results = scanKubeconfigs();
+      res.json(results);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to scan kubeconfigs" });
+    }
   });
 
   return httpServer;

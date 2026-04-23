@@ -7,14 +7,14 @@ import {
 } from "@/hooks/use-k8s";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  ArrowLeft, Monitor, ChevronRight, FileText, Code, ScrollText,
+  FileText, Code, ScrollText,
   Terminal, Variable, Wifi, WifiOff, Copy, Check, GitBranch,
   Box, Layers, Network, Share2, Square, ExternalLink, Save, Pencil,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import { AppHeader } from "@/components/AppHeader";
 
 const TYPE_META: Record<string, { label: string; color: string; bgActive: string }> = {
   pod:            { label: "POD",          color: "cyan",    bgActive: "bg-cyan-500/15 text-cyan-700 dark:text-cyan-400" },
@@ -344,33 +344,16 @@ export default function ResourceDetail() {
 
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden font-mono text-foreground selection:bg-primary/30">
-      {/* ══════ HEADER ══════ */}
-      <header className="relative z-10 border-b border-border bg-surface/90 backdrop-blur-xl">
-        <div className="h-[1px] bg-gradient-to-r from-transparent via-cyan-500/50 to-transparent" />
-        <div className="flex items-center h-12 px-4 gap-0">
-          <button onClick={() => navigate("/")} className="flex items-center gap-2 pr-4 border-r border-border text-muted-foreground hover:text-cyan-400 transition-colors group">
-            <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform" />
-            <Monitor className="w-4 h-4 text-cyan-400" />
-            <span className="text-[11px] font-bold tracking-[0.2em] text-cyan-400">KUBEDECK</span>
-          </button>
-          <div className="flex items-center gap-0 text-[11px]">
-            <ChevronRight className="w-3 h-3 text-muted-foreground/20 mx-2" />
-            <span className="text-muted-foreground">{context}</span>
-            <ChevronRight className="w-3 h-3 text-muted-foreground/20 mx-2" />
-            <span className="text-muted-foreground">{namespace}</span>
-            <ChevronRight className="w-3 h-3 text-muted-foreground/20 mx-2" />
-            <span className={`text-[9px] uppercase tracking-[0.15em] font-bold text-${meta.color}-400 bg-${meta.color}-500/10 px-1.5 py-0.5 rounded-sm`}>
-              {meta.label}
-            </span>
-            <ChevronRight className="w-3 h-3 text-muted-foreground/20 mx-2" />
-            <span className={`text-${meta.color}-400 font-medium`}>{name}</span>
-          </div>
-          <div className="ml-auto">
-            <ThemeToggle />
-          </div>
-        </div>
-        <div className="h-[1px] bg-gradient-to-r from-cyan-500/20 via-transparent to-emerald-500/20" />
-      </header>
+      <AppHeader
+        showSelectors={false}
+        breadcrumbs={[
+          { label: "Dashboard", href: "/" },
+          { label: context },
+          { label: namespace },
+          { label: meta.label },
+          { label: name },
+        ]}
+      />
 
       {/* ══════ CONTENT ══════ */}
       <div className="flex-1 overflow-hidden flex flex-col">
