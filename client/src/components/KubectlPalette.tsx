@@ -244,20 +244,28 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
   const [query, setQuery] = useState("");
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const [execState, setExecState] = useState<{ idx: number; loading: boolean; result: ExecResult | null; error: string | null } | null>(null);
+  const [editedCmds, setEditedCmds] = useState<Record<number, string>>({});
   const inputRef = useRef<HTMLInputElement>(null);
   const outputRef = useRef<HTMLPreElement>(null);
   const { context, namespace } = useTerminalStore();
 
   const results = useMemo(() => matchQuery(query, context, namespace), [query, context, namespace]);
 
+  const getCmd = useCallback((idx: number) => editedCmds[idx] ?? results[idx]?.command ?? "", [editedCmds, results]);
+
   useEffect(() => {
     if (open) {
       setQuery("");
       setCopiedIdx(null);
       setExecState(null);
+      setEditedCmds({});
       setTimeout(() => inputRef.current?.focus(), 50);
     }
   }, [open]);
+
+  useEffect(() => {
+    setEditedCmds({});
+  }, [query]);
 
   useEffect(() => {
     if (!open) return;
@@ -350,44 +358,69 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
           )}
 
           {results.map((r, i) => {
-            const isInteractive = INTERACTIVE_COMMANDS.test(r.command);
+            const currentCmd = getCmd(i);
+            const isInteractive = INTERACTIVE_COMMANDS.test(currentCmd);
             const isRunning = execState?.idx === i && execState.loading;
             const hasResult = execState?.idx === i && !execState.loading && (execState.result || execState.error);
+            const isEdited = editedCmds[i] !== undefined && editedCmds[i] !== r.command;
 
             return (
               <div key={i}>
-                <div className="group flex items-start gap-3 px-4 py-3 border-b border-border/50 hover:bg-foreground/[0.03] transition-colors">
-                  <Terminal className="w-3.5 h-3.5 text-muted-foreground/60 mt-0.5 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[10px] text-muted-foreground mb-1">{r.description}</p>
-                    <code className="text-[11px] text-foreground/80 font-mono break-all select-all">{r.command}</code>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    {!isInteractive && (
+                <div className="group flex flex-col gap-2 px-4 py-3 border-b border-border/50 hover:bg-foreground/[0.03] transition-colors">
+                  <div className="flex items-center gap-3">
+                    <Terminal className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
+                    <p className="text-[10px] text-muted-foreground flex-1">{r.description}</p>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {!isInteractive && (
+                        <button
+                          onClick={() => handleExec(currentCmd, i)}
+                          disabled={isRunning}
+                          className="flex items-center gap-1 px-2 py-1 rounded border border-border text-[9px] uppercase font-bold tracking-wider text-muted-foreground hover:text-foreground hover:bg-foreground/[0.05] hover:border-foreground/15 transition-colors disabled:opacity-50"
+                          title="Execute command"
+                        >
+                          {isRunning ? (
+                            <div className="w-3 h-3 border border-muted-foreground/40 border-t-foreground/60 rounded-full animate-spin" />
+                          ) : (
+                            <ArrowRight className="w-3 h-3" />
+                          )}
+                          <span>{isRunning ? "Running" : "Run"}</span>
+                        </button>
+                      )}
+                      {isInteractive && (
+                        <span className="text-[8px] text-muted-foreground/50 uppercase tracking-wider px-1.5 py-0.5 rounded border border-border/50">interactive</span>
+                      )}
                       <button
-                        onClick={() => handleExec(r.command, i)}
-                        disabled={isRunning}
-                        className="flex items-center gap-1 px-2 py-1 rounded border border-border text-[9px] uppercase font-bold tracking-wider text-muted-foreground hover:text-foreground hover:bg-foreground/[0.05] hover:border-foreground/15 transition-colors disabled:opacity-50"
-                        title="Execute command"
+                        onClick={() => handleCopy(currentCmd, i)}
+                        className="p-1.5 rounded hover:bg-foreground/8 text-muted-foreground hover:text-foreground transition-colors"
+                        title="Copy command"
                       >
-                        {isRunning ? (
-                          <div className="w-3 h-3 border border-muted-foreground/40 border-t-foreground/60 rounded-full animate-spin" />
-                        ) : (
-                          <ArrowRight className="w-3 h-3" />
-                        )}
-                        <span>{isRunning ? "Running" : "Run"}</span>
+                        {copiedIdx === i ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="relative">
+                    <textarea
+                      value={currentCmd}
+                      onChange={(e) => setEditedCmds(prev => ({ ...prev, [i]: e.target.value }))}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey && !isInteractive) {
+                          e.preventDefault();
+                          handleExec(currentCmd, i);
+                        }
+                      }}
+                      rows={Math.min(Math.ceil(currentCmd.length / 70) || 1, 4)}
+                      className="w-full bg-surface-inset border border-border rounded px-3 py-2 text-[11px] text-foreground/80 font-mono resize-none focus:outline-none focus:border-foreground/20 transition-colors leading-relaxed"
+                      spellCheck={false}
+                    />
+                    {isEdited && (
+                      <button
+                        onClick={() => setEditedCmds(prev => { const copy = { ...prev }; delete copy[i]; return copy; })}
+                        className="absolute top-1.5 right-1.5 text-[7px] uppercase tracking-wider font-bold text-muted-foreground/50 hover:text-foreground px-1 py-0.5 rounded border border-border/50 hover:bg-foreground/[0.04] transition-colors"
+                        title="Reset to original"
+                      >
+                        Reset
                       </button>
                     )}
-                    {isInteractive && (
-                      <span className="text-[8px] text-muted-foreground/50 uppercase tracking-wider px-1.5 py-0.5 rounded border border-border/50">interactive</span>
-                    )}
-                    <button
-                      onClick={() => handleCopy(r.command, i)}
-                      className="p-1.5 rounded hover:bg-foreground/8 text-muted-foreground hover:text-foreground transition-colors"
-                      title="Copy command"
-                    >
-                      {copiedIdx === i ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                    </button>
                   </div>
                 </div>
 

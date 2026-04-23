@@ -3,6 +3,7 @@ import { useTheme } from "next-themes";
 import {
   FolderOpen, Plus, Trash2, Search, CheckCircle2, XCircle,
   Sun, Moon, Monitor as MonitorIcon, ExternalLink, Bot, Eye, EyeOff, Save,
+  Loader2, Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +29,8 @@ export default function Settings() {
   const [aiBaseUrl, setAiBaseUrl] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
   const [aiDirty, setAiDirty] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [testing, setTesting] = useState(false);
 
   useEffect(() => {
     if (settings?.ai) {
@@ -61,6 +64,24 @@ export default function Settings() {
       setAiDirty(false);
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
+  };
+
+  const handleAiTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/ai/test", { method: "POST", headers: { "Content-Type": "application/json" } });
+      const data = await res.json();
+      if (data.ok) {
+        setTestResult({ ok: true, message: `Connected! Model: ${data.model}` });
+      } else {
+        setTestResult({ ok: false, message: data.message || "Connection failed" });
+      }
+    } catch (e: any) {
+      setTestResult({ ok: false, message: e.message || "Connection failed" });
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -369,25 +390,46 @@ export default function Settings() {
                 </div>
               )}
 
-              {/* Save button */}
-              <div className="pt-2 border-t border-border flex items-center gap-3">
-                <Button
-                  onClick={handleAiSave}
-                  disabled={!aiDirty}
-                  className="bg-foreground/10 hover:bg-foreground/15 text-foreground text-[10px] uppercase font-bold tracking-wider h-8 px-4 rounded-sm gap-1.5 border border-border disabled:opacity-30"
-                >
-                  <Save className="w-3 h-3" />
-                  Save AI Settings
-                </Button>
-                {!aiDirty && settings?.ai?.apiKey && (
-                  <span className="text-[9px] text-foreground/40 flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3" /> Configured
-                  </span>
-                )}
-                {!aiDirty && aiProvider === "ollama" && (
-                  <span className="text-[9px] text-foreground/40 flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3" /> Ollama (no key needed)
-                  </span>
+              {/* Save + Test */}
+              <div className="pt-2 border-t border-border space-y-2">
+                <div className="flex items-center gap-3">
+                  <Button
+                    onClick={handleAiSave}
+                    disabled={!aiDirty}
+                    className="bg-foreground/10 hover:bg-foreground/15 text-foreground text-[10px] uppercase font-bold tracking-wider h-8 px-4 rounded-sm gap-1.5 border border-border disabled:opacity-30"
+                  >
+                    <Save className="w-3 h-3" />
+                    Save AI Settings
+                  </Button>
+                  <Button
+                    onClick={handleAiTest}
+                    disabled={testing || aiDirty}
+                    variant="outline"
+                    className="text-[10px] uppercase font-bold tracking-wider h-8 px-4 rounded-sm gap-1.5 border-border text-muted-foreground hover:text-foreground disabled:opacity-30"
+                  >
+                    {testing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+                    {testing ? "Testing..." : "Test Connection"}
+                  </Button>
+                  {!aiDirty && !testResult && settings?.ai?.apiKey && (
+                    <span className="text-[9px] text-foreground/40 flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" /> Configured
+                    </span>
+                  )}
+                  {!aiDirty && !testResult && aiProvider === "ollama" && !settings?.ai?.apiKey && (
+                    <span className="text-[9px] text-foreground/40 flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" /> Ollama (no key needed)
+                    </span>
+                  )}
+                </div>
+                {testResult && (
+                  <div className={`flex items-center gap-2 px-3 py-2 rounded border text-[10px] ${
+                    testResult.ok
+                      ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400"
+                      : "bg-destructive/10 border-destructive/20 text-destructive"
+                  }`}>
+                    {testResult.ok ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+                    <span>{testResult.message}</span>
+                  </div>
                 )}
               </div>
             </div>
