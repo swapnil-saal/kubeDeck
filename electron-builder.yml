@@ -12,6 +12,7 @@ files:
   - package.json
 
 asar: true
+afterPack: build/afterPack.cjs
 
 mac:
   identity: null
