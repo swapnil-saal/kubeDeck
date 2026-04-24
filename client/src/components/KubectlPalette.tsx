@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { Copy, Check, Terminal, ArrowRight, Sparkles, Loader2, ShieldAlert, AlertTriangle } from "lucide-react";
+import { Copy, Check, Terminal, ArrowRight, Sparkles, Loader2, ShieldAlert, AlertTriangle, Search } from "lucide-react";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
 import { useAiConfig } from "@/hooks/use-ai-config";
+import { useResourceNames, searchResourceNames } from "@/hooks/use-resource-names";
 
 interface MatchedCommand {
   description: string;
@@ -254,8 +255,17 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
   const aiDebounceRef = useRef<ReturnType<typeof setTimeout>>();
   const { context, namespace } = useTerminalStore();
   const { isConfigured } = useAiConfig();
+  const resourceNames = useResourceNames();
 
   const results = useMemo(() => matchQuery(query, context, namespace), [query, context, namespace]);
+
+  const ctxFlag = useMemo(() => buildCtx(context), [context]);
+  const nsFlag = useMemo(() => buildNs(namespace), [namespace]);
+
+  const nameResults = useMemo(
+    () => searchResourceNames(query, resourceNames, ctxFlag, nsFlag),
+    [query, resourceNames, ctxFlag, nsFlag],
+  );
 
   const isNaturalLanguage = useMemo(() => {
     const trimmed = query.trim();
@@ -289,20 +299,20 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
     setAiTranslating(false);
   }, [context, namespace]);
 
-  // Auto-translate when no patterns match and it's natural language
+  // Auto-translate when no patterns and no name matches and it's natural language
   useEffect(() => {
     if (aiDebounceRef.current) clearTimeout(aiDebounceRef.current);
-    if (!isConfigured || !isNaturalLanguage || results.length > 0 || !query.trim()) {
+    if (!isConfigured || !isNaturalLanguage || results.length > 0 || nameResults.length > 0 || !query.trim()) {
       return;
     }
     aiDebounceRef.current = setTimeout(() => {
       doAiTranslate(query);
     }, 600);
     return () => { if (aiDebounceRef.current) clearTimeout(aiDebounceRef.current); };
-  }, [query, isConfigured, isNaturalLanguage, results.length, doAiTranslate]);
+  }, [query, isConfigured, isNaturalLanguage, results.length, nameResults.length, doAiTranslate]);
 
   const aiCmd = aiEditedCmd ?? aiTranslated?.command ?? "";
-  const aiPending = isConfigured && isNaturalLanguage && results.length === 0 && query.trim().length >= 5 && !aiTranslated;
+  const aiPending = isConfigured && isNaturalLanguage && results.length === 0 && nameResults.length === 0 && query.trim().length >= 5 && !aiTranslated;
   const getCmd = useCallback((idx: number) => editedCmds[idx] ?? results[idx]?.command ?? "", [editedCmds, results]);
 
   useEffect(() => {
@@ -406,8 +416,8 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
 
         {/* Results */}
         <div className="max-h-[55vh] overflow-auto">
-          {/* Fallback examples — only when not NL or AI not configured */}
-          {query.trim() && results.length === 0 && !aiTranslated && !aiPending && (
+          {/* Fallback examples — only when nothing matches */}
+          {query.trim() && results.length === 0 && nameResults.length === 0 && !aiTranslated && !aiPending && (
             <div className="px-4 py-8 text-center">
               <p className="text-[11px] text-muted-foreground">No matching patterns. Try phrases like:</p>
               <div className="mt-3 space-y-1.5">
@@ -570,6 +580,95 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
                 AI Translate
               </button>
             </div>
+          )}
+
+          {/* Resource name autocomplete results */}
+          {nameResults.length > 0 && (
+            <>
+              {results.length === 0 && !aiTranslated && !aiPending && (
+                <div className="px-4 py-1.5 border-b border-border/50 bg-foreground/[0.01]">
+                  <p className="text-[9px] text-muted-foreground/60 uppercase font-bold tracking-wider flex items-center gap-1.5">
+                    <Search className="w-3 h-3" />
+                    Cluster resources matching your query
+                  </p>
+                </div>
+              )}
+              {nameResults.map((nr, ni) => {
+                const nIdx = 1000 + ni;
+                const isRunning = execState?.idx === nIdx && execState.loading;
+                const hasResult = execState?.idx === nIdx && !execState.loading && (execState.result || execState.error);
+                const isInteractive = INTERACTIVE_COMMANDS.test(nr.command);
+                return (
+                  <div key={`nr-${ni}`}>
+                    <div className="group flex items-center gap-3 px-4 py-2.5 border-b border-border/50 hover:bg-foreground/[0.03] transition-colors">
+                      <Search className="w-3 h-3 text-primary/60 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] text-foreground/70 capitalize">{nr.description}</p>
+                        <p className="text-[9px] text-muted-foreground/50 font-mono truncate">{nr.command}</p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {!isInteractive && (
+                          <button
+                            onClick={() => handleExec(nr.command, nIdx)}
+                            disabled={isRunning}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-primary/20 text-[10px] font-medium text-primary bg-primary/5 hover:bg-primary/10 transition-colors disabled:opacity-50"
+                          >
+                            {isRunning ? (
+                              <div className="w-3 h-3 border border-muted-foreground/40 border-t-foreground/60 rounded-full animate-spin" />
+                            ) : (
+                              <ArrowRight className="w-3 h-3" />
+                            )}
+                            Run
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleCopy(nr.command, nIdx)}
+                          className="p-1.5 rounded hover:bg-foreground/8 text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          {copiedIdx === nIdx ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+                    {hasResult && (
+                      <div className="border-b border-border bg-surface-inset">
+                        <div className="flex items-center gap-2 px-4 py-1.5 border-b border-border/50 bg-foreground/[0.02]">
+                          <span className={`text-[9px] uppercase font-bold tracking-wider ${
+                            execState!.error || (execState!.result && execState!.result.code !== 0)
+                              ? "text-destructive/80" : "text-foreground/50"
+                          }`}>
+                            {execState!.error ? "ERROR" : execState!.result!.code === 0 ? "OUTPUT" : `EXIT ${execState!.result!.code}`}
+                          </span>
+                          <div className="ml-auto flex items-center gap-1">
+                            <button
+                              onClick={handleCopyOutput}
+                              className="px-1.5 py-0.5 rounded text-[8px] uppercase font-bold tracking-wider text-muted-foreground/60 hover:text-foreground border border-border/50 hover:bg-foreground/[0.04] transition-colors"
+                            >
+                              Copy
+                            </button>
+                            <button
+                              onClick={() => setExecState(null)}
+                              className="px-1.5 py-0.5 rounded text-[8px] uppercase font-bold tracking-wider text-muted-foreground/60 hover:text-foreground border border-border/50 hover:bg-foreground/[0.04] transition-colors"
+                            >
+                              Close
+                            </button>
+                          </div>
+                        </div>
+                        <pre ref={outputRef} className="px-4 py-3 text-[10px] leading-relaxed overflow-auto max-h-60 whitespace-pre-wrap break-all">
+                          {execState!.error ? (
+                            <span className="text-destructive/80">{execState!.error}</span>
+                          ) : (
+                            <>
+                              {execState!.result!.stdout && <span className="text-foreground/70">{execState!.result!.stdout}</span>}
+                              {execState!.result!.stderr && <span className="text-destructive/60">{execState!.result!.stderr}</span>}
+                            </>
+                          )}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </>
           )}
 
           {results.map((r, i) => {

@@ -1271,7 +1271,7 @@ Be concise. Use markdown formatting. If the resource looks healthy, say so brief
       const result = await chatCompletion([
         { role: "system", content: "You are a concise Kubernetes assistant. Answer in plain text, no markdown. Be brief and actionable." },
         { role: "user", content: prompt },
-      ]);
+      ], { useFastModel: true });
       const suggestion = result.content.slice(0, maxTokens || 200);
       res.json({ suggestion, model: result.model });
     } catch (err: any) {
@@ -1323,7 +1323,7 @@ RULES:
       const result = await chatCompletion([
         { role: "system", content: KUBECTL_TRANSLATE_SYSTEM },
         { role: "user", content: `${prompt}${ctxHint}${nsHint}` },
-      ]);
+      ], { useFastModel: true });
       let cmd = result.content.trim()
         .replace(/^```\w*\n?/, "").replace(/\n?```$/, "")
         .replace(/^`+|`+$/g, "")

@@ -9,6 +9,7 @@ export interface AiProviderSettings {
   provider: "openai" | "anthropic" | "ollama" | "custom";
   apiKey: string;
   model: string;
+  fastModel?: string;
   baseUrl: string;
 }
 

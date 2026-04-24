@@ -1,6 +1,6 @@
 {
   "name": "kubedeck",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "KubeDeck — A native macOS Kubernetes navigator. Browse clusters, namespaces, and resources with a built-in terminal.",
   "author": "Swapnil Saal <swapnil-saal>",
   "homepage": "https://github.com/swapnil-saal/kube-navigator",

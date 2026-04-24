@@ -157,6 +157,7 @@ export const aiProviderSchema = z.object({
   provider: z.enum(["openai", "anthropic", "ollama", "custom"]),
   apiKey: z.string(),
   model: z.string(),
+  fastModel: z.string().optional(),
   baseUrl: z.string(),
 });
 

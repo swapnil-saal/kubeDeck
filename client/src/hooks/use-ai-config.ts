@@ -27,12 +27,14 @@ export function useAiConfig() {
   return useMemo(() => {
     const provider = settings?.ai?.provider || "openai";
     const model = settings?.ai?.model || "";
+    const fastModel = settings?.ai?.fastModel || "";
     const isConfigured = !!(
       settings?.ai?.apiKey || provider === "ollama"
     );
     const isFast = isConfigured && isFastModelName(model);
+    const hasFastModel = isConfigured && !!fastModel;
 
-    return { provider, model, isFastModel: isFast, isConfigured };
+    return { provider, model, fastModel, isFastModel: isFast, hasFastModel, isConfigured };
   }, [settings?.ai]);
 }
 

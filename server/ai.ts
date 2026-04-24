@@ -7,16 +7,23 @@ interface ChatMessage {
   content: string;
 }
 
-const DEFAULT_PROVIDERS: Record<string, { baseUrl: string; defaultModel: string }> = {
-  openai: { baseUrl: "https://api.openai.com/v1", defaultModel: "gpt-4o-mini" },
-  anthropic: { baseUrl: "https://api.anthropic.com", defaultModel: "claude-3-5-haiku-20241022" },
-  ollama: { baseUrl: "http://localhost:11434", defaultModel: "llama3.2" },
-  custom: { baseUrl: "", defaultModel: "" },
+const DEFAULT_PROVIDERS: Record<string, { baseUrl: string; defaultModel: string; defaultFastModel: string }> = {
+  openai: { baseUrl: "https://api.openai.com/v1", defaultModel: "gpt-4o-mini", defaultFastModel: "gpt-4o-mini" },
+  anthropic: { baseUrl: "https://api.anthropic.com", defaultModel: "claude-3-5-haiku-20241022", defaultFastModel: "claude-3-5-haiku-20241022" },
+  ollama: { baseUrl: "http://localhost:11434", defaultModel: "llama3.2", defaultFastModel: "qwen3.5:0.8b" },
+  custom: { baseUrl: "", defaultModel: "", defaultFastModel: "" },
 };
 
 function getAiConfig(): AiProviderSettings {
   const settings = loadSettings();
   return settings.ai || { provider: "openai", apiKey: "", model: "gpt-4o-mini", baseUrl: "" };
+}
+
+function resolveModel(config: AiProviderSettings, useFastModel?: boolean): string {
+  if (useFastModel) {
+    return config.fastModel || DEFAULT_PROVIDERS[config.provider]?.defaultFastModel || config.model || DEFAULT_PROVIDERS[config.provider]?.defaultModel || "gpt-4o-mini";
+  }
+  return config.model || DEFAULT_PROVIDERS[config.provider]?.defaultModel || "gpt-4o-mini";
 }
 
 function httpRequest(
@@ -91,12 +98,12 @@ function httpStreamRequest(
   });
 }
 
-export async function chatCompletion(messages: ChatMessage[]): Promise<{ content: string; model: string }> {
+export async function chatCompletion(messages: ChatMessage[], opts?: { useFastModel?: boolean }): Promise<{ content: string; model: string }> {
   const config = getAiConfig();
   if (!config.apiKey && config.provider !== "ollama") {
     throw new Error(`No API key configured for ${config.provider}. Go to Settings → AI to add one.`);
   }
-  const model = config.model || DEFAULT_PROVIDERS[config.provider]?.defaultModel || "gpt-4o-mini";
+  const model = resolveModel(config, opts?.useFastModel);
 
   if (config.provider === "ollama") {
     const url = config.baseUrl || DEFAULT_PROVIDERS.ollama.baseUrl;

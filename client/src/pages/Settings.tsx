@@ -27,17 +27,26 @@ export default function Settings() {
   const [aiProvider, setAiProvider] = useState<string>("openai");
   const [aiApiKey, setAiApiKey] = useState("");
   const [aiModel, setAiModel] = useState("gpt-4o-mini");
+  const [aiFastModel, setAiFastModel] = useState("");
   const [aiBaseUrl, setAiBaseUrl] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
   const [aiDirty, setAiDirty] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [testing, setTesting] = useState(false);
 
+  const DEFAULT_FAST_MODELS: Record<string, string> = {
+    openai: "gpt-4o-mini",
+    anthropic: "claude-3-5-haiku-20241022",
+    ollama: "qwen3.5:0.8b",
+    custom: "",
+  };
+
   useEffect(() => {
     if (settings?.ai) {
       setAiProvider(settings.ai.provider || "openai");
       setAiApiKey(settings.ai.apiKey || "");
       setAiModel(settings.ai.model || "gpt-4o-mini");
+      setAiFastModel(settings.ai.fastModel || DEFAULT_FAST_MODELS[settings.ai.provider || "openai"] || "");
       setAiBaseUrl(settings.ai.baseUrl || "");
       setAiDirty(false);
     }
@@ -57,7 +66,7 @@ export default function Settings() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           kubeconfigPaths: paths,
-          ai: { provider: aiProvider, apiKey: aiApiKey, model: aiModel, baseUrl: aiBaseUrl },
+          ai: { provider: aiProvider, apiKey: aiApiKey, model: aiModel, fastModel: aiFastModel, baseUrl: aiBaseUrl },
         }),
       });
       if (!res.ok) throw new Error("Failed to save");
@@ -308,6 +317,7 @@ export default function Settings() {
                         if (p === "ollama") setAiModel(PROVIDER_MODELS.ollama[0]);
                         else if (p === "openai") setAiModel(PROVIDER_MODELS.openai[0]);
                         else if (p === "anthropic") setAiModel(PROVIDER_MODELS.anthropic[0]);
+                        setAiFastModel(DEFAULT_FAST_MODELS[p] || "");
                       }}
                       className={`px-4 py-2 rounded-lg border text-xs font-medium capitalize transition-all ${
                         aiProvider === p
@@ -371,6 +381,42 @@ export default function Settings() {
                     value={aiModel}
                     onChange={e => { setAiModel(e.target.value); setAiDirty(true); }}
                     placeholder="Model name (e.g. gpt-4o-mini)"
+                    className="bg-muted/50 border-border text-sm font-mono h-9 rounded-lg focus-visible:ring-primary/20"
+                  />
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground">
+                  Auto-suggest Model <span className="text-muted-foreground/60">(fast model for command palette, tooltips, summaries)</span>
+                </label>
+                {PROVIDER_MODELS[aiProvider]?.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {PROVIDER_MODELS[aiProvider].map(m => (
+                      <button
+                        key={m}
+                        onClick={() => { setAiFastModel(m); setAiDirty(true); }}
+                        className={`px-3 py-1.5 rounded-lg border text-xs font-mono transition-all ${
+                          aiFastModel === m
+                            ? "border-primary/30 bg-primary/10 text-primary"
+                            : "border-border bg-muted/30 text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                    <Input
+                      value={PROVIDER_MODELS[aiProvider].includes(aiFastModel) ? "" : aiFastModel}
+                      onChange={e => { setAiFastModel(e.target.value); setAiDirty(true); }}
+                      placeholder="or type custom model..."
+                      className="bg-muted/50 border-border text-xs font-mono h-8 rounded-lg w-48 focus-visible:ring-primary/20"
+                    />
+                  </div>
+                ) : (
+                  <Input
+                    value={aiFastModel}
+                    onChange={e => { setAiFastModel(e.target.value); setAiDirty(true); }}
+                    placeholder="Fast model name (e.g. gpt-4o-mini)"
                     className="bg-muted/50 border-border text-sm font-mono h-9 rounded-lg focus-visible:ring-primary/20"
                   />
                 )}
