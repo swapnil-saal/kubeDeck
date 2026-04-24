@@ -8,23 +8,23 @@
   --font-sans: 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
-  --background: 220 14% 95%;
-  --foreground: 224 20% 12%;
+  --background: 220 14% 96%;
+  --foreground: 224 20% 10%;
 
   --card: 0 0% 100%;
-  --card-foreground: 224 20% 12%;
+  --card-foreground: 224 20% 10%;
 
   --popover: 0 0% 100%;
-  --popover-foreground: 224 20% 12%;
+  --popover-foreground: 224 20% 10%;
 
   --primary: 200 80% 32%;
   --primary-foreground: 0 0% 100%;
 
   --secondary: 220 12% 88%;
-  --secondary-foreground: 224 20% 16%;
+  --secondary-foreground: 224 20% 14%;
 
   --muted: 220 12% 90%;
-  --muted-foreground: 220 8% 38%;
+  --muted-foreground: 220 10% 34%;
 
   --accent: 200 80% 32%;
   --accent-foreground: 0 0% 100%;
@@ -32,8 +32,8 @@
   --destructive: 0 72% 48%;
   --destructive-foreground: 0 0% 100%;
 
-  --border: 220 12% 84%;
-  --input: 220 12% 84%;
+  --border: 220 14% 80%;
+  --input: 220 14% 80%;
   --ring: 200 80% 40%;
 
   --radius: 0.5rem;
@@ -49,42 +49,42 @@
 }
 
 .dark {
-  --background: 220 10% 10%;
-  --foreground: 220 6% 78%;
+  --background: 228 16% 5%;
+  --foreground: 220 10% 88%;
 
-  --card: 220 10% 12.5%;
-  --card-foreground: 220 6% 78%;
+  --card: 226 14% 7.5%;
+  --card-foreground: 220 10% 88%;
 
-  --popover: 220 10% 12%;
-  --popover-foreground: 220 6% 78%;
+  --popover: 226 14% 8%;
+  --popover-foreground: 220 10% 88%;
 
-  --primary: 220 6% 68%;
-  --primary-foreground: 220 10% 10%;
+  --primary: 192 70% 48%;
+  --primary-foreground: 228 16% 5%;
 
-  --secondary: 220 8% 16%;
-  --secondary-foreground: 220 6% 78%;
+  --secondary: 224 12% 13%;
+  --secondary-foreground: 220 10% 82%;
 
-  --muted: 220 8% 17%;
-  --muted-foreground: 220 5% 45%;
+  --muted: 224 12% 12%;
+  --muted-foreground: 220 8% 50%;
 
-  --accent: 220 6% 68%;
-  --accent-foreground: 220 10% 10%;
+  --accent: 192 70% 48%;
+  --accent-foreground: 228 16% 5%;
 
-  --destructive: 0 50% 42%;
-  --destructive-foreground: 220 6% 90%;
+  --destructive: 0 60% 50%;
+  --destructive-foreground: 0 0% 95%;
 
-  --border: 220 8% 17%;
-  --input: 220 8% 17%;
-  --ring: 220 6% 55%;
+  --border: 224 12% 14%;
+  --input: 224 12% 14%;
+  --ring: 192 60% 45%;
 
-  --surface: 220 10% 12%;
-  --surface-inset: 220 12% 8.5%;
+  --surface: 226 14% 7%;
+  --surface-inset: 228 16% 4%;
 
-  --chart-1: 220 6% 60%;
-  --chart-2: 220 6% 50%;
-  --chart-3: 220 6% 40%;
-  --chart-4: 220 6% 70%;
-  --chart-5: 220 6% 55%;
+  --chart-1: 192 70% 48%;
+  --chart-2: 160 50% 45%;
+  --chart-3: 258 50% 58%;
+  --chart-4: 38 60% 55%;
+  --chart-5: 340 50% 55%;
 }
 
 @layer base {

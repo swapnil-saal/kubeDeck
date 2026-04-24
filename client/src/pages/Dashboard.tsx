@@ -152,6 +152,49 @@ export default function Dashboard() {
     return data?.length ?? 0;
   };
 
+  // ── Health Summary (hook must be before any early return) ──
+  const healthIssues = useMemo(() => {
+    const issues: { severity: "critical" | "warning" | "info"; message: string; tab: string }[] = [];
+
+    if (pods) {
+      const crashing = pods.filter(p => ["CrashLoopBackOff", "Error", "ImagePullBackOff", "ErrImagePull", "OOMKilled"].includes(p.status));
+      if (crashing.length > 0) issues.push({ severity: "critical", message: `${crashing.length} pod${crashing.length > 1 ? "s" : ""} in error state (${crashing.slice(0, 3).map(p => p.name.slice(0, 25)).join(", ")}${crashing.length > 3 ? "…" : ""})`, tab: "pods" });
+
+      const pending = pods.filter(p => ["Pending", "ContainerCreating"].includes(p.status));
+      if (pending.length > 0) issues.push({ severity: "warning", message: `${pending.length} pod${pending.length > 1 ? "s" : ""} pending`, tab: "pods" });
+
+      const highRestarts = pods.filter(p => p.restarts > 5);
+      if (highRestarts.length > 0) issues.push({ severity: "warning", message: `${highRestarts.length} pod${highRestarts.length > 1 ? "s" : ""} with >5 restarts (${highRestarts.slice(0, 2).map(p => `${p.name.slice(0, 20)}:${p.restarts}`).join(", ")})`, tab: "pods" });
+    }
+
+    if (deployments) {
+      const unhealthy = deployments.filter(d => {
+        const [cur, tot] = d.ready.split("/");
+        return Number(cur) < Number(tot) || Number(tot) === 0;
+      });
+      if (unhealthy.length > 0) issues.push({ severity: "critical", message: `${unhealthy.length} deployment${unhealthy.length > 1 ? "s" : ""} not fully ready (${unhealthy.slice(0, 3).map(d => `${d.name.slice(0, 20)} ${d.ready}`).join(", ")})`, tab: "deployments" });
+    }
+
+    if (nodes) {
+      const notReady = nodes.filter(n => n.status !== "Ready");
+      if (notReady.length > 0) issues.push({ severity: "critical", message: `${notReady.length} node${notReady.length > 1 ? "s" : ""} not ready (${notReady.map(n => n.name.slice(0, 20)).join(", ")})`, tab: "nodes" });
+    }
+
+    if (jobs) {
+      const failed = jobs.filter(j => j.status === "Failed");
+      if (failed.length > 0) issues.push({ severity: "warning", message: `${failed.length} failed job${failed.length > 1 ? "s" : ""}`, tab: "jobs" });
+    }
+
+    if (pvcs) {
+      const pending = pvcs.filter(p => p.status !== "Bound");
+      if (pending.length > 0) issues.push({ severity: "warning", message: `${pending.length} PVC${pending.length > 1 ? "s" : ""} not bound`, tab: "pvcs" });
+    }
+
+    return issues;
+  }, [pods, deployments, nodes, jobs, pvcs]);
+
+  const [healthExpanded, setHealthExpanded] = useState(true);
+
   if (!currentContext && !contexts) {
     return (
       <div className="h-full w-full flex items-center justify-center bg-background">
@@ -196,54 +239,6 @@ export default function Dashboard() {
       </div>
     </div>
   );
-
-  // ── Health Summary ──
-  const healthIssues = useMemo(() => {
-    const issues: { severity: "critical" | "warning" | "info"; message: string; tab: string }[] = [];
-
-    // Pod health
-    if (pods) {
-      const crashing = pods.filter(p => ["CrashLoopBackOff", "Error", "ImagePullBackOff", "ErrImagePull", "OOMKilled"].includes(p.status));
-      if (crashing.length > 0) issues.push({ severity: "critical", message: `${crashing.length} pod${crashing.length > 1 ? "s" : ""} in error state (${crashing.slice(0, 3).map(p => p.name.slice(0, 25)).join(", ")}${crashing.length > 3 ? "…" : ""})`, tab: "pods" });
-
-      const pending = pods.filter(p => ["Pending", "ContainerCreating"].includes(p.status));
-      if (pending.length > 0) issues.push({ severity: "warning", message: `${pending.length} pod${pending.length > 1 ? "s" : ""} pending`, tab: "pods" });
-
-      const highRestarts = pods.filter(p => p.restarts > 5);
-      if (highRestarts.length > 0) issues.push({ severity: "warning", message: `${highRestarts.length} pod${highRestarts.length > 1 ? "s" : ""} with >5 restarts (${highRestarts.slice(0, 2).map(p => `${p.name.slice(0, 20)}:${p.restarts}`).join(", ")})`, tab: "pods" });
-    }
-
-    // Deployment health
-    if (deployments) {
-      const unhealthy = deployments.filter(d => {
-        const [cur, tot] = d.ready.split("/");
-        return Number(cur) < Number(tot) || Number(tot) === 0;
-      });
-      if (unhealthy.length > 0) issues.push({ severity: "critical", message: `${unhealthy.length} deployment${unhealthy.length > 1 ? "s" : ""} not fully ready (${unhealthy.slice(0, 3).map(d => `${d.name.slice(0, 20)} ${d.ready}`).join(", ")})`, tab: "deployments" });
-    }
-
-    // Node health
-    if (nodes) {
-      const notReady = nodes.filter(n => n.status !== "Ready");
-      if (notReady.length > 0) issues.push({ severity: "critical", message: `${notReady.length} node${notReady.length > 1 ? "s" : ""} not ready (${notReady.map(n => n.name.slice(0, 20)).join(", ")})`, tab: "nodes" });
-    }
-
-    // Job failures
-    if (jobs) {
-      const failed = jobs.filter(j => j.status === "Failed");
-      if (failed.length > 0) issues.push({ severity: "warning", message: `${failed.length} failed job${failed.length > 1 ? "s" : ""}`, tab: "jobs" });
-    }
-
-    // PVC issues
-    if (pvcs) {
-      const pending = pvcs.filter(p => p.status !== "Bound");
-      if (pending.length > 0) issues.push({ severity: "warning", message: `${pending.length} PVC${pending.length > 1 ? "s" : ""} not bound`, tab: "pvcs" });
-    }
-
-    return issues;
-  }, [pods, deployments, nodes, jobs, pvcs]);
-
-  const [healthExpanded, setHealthExpanded] = useState(true);
 
   const tabToResource: Record<string, string> = {
     pods: "pods", deployments: "deployments", services: "services",

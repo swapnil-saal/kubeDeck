@@ -10,6 +10,7 @@ import { randomUUID } from "crypto";
 import * as os from "os";
 import { loadSettings, saveSettings, getKubeconfigEnv, scanKubeconfigs } from "./settings";
 import { chatCompletion, streamChatCompletion } from "./ai";
+import { runAgent } from "./agent";
 
 /** Quick TCP connect test — resolves true if something is listening on host:port */
 function tcpProbe(host: string, port: number, timeoutMs = 2000): Promise<boolean> {
@@ -1179,90 +1180,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const sse = (obj: Record<string, unknown>) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
 
       try {
-        const lastUserMsg = [...messages].reverse().find(m => m.role === "user")?.content || "";
-
-        // Phase 1: Ask the LLM if it needs to run a kubectl command
-        let kubectlOutput: string | null = null;
-        let kubectlCmd: string | null = null;
-
-        const planPrompt = `You must decide if a kubectl command is needed to answer the user's question.
-
-Reply with ONLY raw JSON (no markdown, no backticks, no explanation):
-{"kubectl": "the full kubectl command"} OR {"kubectl": null}
-
-Rules:
-- Only read-only commands: get, describe, logs, top, explain, api-resources, version
-- NEVER: delete, edit, patch, apply, create, drain, cordon, taint
-- Prefer simple plain-text output the LLM can easily parse
-- For listing resources: kubectl get <resource> -n <ns> (plain table)
-- For listing with filtering: kubectl get <resource> -n <ns> --no-headers | grep <pattern>
-- For counting: kubectl get <resource> -n <ns> --no-headers | grep <pattern> | wc -l
-- For details: kubectl describe <resource>/<name> -n <ns>
-- For logs: kubectl logs <pod> -n <ns> --tail=50
-- Do NOT use -o jsonpath or -o json; use plain text output
-- Use the context and namespace from the conversation
-
-User question: ${lastUserMsg}`;
-
-        try {
-          const planResult = await chatCompletion([
-            ...messages.slice(0, 1),
-            { role: "user", content: planPrompt },
-          ]);
-
-          const planText = planResult.content.trim();
-          // Extract JSON from the response (handle markdown wrapping)
-          const jsonMatch = planText.match(/\{[\s\S]*"kubectl"[\s\S]*\}/);
-          if (jsonMatch) {
-            const parsed = JSON.parse(jsonMatch[0]);
-            if (parsed.kubectl && typeof parsed.kubectl === "string") {
-              kubectlCmd = parsed.kubectl.trim();
-            }
-          }
-        } catch (planErr) {
-          console.log("[ai] plan phase failed, proceeding without execution:", (planErr as Error).message);
-        }
-
-        // Phase 2: Execute the command if we have one
-        if (kubectlCmd) {
-          // Extract context from the system message to inject --context flag
-          const sysMsg = messages[0]?.content || "";
-          const ctxMatch = sysMsg.match(/Context:\s*([^\s,\]]+)/i);
-          const currentContext = ctxMatch?.[1];
-          if (currentContext && !kubectlCmd.includes("--context")) {
-            kubectlCmd = kubectlCmd.replace(/^kubectl\s+/, `kubectl --context=${currentContext} `);
-          }
-
-          sse({ exec_start: kubectlCmd });
-          console.log(`[ai] auto-executing: ${kubectlCmd}`);
-
-          try {
-            const raw = kubectlCmd.replace(/^kubectl\s+/, "");
-            const result = await runKubectlRaw(raw);
-            const output = result.stdout || result.stderr || "(no output)";
-            const truncated = output.length > 8000 ? output.slice(0, 8000) + "\n... (truncated)" : output;
-            kubectlOutput = truncated;
-            sse({ exec_result: truncated, exit_code: result.code });
-          } catch (execErr) {
-            const errMsg = (execErr as Error).message || "Command failed";
-            sse({ exec_result: errMsg, exit_code: 1 });
-            kubectlOutput = `Error: ${errMsg}`;
-          }
-        }
-
-        // Phase 3: Stream the LLM response with context
-        const enrichedMessages = [...messages];
-        if (kubectlCmd && kubectlOutput) {
-          enrichedMessages.push({
-            role: "user",
-            content: `I ran \`${kubectlCmd}\` and got this output:\n\`\`\`\n${kubectlOutput}\n\`\`\`\n\nNow analyze this data and answer my original question. Be specific with numbers, names, and details from the output. Format nicely with markdown.`,
-          });
-        }
-
-        const { model } = await streamChatCompletion(enrichedMessages, (text) => {
-          sse({ text });
-        });
-        sse({ done: true, model });
+        await runAgent(messages, (event) => sse(event as Record<string, unknown>));
       } catch (err: any) {
         sse({ error: err.message });
       }

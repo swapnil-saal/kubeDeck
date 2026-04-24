@@ -21,7 +21,7 @@ function getAiConfig(): AiProviderSettings {
 
 function httpRequest(
   url: string,
-  options: { method: string; headers: Record<string, string>; body: string },
+  options: { method: string; headers: Record<string, string>; body: string; timeout?: number },
 ): Promise<{ statusCode: number; body: string }> {
   return new Promise((resolve, reject) => {
     const parsed = new URL(url);
@@ -33,7 +33,7 @@ function httpRequest(
         path: parsed.pathname + parsed.search,
         method: options.method,
         headers: options.headers,
-        timeout: 30000,
+        timeout: options.timeout ?? 30000,
       },
       (res) => {
         const chunks: Buffer[] = [];
@@ -134,6 +134,229 @@ export async function chatCompletion(messages: ChatMessage[]): Promise<{ content
   if (res.statusCode >= 400) throw new Error(`LLM error (${res.statusCode}): ${res.body.slice(0, 200)}`);
   const data = JSON.parse(res.body);
   return { content: data.choices?.[0]?.message?.content || "", model: data.model || model };
+}
+
+// ═══════════════════════════════════════════════════
+//  TOOL-CALLING SUPPORT
+// ═══════════════════════════════════════════════════
+
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, any>;
+}
+
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters: Record<string, any>;
+}
+
+export interface AgentMessage {
+  role: "system" | "user" | "assistant" | "tool";
+  content?: string;
+  toolCalls?: ToolCall[];
+  toolCallId?: string;
+}
+
+export interface ToolCallResult {
+  content?: string;
+  toolCalls?: ToolCall[];
+  model: string;
+}
+
+export async function chatCompletionWithTools(
+  messages: AgentMessage[],
+  tools: ToolDefinition[],
+): Promise<ToolCallResult> {
+  const config = getAiConfig();
+  if (!config.apiKey && config.provider !== "ollama") {
+    throw new Error(`No API key configured for ${config.provider}. Go to Settings → AI to add one.`);
+  }
+  const model = config.model || DEFAULT_PROVIDERS[config.provider]?.defaultModel || "gpt-4o-mini";
+
+  if (config.provider === "anthropic") {
+    return anthropicWithTools(config, model, messages, tools);
+  }
+  if (config.provider === "ollama") {
+    return ollamaWithTools(config, model, messages, tools);
+  }
+  return openaiWithTools(config, model, messages, tools);
+}
+
+async function openaiWithTools(
+  config: AiProviderSettings, model: string,
+  messages: AgentMessage[], tools: ToolDefinition[],
+): Promise<ToolCallResult> {
+  const baseUrl = config.baseUrl || DEFAULT_PROVIDERS[config.provider]?.baseUrl || DEFAULT_PROVIDERS.openai.baseUrl;
+
+  const oaiMessages = messages.map(m => {
+    if (m.role === "tool") {
+      return { role: "tool" as const, tool_call_id: m.toolCallId, content: m.content || "" };
+    }
+    if (m.role === "assistant" && m.toolCalls?.length) {
+      return {
+        role: "assistant" as const,
+        content: m.content || null,
+        tool_calls: m.toolCalls.map(tc => ({
+          id: tc.id,
+          type: "function" as const,
+          function: { name: tc.name, arguments: JSON.stringify(tc.arguments) },
+        })),
+      };
+    }
+    return { role: m.role, content: m.content || "" };
+  });
+
+  const oaiTools = tools.map(t => ({
+    type: "function" as const,
+    function: { name: t.name, description: t.description, parameters: t.parameters },
+  }));
+
+  console.log(`[ai] openai tool-call → ${baseUrl}/chat/completions model=${model}`);
+  const res = await httpRequest(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}) },
+    body: JSON.stringify({ model, messages: oaiMessages, tools: oaiTools, tool_choice: "auto", temperature: 0.3, max_tokens: 4096 }),
+    timeout: 60000,
+  });
+  if (res.statusCode >= 400) throw new Error(`LLM error (${res.statusCode}): ${res.body.slice(0, 300)}`);
+  const data = JSON.parse(res.body);
+  const choice = data.choices?.[0]?.message;
+  if (!choice) throw new Error("No response from LLM");
+
+  const result: ToolCallResult = { model: data.model || model };
+  if (choice.content) result.content = choice.content;
+  if (choice.tool_calls?.length) {
+    result.toolCalls = choice.tool_calls.map((tc: any) => {
+      let args: Record<string, any> = {};
+      try { args = JSON.parse(tc.function.arguments || "{}"); }
+      catch { args = { command: tc.function.arguments || "" }; }
+      return { id: tc.id, name: tc.function.name, arguments: args };
+    });
+  }
+  return result;
+}
+
+async function anthropicWithTools(
+  config: AiProviderSettings, model: string,
+  messages: AgentMessage[], tools: ToolDefinition[],
+): Promise<ToolCallResult> {
+  const systemMsg = messages.find(m => m.role === "system")?.content || "";
+
+  const claudeMessages: any[] = [];
+  for (const m of messages) {
+    if (m.role === "system") continue;
+
+    if (m.role === "assistant" && m.toolCalls?.length) {
+      const content: any[] = [];
+      if (m.content) content.push({ type: "text", text: m.content });
+      for (const tc of m.toolCalls) {
+        content.push({ type: "tool_use", id: tc.id, name: tc.name, input: tc.arguments });
+      }
+      claudeMessages.push({ role: "assistant", content });
+    } else if (m.role === "tool") {
+      const last = claudeMessages[claudeMessages.length - 1];
+      if (last?.role === "user" && Array.isArray(last.content) && last.content[0]?.type === "tool_result") {
+        last.content.push({ type: "tool_result", tool_use_id: m.toolCallId, content: m.content || "" });
+      } else {
+        claudeMessages.push({
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: m.toolCallId, content: m.content || "" }],
+        });
+      }
+    } else {
+      claudeMessages.push({ role: m.role, content: m.content || "" });
+    }
+  }
+
+  const claudeTools = tools.map(t => ({
+    name: t.name, description: t.description, input_schema: t.parameters,
+  }));
+
+  console.log(`[ai] anthropic tool-call → model=${model}`);
+  const res = await httpRequest("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-api-key": config.apiKey, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify({
+      model, max_tokens: 4096,
+      tool_choice: { type: "auto" },
+      ...(systemMsg ? { system: systemMsg } : {}),
+      messages: claudeMessages,
+      tools: claudeTools,
+    }),
+    timeout: 60000,
+  });
+  if (res.statusCode >= 400) throw new Error(`Anthropic error (${res.statusCode}): ${res.body.slice(0, 300)}`);
+  const data = JSON.parse(res.body);
+
+  const result: ToolCallResult = { model: data.model || model };
+  const textBlocks = (data.content || []).filter((b: any) => b.type === "text");
+  const toolBlocks = (data.content || []).filter((b: any) => b.type === "tool_use");
+
+  if (textBlocks.length) result.content = textBlocks.map((b: any) => b.text).join("");
+  if (toolBlocks.length) {
+    result.toolCalls = toolBlocks.map((b: any) => ({
+      id: b.id, name: b.name, arguments: b.input || {},
+    }));
+  }
+  return result;
+}
+
+async function ollamaWithTools(
+  config: AiProviderSettings, model: string,
+  messages: AgentMessage[], tools: ToolDefinition[],
+): Promise<ToolCallResult> {
+  const url = config.baseUrl || DEFAULT_PROVIDERS.ollama.baseUrl;
+
+  const oaiMessages = messages.map(m => {
+    if (m.role === "tool") {
+      return { role: "tool" as const, content: m.content || "" };
+    }
+    if (m.role === "assistant" && m.toolCalls?.length) {
+      return {
+        role: "assistant" as const,
+        content: m.content || "",
+        tool_calls: m.toolCalls.map(tc => ({
+          function: { name: tc.name, arguments: tc.arguments },
+        })),
+      };
+    }
+    return { role: m.role, content: m.content || "" };
+  });
+
+  const oaiTools = tools.map(t => ({
+    type: "function" as const,
+    function: { name: t.name, description: t.description, parameters: t.parameters },
+  }));
+
+  console.log(`[ai] ollama tool-call → ${url}/api/chat model=${model}`);
+  const res = await httpRequest(`${url}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model, messages: oaiMessages, tools: oaiTools, stream: false }),
+    timeout: 60000,
+  });
+  if (res.statusCode >= 400) throw new Error(`Ollama error (${res.statusCode}): ${res.body.slice(0, 300)}`);
+  const data = JSON.parse(res.body);
+  const msg = data.message;
+  if (!msg) throw new Error("No response from Ollama");
+
+  const result: ToolCallResult = { model: data.model || model };
+  if (msg.content) result.content = msg.content;
+  if (msg.tool_calls?.length) {
+    result.toolCalls = msg.tool_calls.map((tc: any, i: number) => {
+      let args: Record<string, any>;
+      if (typeof tc.function.arguments === "string") {
+        try { args = JSON.parse(tc.function.arguments); }
+        catch { args = { command: tc.function.arguments }; }
+      } else {
+        args = tc.function.arguments || {};
+      }
+      return { id: `ollama_${Date.now()}_${i}`, name: tc.function.name, arguments: args };
+    });
+  }
+  return result;
 }
 
 export async function streamChatCompletion(

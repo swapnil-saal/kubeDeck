@@ -1,6 +1,7 @@
 const { app, BrowserWindow, shell } = require("electron");
 const path = require("path");
 const http = require("http");
+const { spawn } = require("child_process");
 
 const isDev = !app.isPackaged;
 const PORT = process.env.PORT || 5000;
@@ -54,10 +55,31 @@ function createWindow() {
   }
 }
 
+let devServer = null;
+
 app.whenReady().then(async () => {
   if (!isDev) {
     process.env.NODE_ENV = "production";
-    require(path.join(__dirname, "..", "dist", "index.cjs"));
+    process.env.PORT = String(PORT);
+    const serverPath = path.join(__dirname, "..", "dist", "index.cjs");
+    console.log("[KubeDeck] Starting production server from:", serverPath);
+    try {
+      require(serverPath);
+    } catch (err) {
+      console.error("[KubeDeck] Failed to load server bundle:", err);
+      app.quit();
+      return;
+    }
+  } else {
+    devServer = spawn("npx", ["tsx", "server/index.ts"], {
+      cwd: path.join(__dirname, ".."),
+      env: { ...process.env, NODE_ENV: "development", PORT: String(PORT) },
+      stdio: "inherit",
+      shell: true,
+    });
+    devServer.on("error", (err) => {
+      console.error("Failed to start dev server:", err);
+    });
   }
 
   try {
@@ -69,6 +91,12 @@ app.whenReady().then(async () => {
   }
 
   createWindow();
+});
+
+app.on("before-quit", () => {
+  if (devServer && !devServer.killed) {
+    devServer.kill();
+  }
 });
 
 app.on("window-all-closed", () => {

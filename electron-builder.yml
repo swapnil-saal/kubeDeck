@@ -12,6 +12,8 @@ files:
   - package.json
 
 asar: true
+asarUnpack:
+  - dist/**/*
 afterPack: build/afterPack.cjs
 
 mac:
