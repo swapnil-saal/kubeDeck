@@ -1,11 +1,44 @@
 const { app, BrowserWindow, shell } = require("electron");
 const path = require("path");
 const http = require("http");
-const { spawn } = require("child_process");
+const { spawn, execSync } = require("child_process");
 
 const isDev = !app.isPackaged;
 const PORT = process.env.PORT || 5000;
 const SERVER_URL = `http://127.0.0.1:${PORT}`;
+
+// macOS packaged apps don't inherit the user's shell PATH, so kubectl/helm/etc
+// won't be found. Resolve the full PATH from the user's login shell at startup.
+function fixPath() {
+  if (process.platform !== "darwin" && process.platform !== "linux") return;
+  if (isDev) return;
+  try {
+    const userShell = process.env.SHELL || "/bin/zsh";
+    const result = execSync(`${userShell} -ilc 'echo -n "$PATH"'`, {
+      encoding: "utf-8",
+      timeout: 5000,
+      env: { ...process.env },
+    });
+    if (result && result.trim()) {
+      process.env.PATH = result.trim();
+      console.log("[KubeDeck] Resolved PATH from shell:", process.env.PATH);
+    }
+  } catch (err) {
+    console.warn("[KubeDeck] Could not resolve shell PATH, using fallback");
+    const fallbackPaths = [
+      "/opt/homebrew/bin",
+      "/opt/homebrew/sbin",
+      "/usr/local/bin",
+      "/usr/local/sbin",
+      path.join(process.env.HOME || "", ".local/bin"),
+      path.join(process.env.HOME || "", "bin"),
+    ];
+    const currentPath = process.env.PATH || "";
+    process.env.PATH = [...fallbackPaths, ...currentPath.split(":")].filter(Boolean).join(":");
+  }
+}
+
+fixPath();
 
 function waitForServer(url, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
