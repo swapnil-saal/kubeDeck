@@ -6,6 +6,19 @@ import "@xterm/xterm/css/xterm.css";
 import { ChevronUp, ChevronDown, X, TerminalSquare, RotateCcw } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
+function getAccentHex(): string {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue("--primary").trim();
+  if (!raw) return "#ef6c40";
+  const [h, s, l] = raw.split(/\s+/).map(parseFloat);
+  const toRgb = (h: number, s: number, l: number) => {
+    s /= 100; l /= 100;
+    const a = s * Math.min(l, 1 - l);
+    const f = (n: number) => { const k = (n + h / 30) % 12; return l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1); };
+    return [f(0), f(8), f(4)].map(v => Math.round(v * 255).toString(16).padStart(2, "0")).join("");
+  };
+  return `#${toRgb(h, s, l)}`;
+}
+
 interface TerminalPanelProps {
   context: string;
   namespace: string;
@@ -61,9 +74,9 @@ export function TerminalPanel({ context, namespace, isOpen, onToggle, height = 3
       theme: {
         background: "#04060a",
         foreground: "#c8d3de",
-        cursor: "#06b6d4",
+        cursor: getAccentHex(),
         cursorAccent: "#04060a",
-        selectionBackground: "#06b6d433",
+        selectionBackground: getAccentHex() + "33",
         selectionForeground: "#ffffff",
         black: "#0a0e14",
         red: "#f87171",
@@ -232,12 +245,12 @@ export function TerminalPanel({ context, namespace, isOpen, onToggle, height = 3
       {!isOpen && (
         <button
           onClick={onToggle}
-          className="fixed bottom-0 right-4 z-50 flex items-center gap-2 px-3 py-1.5 rounded-t-md border border-b-0 transition-all text-[10px] font-bold uppercase tracking-[0.15em] font-mono bg-surface/90 border-border text-muted-foreground hover:text-primary hover:border-primary/20"
+          className="fixed bottom-0 right-4 z-50 flex items-center gap-2 px-4 py-2 rounded-t-xl border border-b-0 transition-all text-[11px] font-medium bg-card border-border text-muted-foreground hover:text-primary hover:border-primary/20 shadow-sm"
         >
-          <TerminalSquare className="w-3.5 h-3.5" />
+          <TerminalSquare className="w-4 h-4" />
           <span>Terminal</span>
-          <span className="text-muted-foreground/30 text-[8px]">⌃`</span>
-          <ChevronUp className="w-3 h-3" />
+          <span className="text-muted-foreground/40 text-[9px]">⌃`</span>
+          <ChevronUp className="w-3.5 h-3.5" />
         </button>
       )}
 
@@ -254,25 +267,25 @@ export function TerminalPanel({ context, namespace, isOpen, onToggle, height = 3
           >
             {/* Resize handle */}
             <div
-              className="h-1 cursor-ns-resize group flex items-center justify-center hover:bg-cyan-500/10 transition-colors"
+              className="h-1 cursor-ns-resize group flex items-center justify-center hover:bg-primary/10 transition-colors"
               onMouseDown={handleResizeStart}
             >
               <div className="w-12 h-0.5 rounded bg-foreground/[0.08] group-hover:bg-primary/30 transition-colors" />
             </div>
 
             {/* Terminal header */}
-            <div className="flex items-center h-8 px-3 border-b border-border bg-surface/80 shrink-0">
+            <div className="flex items-center h-9 px-4 border-b border-border bg-card shrink-0">
               <div className="flex items-center gap-2">
-                <TerminalSquare className="w-3.5 h-3.5 text-cyan-500" />
-                <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">Shell</span>
-                <span className="text-[9px] text-muted-foreground/20">|</span>
+                <TerminalSquare className="w-3.5 h-3.5 text-primary" />
+                <span className="text-[11px] font-semibold text-muted-foreground">Shell</span>
+                <span className="text-muted-foreground/20">·</span>
                 {context && (
-                  <span className="text-[10px] font-mono text-emerald-400/70">{context}</span>
+                  <span className="text-[11px] font-mono text-emerald-500">{context}</span>
                 )}
                 {namespace && namespace !== "all" && (
                   <>
-                    <span className="text-[9px] text-muted-foreground/20">/</span>
-                    <span className="text-[10px] font-mono text-cyan-400/70">{namespace}</span>
+                    <span className="text-muted-foreground/30">/</span>
+                    <span className="text-[11px] font-mono text-primary">{namespace}</span>
                   </>
                 )}
               </div>
@@ -301,7 +314,7 @@ export function TerminalPanel({ context, namespace, isOpen, onToggle, height = 3
                 {/* Reconnect */}
                 <button
                   onClick={handleReconnect}
-                  className="p-1 rounded hover:bg-cyan-500/10 text-muted-foreground hover:text-cyan-400 transition-colors"
+                  className="p-1.5 rounded-lg hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
                   title="Reconnect (new session)"
                 >
                   <RotateCcw className="w-3 h-3" />

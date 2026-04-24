@@ -12,6 +12,7 @@ import {
   FileText, Code, ScrollText, Search,
   Terminal, Variable, Wifi, WifiOff, Copy, Check, GitBranch,
   Box, Layers, Network, Share2, Square, ExternalLink, Save, Pencil,
+  Sparkles, Loader2,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
@@ -20,6 +21,7 @@ import { AppHeader } from "@/components/AppHeader";
 import { CommandBar, buildDetailCommands } from "@/components/CommandBar";
 import { AiTroubleshootButton } from "@/components/AiTroubleshoot";
 import { AiExplainButton } from "@/components/AiExplainYaml";
+import { useAiConfig, fetchAiSuggestion } from "@/hooks/use-ai-config";
 
 const TYPE_META: Record<string, { label: string }> = {
   pod: { label: "POD" }, deployment: { label: "DEPLOYMENT" }, service: { label: "SERVICE" },
@@ -267,6 +269,9 @@ function LogViewer({ content, isLoading, streaming, streamProps, grep, onGrepCha
   const setGrepFilter = onGrepChange ?? setInternalGrep;
   const [follow, setFollow] = useState(true);
   const [showAnalysis, setShowAnalysis] = useState(false);
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
+  const { isFastModel } = useAiConfig();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const lines = useMemo(() => {
@@ -331,12 +336,36 @@ function LogViewer({ content, isLoading, streaming, streamProps, grep, onGrepCha
             {grepFilter ? `${filteredLines.length}/${lines.length}` : `${lines.length}`} lines
           </span>
           {lines.length > 5 && (
-            <button
-              onClick={() => setShowAnalysis(!showAnalysis)}
-              className={`px-2 py-0.5 rounded-sm text-[9px] uppercase font-bold tracking-wider border transition-colors ${showAnalysis ? 'bg-foreground/8 text-foreground border-foreground/15' : 'bg-foreground/[0.03] text-muted-foreground border-border hover:text-foreground'}`}
-            >
-              Analyze
-            </button>
+            <>
+              <button
+                onClick={() => setShowAnalysis(!showAnalysis)}
+                className={`px-2 py-0.5 rounded-sm text-[9px] uppercase font-bold tracking-wider border transition-colors ${showAnalysis ? 'bg-foreground/8 text-foreground border-foreground/15' : 'bg-foreground/[0.03] text-muted-foreground border-border hover:text-foreground'}`}
+              >
+                Analyze
+              </button>
+              {isFastModel && (
+                <button
+                  onClick={async () => {
+                    if (aiSummaryLoading) return;
+                    setAiSummaryLoading(true);
+                    try {
+                      const last100 = lines.slice(-100).join("\n");
+                      const result = await fetchAiSuggestion(
+                        `Summarize these Kubernetes pod logs in 2-3 sentences, highlighting errors:\n${last100}`,
+                        300,
+                      );
+                      setAiSummary(result);
+                    } catch { /* ignore */ }
+                    setAiSummaryLoading(false);
+                  }}
+                  disabled={aiSummaryLoading}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-sm text-[9px] uppercase font-bold tracking-wider border transition-colors bg-primary/10 text-primary border-primary/20 hover:bg-primary/20"
+                >
+                  {aiSummaryLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                  AI Summary
+                </button>
+              )}
+            </>
           )}
           {streaming && (
             <>
@@ -412,6 +441,19 @@ function LogViewer({ content, isLoading, streaming, streamProps, grep, onGrepCha
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {aiSummary && (
+        <div className="border-b border-primary/20 bg-primary/5 px-4 py-2.5 shrink-0">
+          <div className="flex items-start gap-2">
+            <Sparkles className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-[10px] font-semibold text-primary mb-0.5">AI Summary</p>
+              <p className="text-[11px] text-foreground/80 leading-relaxed">{aiSummary}</p>
+            </div>
+            <button onClick={() => setAiSummary(null)} className="text-muted-foreground hover:text-foreground text-xs p-0.5">×</button>
           </div>
         </div>
       )}
@@ -572,32 +614,32 @@ function PortForwardBar() {
   };
 
   return (
-    <div className="border-t border-border bg-surface/90 px-4 py-1.5 flex items-center gap-3 overflow-x-auto">
-      <Share2 className="w-3 h-3 text-foreground/50 shrink-0" />
-      <span className="text-[9px] uppercase tracking-wider font-bold text-foreground/50 shrink-0">FORWARDS</span>
-      <div className="w-px h-4 bg-foreground/5" />
+    <div className="border-t border-border bg-card px-5 py-2 flex items-center gap-3 overflow-x-auto">
+      <Share2 className="w-3.5 h-3.5 text-primary shrink-0" />
+      <span className="text-[10px] font-semibold text-muted-foreground shrink-0">Forwards</span>
+      <div className="w-px h-4 bg-border" />
       {forwards.map((fwd) => {
         const isDead = fwd.status === "dead" || fwd.status === "error";
         return (
-          <div key={fwd.id} className={`flex items-center gap-2 px-2 py-0.5 rounded-sm shrink-0 border ${isDead ? 'bg-destructive/5 border-destructive/15' : 'bg-foreground/5 border-border'}`}
+          <div key={fwd.id} className={`flex items-center gap-2 px-2.5 py-1 rounded-lg shrink-0 border ${isDead ? 'bg-red-500/5 border-red-500/20' : 'bg-emerald-500/5 border-emerald-500/20'}`}
             title={isDead ? `Error: ${fwd.error || "Process died"}` : `Active — ${fwd.connections || 0} connections handled`}>
             <div className="relative">
               {isDead ? (
-                <div className="w-1.5 h-1.5 rounded-full bg-destructive/60" />
+                <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
               ) : (
                 <>
-                  <div className="w-1.5 h-1.5 rounded-full bg-foreground/40" />
-                  <div className="absolute inset-0 w-1.5 h-1.5 rounded-full bg-foreground/40 animate-ping opacity-40" />
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  <div className="absolute inset-0 w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping opacity-40" />
                 </>
               )}
             </div>
             <a href={`http://localhost:${fwd.localPort}`} target="_blank" rel="noopener noreferrer"
-              className={`text-[10px] font-mono hover:underline ${isDead ? 'text-destructive/80' : 'text-foreground/70'}`}>
+              className={`text-[11px] font-mono hover:underline ${isDead ? 'text-red-500' : 'text-foreground/80'}`}>
               :{fwd.localPort}
             </a>
-            <span className="text-[9px] text-muted-foreground">{"\u2192"}</span>
-            <span className="text-[10px] font-mono text-muted-foreground">{fwd.pod}:{fwd.remotePort}</span>
-            {isDead && <span className="text-[8px] text-destructive/70 uppercase font-bold">DEAD</span>}
+            <span className="text-[10px] text-muted-foreground">{"\u2192"}</span>
+            <span className="text-[11px] font-mono text-muted-foreground">{fwd.pod}:{fwd.remotePort}</span>
+            {isDead && <span className="text-[9px] text-red-500 font-semibold">DEAD</span>}
             <button onClick={() => handleStop(fwd.id, fwd.pod)}
               className="p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors" title="Stop">
               <Square className="w-2.5 h-2.5" />
@@ -605,6 +647,62 @@ function PortForwardBar() {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/* ── Events Pane with AI Summary ──────────────────── */
+
+function EventsPane({ content, isLoading }: { content?: string; isLoading: boolean }) {
+  const { isFastModel } = useAiConfig();
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const fetchedRef = useRef(false);
+
+  useEffect(() => {
+    if (!isFastModel || !content || content.length < 50 || fetchedRef.current) return;
+    fetchedRef.current = true;
+    setSummaryLoading(true);
+    fetchAiSuggestion(
+      `Summarize these Kubernetes events in 1-2 sentences, highlighting any failures or warnings:\n${content.slice(0, 2000)}`,
+      200,
+    )
+      .then(setAiSummary)
+      .catch(() => {})
+      .finally(() => setSummaryLoading(false));
+  }, [isFastModel, content]);
+
+  useEffect(() => {
+    fetchedRef.current = false;
+    setAiSummary(null);
+  }, [content]);
+
+  return (
+    <div className="h-full flex flex-col">
+      {isFastModel && (summaryLoading || aiSummary) && (
+        <div className="border-b border-primary/20 bg-primary/5 px-4 py-2.5 rounded-t shrink-0">
+          <div className="flex items-start gap-2">
+            <Sparkles className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-[10px] font-semibold text-primary mb-0.5">AI Summary</p>
+              {summaryLoading ? (
+                <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Analyzing events...
+                </span>
+              ) : (
+                <p className="text-[11px] text-foreground/80 leading-relaxed">{aiSummary}</p>
+              )}
+            </div>
+            {aiSummary && (
+              <button onClick={() => setAiSummary(null)} className="text-muted-foreground hover:text-foreground text-xs p-0.5">×</button>
+            )}
+          </div>
+        </div>
+      )}
+      <div className="flex-1 min-h-0">
+        <TerminalPane content={content} isLoading={isLoading} emptyMsg="No events found" />
+      </div>
     </div>
   );
 }
@@ -683,7 +781,7 @@ export default function ResourceDetail() {
   ];
 
   return (
-    <div className="flex flex-col h-full bg-background overflow-hidden font-mono text-foreground selection:bg-primary/30">
+    <div className="flex flex-col h-full bg-background overflow-hidden text-foreground selection:bg-primary/20">
       <AppHeader
         showSelectors={false}
         breadcrumbs={[
@@ -697,18 +795,18 @@ export default function ResourceDetail() {
 
       {/* ══════ CONTENT ══════ */}
       <div className="flex-1 overflow-hidden flex flex-col">
-        <div className="px-5 pt-4 pb-0">
+        <div className="px-6 pt-4 pb-0">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="bg-card/50 border border-border p-0.5 h-8 rounded-lg gap-0.5">
+            <TabsList className="bg-muted/50 border border-border p-1 h-auto rounded-xl gap-1">
               {tabs.map(tab => (
                 <TabsTrigger
                   key={tab.id}
                   value={tab.id}
-                  className="text-[10px] font-bold uppercase tracking-[0.15em] rounded-md px-4 h-7 transition-all gap-1.5
-                    data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground
-                    data-[state=active]:bg-foreground/8 data-[state=active]:text-foreground data-[state=active]:shadow-none"
+                  className="text-[11px] font-medium rounded-lg px-4 py-1.5 transition-all gap-1.5
+                    data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground data-[state=inactive]:hover:bg-background/60
+                    data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none"
                 >
-                  <tab.icon className="w-3 h-3" />
+                  <tab.icon className="w-3.5 h-3.5" />
                   {tab.label}
                 </TabsTrigger>
               ))}
@@ -759,22 +857,22 @@ export default function ResourceDetail() {
               {activeTab === "edit" && (
                 <div className="h-full flex flex-col gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground font-mono">
-                      <Pencil className="w-3 h-3" />
-                      <span className="font-bold uppercase tracking-wider">Edit & Apply</span>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Pencil className="w-3.5 h-3.5" />
+                      <span className="font-semibold">Edit & Apply</span>
                     </div>
                     <div className="ml-auto flex items-center gap-2">
                       <Button
                         variant="ghost"
-                        className="text-[10px] uppercase font-bold tracking-wider h-7 px-3 text-muted-foreground hover:text-foreground"
+                        className="text-xs h-9 px-4 text-muted-foreground hover:text-foreground rounded-lg"
                         onClick={() => { setEditing(false); setActiveTab("yaml"); }}
                       >Cancel</Button>
                       <Button
-                        className="bg-foreground/10 hover:bg-foreground/15 text-foreground text-[10px] uppercase font-bold tracking-wider h-7 px-4 rounded-md gap-1.5 border border-border"
+                        className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-medium h-9 px-5 rounded-lg gap-1.5 shadow-sm"
                         onClick={handleApply}
                         disabled={applyMutation.isPending}
                       >
-                        <Save className="w-3 h-3" />
+                        <Save className="w-3.5 h-3.5" />
                         {applyMutation.isPending ? "Applying..." : "Apply"}
                       </Button>
                     </div>
@@ -791,7 +889,7 @@ export default function ResourceDetail() {
                 </div>
               )}
               {activeTab === "events" && (
-                <TerminalPane content={eventsData?.content} isLoading={eventsLoading} emptyMsg="No events found" />
+                <EventsPane content={eventsData?.content} isLoading={eventsLoading} />
               )}
               {activeTab === "related" && (
                 <RelatedPanel type={type} name={name} context={context} namespace={namespace} onNavigate={goToResource} />

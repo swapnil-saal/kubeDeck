@@ -9,16 +9,18 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Dashboard from "@/pages/Dashboard";
 import ResourceDetail from "@/pages/ResourceDetail";
 import Settings from "@/pages/Settings";
+import AiChatPage from "@/pages/AiChatPage";
 import NotFound from "@/pages/not-found";
 import { TerminalPanel } from "@/components/TerminalPanel";
 import { KubectlPalette } from "@/components/KubectlPalette";
-import { AiChat } from "@/components/AiChat";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
+import { useAccent } from "@/hooks/use-accent";
 
 function Routes() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
+      <Route path="/ai" component={AiChatPage} />
       <Route path="/resource/:type/:name" component={ResourceDetail} />
       <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
@@ -27,11 +29,10 @@ function Routes() {
 }
 
 function AppShell() {
+  useAccent();
   const { context, namespace, terminalOpen, toggleTerminal } = useTerminalStore();
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
   const closePalette = useCallback(() => setPaletteOpen(false), []);
-  const toggleChat = useCallback(() => setChatOpen(prev => !prev), []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -42,10 +43,6 @@ function AppShell() {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
         setPaletteOpen(prev => !prev);
-      }
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "i") {
-        e.preventDefault();
-        setChatOpen(prev => !prev);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -68,7 +65,6 @@ function AppShell() {
       />
 
       <KubectlPalette open={paletteOpen} onClose={closePalette} />
-      <AiChat open={chatOpen} onClose={toggleChat} />
     </div>
   );
 }

@@ -10,9 +10,7 @@ interface Column<T> {
   header: string;
   accessorKey?: keyof T;
   cell?: (item: T) => React.ReactNode;
-  /** Hint for minimum width of this column, e.g. "180px" */
   minWidth?: string;
-  /** If true, this column won't shrink and won't wrap */
   nowrap?: boolean;
 }
 
@@ -24,9 +22,7 @@ interface ResourceTableProps<T> {
   error?: Error | null;
   searchKey?: keyof T;
   accentColor?: string;
-  /** Controlled search value. If provided, the table uses this instead of internal state. */
   search?: string;
-  /** Called when the user types in the search box (controlled mode). */
   onSearchChange?: (value: string) => void;
 }
 
@@ -56,7 +52,6 @@ export function ResourceTable<T extends { name: string; status?: string }>({
   isError,
   error,
   searchKey = "name",
-  accentColor = "cyan",
   search: controlledSearch,
   onSearchChange,
 }: ResourceTableProps<T>) {
@@ -72,62 +67,62 @@ export function ResourceTable<T extends { name: string; status?: string }>({
   const colCount = columns.length;
 
   return (
-    <div className="space-y-3">
+    <div className="card-elevated overflow-hidden">
       {/* Search bar */}
-      <div className="flex items-center gap-3">
-        <div className="relative w-72">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+      <div className="flex items-center gap-3 px-5 py-3 border-b border-border">
+        <div className="relative w-80">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input 
-            placeholder="filter resources..." 
+            placeholder="Filter resources..." 
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full h-7 pl-8 pr-3 bg-card border border-border/60 rounded-md text-[11px] font-mono text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 transition-all"
+            className="w-full h-9 pl-10 pr-3 bg-muted/50 border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-all"
           />
         </div>
-        <div className="text-[10px] text-muted-foreground ml-auto font-mono tabular-nums">
+        <div className="text-xs text-muted-foreground ml-auto tabular-nums">
           {isForbidden ? (
-            <span className="text-amber-700 dark:text-amber-400 flex items-center gap-1"><ShieldOff className="w-3 h-3" /> access denied</span>
+            <span className="text-amber-600 dark:text-amber-400 flex items-center gap-1.5 font-medium"><ShieldOff className="w-3.5 h-3.5" /> Access denied</span>
           ) : isError ? (
-            <span className="text-red-700 dark:text-red-400 flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> fetch error</span>
+            <span className="text-red-600 dark:text-red-400 flex items-center gap-1.5 font-medium"><AlertTriangle className="w-3.5 h-3.5" /> Fetch error</span>
           ) : (
-            <>{filteredData?.length ?? 0} resources</>
+            <span className="bg-primary/10 text-primary px-2.5 py-1 rounded-full text-[11px] font-semibold">{filteredData?.length ?? 0} resources</span>
           )}
         </div>
       </div>
 
-      {/* Table — real HTML table for auto column sizing */}
-      <div className="rounded-lg border border-border/60 overflow-x-auto bg-card/50">
+      {/* Table */}
+      <div className="overflow-x-auto">
         {isForbidden ? (
-          <div className="px-4 py-16 text-center">
-            <div className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-amber-500/5 border border-amber-500/10 mb-3">
-              <ShieldOff className="w-5 h-5 text-amber-500/60" />
+          <div className="px-5 py-16 text-center">
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-amber-500/10 mb-3">
+              <ShieldOff className="w-6 h-6 text-amber-500" />
             </div>
-            <p className="text-[12px] text-amber-400/80 font-mono font-bold">ACCESS DENIED</p>
-            <p className="text-[10px] text-muted-foreground mt-1.5 max-w-xs mx-auto leading-relaxed">
+            <p className="text-sm font-semibold text-amber-600 dark:text-amber-400">Access Denied</p>
+            <p className="text-xs text-muted-foreground mt-2 max-w-xs mx-auto leading-relaxed">
               {error?.message || "Your service account does not have permission to list resources in this namespace."}
             </p>
-            <p className="text-[9px] text-muted-foreground/60 mt-3 font-mono">
+            <p className="text-[11px] text-muted-foreground/60 mt-3">
               Try switching to a namespace you have access to.
             </p>
           </div>
         ) : isError ? (
-          <div className="px-4 py-16 text-center">
-            <div className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-red-500/5 border border-red-500/10 mb-3">
-              <AlertTriangle className="w-5 h-5 text-red-500/60" />
+          <div className="px-5 py-16 text-center">
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-red-500/10 mb-3">
+              <AlertTriangle className="w-6 h-6 text-red-500" />
             </div>
-            <p className="text-[12px] text-red-400/80 font-mono font-bold">FETCH FAILED</p>
-            <p className="text-[10px] text-muted-foreground mt-1.5 max-w-sm mx-auto leading-relaxed">
+            <p className="text-sm font-semibold text-red-600 dark:text-red-400">Fetch Failed</p>
+            <p className="text-xs text-muted-foreground mt-2 max-w-sm mx-auto leading-relaxed">
               {error?.message || "Failed to fetch resources. Check cluster connectivity."}
             </p>
           </div>
         ) : (
-          <table className="w-full border-collapse text-[11px] font-mono table-auto">
+          <table className="w-full border-collapse text-sm table-auto">
             <thead>
-              <tr className="bg-foreground/[0.03] border-b border-border/60">
+              <tr className="bg-muted/40 border-b border-border">
                 {columns.map((col, i) => (
                   <th
                     key={i}
-                    className="px-3 py-2 text-left text-[9px] uppercase tracking-[0.2em] font-bold text-muted-foreground whitespace-nowrap"
+                    className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground whitespace-nowrap"
                   >
                     {col.header}
                   </th>
@@ -139,8 +134,8 @@ export function ResourceTable<T extends { name: string; status?: string }>({
                 Array.from({ length: 8 }).map((_, i) => (
                   <tr key={i} className="border-b border-border/50">
                     {columns.map((_, j) => (
-                      <td key={j} className="px-3 py-2.5">
-                        <Skeleton className="h-3 bg-foreground/[0.04] rounded-sm" style={{ width: `${40 + Math.random() * 40}%` }} />
+                      <td key={j} className="px-4 py-3">
+                        <Skeleton className="h-3.5 bg-muted rounded" style={{ width: `${40 + Math.random() * 40}%` }} />
                       </td>
                     ))}
                   </tr>
@@ -148,7 +143,7 @@ export function ResourceTable<T extends { name: string; status?: string }>({
               ) : filteredData?.length === 0 ? (
                 <tr>
                   <td colSpan={colCount} className="px-4 py-12 text-center">
-                    <p className="text-[11px] text-muted-foreground font-mono">No resources found</p>
+                    <p className="text-sm text-muted-foreground">No resources found</p>
                   </td>
                 </tr>
               ) : (
@@ -158,20 +153,20 @@ export function ResourceTable<T extends { name: string; status?: string }>({
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: Math.min(i * 0.01, 0.3), duration: 0.15 }}
-                    className="group border-b border-border/40 hover:bg-foreground/[0.03] transition-colors cursor-default"
+                    className="group border-b border-border/50 hover:bg-primary/[0.03] transition-colors cursor-default"
                   >
                     {columns.map((col, j) => (
                       <td
                         key={j}
-                        className="px-3 py-2 text-muted-foreground whitespace-nowrap max-w-[350px]"
+                        className="px-4 py-2.5 text-muted-foreground whitespace-nowrap max-w-[350px]"
                       >
                         <div className="flex items-center">
                           {col.cell 
                             ? col.cell(item) 
                             : col.accessorKey === 'status' 
-                              ? <StatusBadge status={String(item[col.accessorKey!])} />
+                              ? <StatusBadge status={String(item[col.accessorKey!])} resourceName={item.name} />
                               : col.accessorKey === 'age'
-                                ? <span className="text-muted-foreground">{formatAge(String(item[col.accessorKey!]))}</span>
+                                ? <span className="text-muted-foreground text-xs">{formatAge(String(item[col.accessorKey!]))}</span>
                                 : <span className="truncate">{String(item[col.accessorKey!] ?? "-")}</span>
                           }
                         </div>

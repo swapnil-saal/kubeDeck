@@ -302,18 +302,19 @@ export function AiChat({ open, onClose }: { open: boolean; onClose: () => void }
       <div className="flex-1 flex flex-col bg-background border-l border-border min-w-0 overflow-hidden">
         {/* Header — matches AppHeader style */}
         <div className="shrink-0 app-header" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
-          <div className="flex items-center h-12 px-4 border-b border-border bg-card/95 backdrop-blur-xl">
+          <div className="flex items-center h-14 px-4 border-b border-border bg-card/95 backdrop-blur-xl">
             <div className="flex items-center gap-2.5 flex-1 min-w-0">
-              <Bot className="w-4 h-4 text-foreground/70" />
-              <span className="text-[11px] font-bold tracking-[0.2em] text-foreground/80 uppercase">AI</span>
-              <div className="w-px h-4 bg-border mx-1" />
-              <span className="text-[9px] font-mono text-muted-foreground truncate">{providerLabel}/{modelLabel}</span>
+              <div className="p-1.5 rounded-lg bg-primary/10">
+                <Bot className="w-4 h-4 text-primary" />
+              </div>
+              <span className="text-[13px] font-semibold text-foreground">AI Assistant</span>
+              <span className="text-[10px] text-muted-foreground truncate ml-1">{providerLabel}/{modelLabel}</span>
             </div>
 
-            <div className="flex items-center gap-1.5 px-2 py-0.5 bg-foreground/[0.03] border border-border rounded-sm text-[9px] font-mono text-muted-foreground mr-2">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-primary/5 border border-primary/15 rounded-lg text-[10px] text-muted-foreground mr-2">
               <div className="relative">
-                <div className="w-1.5 h-1.5 rounded-full bg-foreground/40" />
-                <div className="absolute inset-0 w-1.5 h-1.5 rounded-full bg-foreground/40 animate-ping opacity-40" />
+                <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+                <div className="absolute inset-0 w-1.5 h-1.5 rounded-full bg-primary animate-ping opacity-30" />
               </div>
               <span>{context || "default"}</span>
               <span className="text-muted-foreground/30">/</span>
@@ -324,14 +325,14 @@ export function AiChat({ open, onClose }: { open: boolean; onClose: () => void }
               <button
                 onClick={handleClear}
                 disabled={!hasMessages}
-                className="p-1.5 rounded hover:bg-foreground/5 text-muted-foreground hover:text-foreground disabled:opacity-15 disabled:cursor-not-allowed transition-colors"
+                className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-15 disabled:cursor-not-allowed transition-colors"
                 title="Clear"
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={onClose}
-                className="p-1.5 rounded hover:bg-foreground/5 text-muted-foreground hover:text-foreground transition-colors"
+                className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                 title="Close (⌘⇧I)"
               >
                 <X className="w-3.5 h-3.5" />
@@ -344,27 +345,29 @@ export function AiChat({ open, onClose }: { open: boolean; onClose: () => void }
         <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-auto min-h-0">
           {!hasMessages && !error && (
             <div className="flex flex-col h-full px-5 py-8">
-              <div className="flex-1 flex flex-col items-center justify-center gap-5">
-                <div className="flex items-center gap-2">
-                  <Terminal className="w-5 h-5 text-muted-foreground/40" />
-                  <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">KubeDeck AI Agent</span>
+              <div className="flex-1 flex flex-col items-center justify-center gap-4">
+                <div className="p-3 rounded-2xl bg-primary/10">
+                  <Terminal className="w-6 h-6 text-primary" />
                 </div>
-                <p className="text-[11px] text-muted-foreground text-center max-w-[300px] leading-relaxed">
-                  Ask anything about your cluster. I'll run kubectl commands, analyze output, and troubleshoot issues — all automatically.
-                </p>
+                <div className="text-center">
+                  <p className="text-sm font-semibold text-foreground mb-1">KubeDeck AI</p>
+                  <p className="text-xs text-muted-foreground max-w-[280px] leading-relaxed">
+                    Ask anything about your cluster. I'll run commands, analyze output, and troubleshoot automatically.
+                  </p>
+                </div>
               </div>
 
               <div className="space-y-1.5 mt-auto">
-                <p className="text-[8px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40 px-1 mb-2">SUGGESTIONS</p>
+                <p className="text-[10px] font-medium text-muted-foreground px-1 mb-2">Suggestions</p>
                 {suggestions.map(({ icon: Icon, text, cmd }) => (
                   <button
                     key={text}
                     onClick={() => { setInput(text); setTimeout(() => inputRef.current?.focus(), 50); }}
-                    className="group/sg flex items-center gap-3 w-full text-left px-3 py-2.5 rounded-md border border-border/60 bg-foreground/[0.02] hover:bg-foreground/[0.04] hover:border-foreground/15 transition-all"
+                    className="group/sg flex items-center gap-3 w-full text-left px-3 py-2.5 rounded-xl border border-border bg-muted/30 hover:bg-primary/5 hover:border-primary/20 transition-all"
                   >
-                    <Icon className="w-3.5 h-3.5 text-muted-foreground/50 group-hover/sg:text-foreground/60 transition-colors shrink-0" />
-                    <span className="text-[10px] text-muted-foreground group-hover/sg:text-foreground transition-colors flex-1">{text}</span>
-                    <span className="text-[8px] font-mono text-muted-foreground/30 uppercase">{cmd}</span>
+                    <Icon className="w-3.5 h-3.5 text-muted-foreground group-hover/sg:text-primary transition-colors shrink-0" />
+                    <span className="text-[11px] text-muted-foreground group-hover/sg:text-foreground transition-colors flex-1">{text}</span>
+                    <span className="text-[9px] font-mono text-muted-foreground/40">{cmd}</span>
                   </button>
                 ))}
               </div>

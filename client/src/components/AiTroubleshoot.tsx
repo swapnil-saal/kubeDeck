@@ -88,10 +88,10 @@ export function AiTroubleshootButton(props: TroubleshootProps) {
     <>
       <button
         onClick={run}
-        className="flex items-center gap-1.5 px-2.5 py-1 rounded border border-border text-[9px] uppercase font-bold tracking-wider text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] hover:border-foreground/15 transition-colors"
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-primary/20 text-[11px] font-medium text-primary bg-primary/5 hover:bg-primary/10 transition-colors"
         title="AI Troubleshoot"
       >
-        <Bot className="w-3 h-3" />
+        <Bot className="w-3.5 h-3.5" />
         <span>AI Diagnose</span>
       </button>
 
@@ -99,9 +99,11 @@ export function AiTroubleshootButton(props: TroubleshootProps) {
         <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[8vh]" onClick={handleClose}>
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
           <div className="relative w-full max-w-2xl bg-card border border-border rounded-xl shadow-2xl overflow-hidden font-mono" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center gap-3 px-4 h-10 border-b border-border bg-foreground/[0.02]">
-              <Bot className="w-3.5 h-3.5 text-foreground/60" />
-              <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-foreground flex-1">
+            <div className="flex items-center gap-3 px-5 h-12 border-b border-border">
+              <div className="p-1.5 rounded-lg bg-primary/10">
+                <Bot className="w-3.5 h-3.5 text-primary" />
+              </div>
+              <span className="text-sm font-semibold text-foreground flex-1">
                 AI Diagnosis — {props.resourceType}/{props.name}
               </span>
               {content && (

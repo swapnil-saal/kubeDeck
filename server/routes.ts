@@ -1129,13 +1129,44 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ── Execute arbitrary kubectl command ─────────────
+  const EXEC_BLOCKED_VERBS = new Set(["delete", "drain", "cordon", "uncordon", "taint"]);
+  const EXEC_DANGEROUS_VERBS = new Set(["apply", "patch", "edit", "replace", "create", "label", "annotate"]);
+
   app.post("/api/kubectl/exec", async (req, res) => {
     try {
-      const { command } = req.body;
+      const { command, confirmed } = req.body;
       if (!command || typeof command !== "string") {
         return res.status(400).json({ message: "Missing command" });
       }
-      const raw = command.replace(/^kubectl\s+/, "");
+      let raw = command.replace(/^kubectl\s+/, "").trim();
+      // Sanitize: fix "cluster info" → "cluster-info"
+      raw = raw.replace(/\bcluster\s+info\b/gi, "cluster-info");
+      // Fix flags before verb
+      const tokens = raw.split(/\s+/);
+      const leadingFlags: string[] = [];
+      let i = 0;
+      while (i < tokens.length && tokens[i].startsWith("-")) {
+        leadingFlags.push(tokens[i]);
+        i++;
+      }
+      if (leadingFlags.length > 0 && i < tokens.length) {
+        raw = tokens.slice(i).join(" ") + " " + leadingFlags.join(" ");
+      }
+
+      const verb = raw.split(/\s+/)[0]?.toLowerCase() || "";
+      if (EXEC_BLOCKED_VERBS.has(verb)) {
+        return res.status(403).json({
+          message: `Command '${verb}' is blocked for safety. Use the KubeDeck UI or run it manually in your terminal.`,
+          blocked: true,
+        });
+      }
+      if (EXEC_DANGEROUS_VERBS.has(verb) && !confirmed) {
+        return res.status(200).json({
+          needsConfirmation: true,
+          command: `kubectl ${raw}`,
+          warning: `This is a mutating command (${verb}). Are you sure you want to execute it?`,
+        });
+      }
       const result = await runKubectlRaw(raw);
       res.json({ stdout: result.stdout, stderr: result.stderr, code: result.code });
     } catch (err: any) {
@@ -1228,6 +1259,94 @@ Be concise. Use markdown formatting. If the resource looks healthy, say so brief
       res.end();
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Troubleshoot failed" });
+    }
+  });
+
+  app.post("/api/ai/suggest", async (req: Request, res: Response) => {
+    try {
+      const { prompt, maxTokens } = req.body;
+      if (!prompt || typeof prompt !== "string") {
+        return res.status(400).json({ message: "Missing prompt" });
+      }
+      const result = await chatCompletion([
+        { role: "system", content: "You are a concise Kubernetes assistant. Answer in plain text, no markdown. Be brief and actionable." },
+        { role: "user", content: prompt },
+      ]);
+      const suggestion = result.content.slice(0, maxTokens || 200);
+      res.json({ suggestion, model: result.model });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "AI suggest failed" });
+    }
+  });
+
+  const KUBECTL_TRANSLATE_SYSTEM = `You are a kubectl command translator. Convert natural language to a single kubectl command.
+
+SYNTAX RULES (CRITICAL):
+  kubectl <verb> <resource> [name] [flags]
+  Flags ALWAYS go AFTER the verb/resource, NEVER before.
+  CORRECT: kubectl get pods --context=mycluster -n default
+  WRONG:   kubectl --context=mycluster get pods
+
+COMMON COMMANDS:
+  kubectl get <resource> [name] [-n ns] [-o wide|yaml|json]
+  kubectl describe <resource> <name> [-n ns]
+  kubectl logs <pod> [-n ns] [--tail=N] [-c container]
+  kubectl exec -it <pod> [-n ns] -- /bin/sh
+  kubectl top pods|nodes [-n ns]
+  kubectl scale deployment/<name> --replicas=N [-n ns]
+  kubectl rollout restart|status deployment/<name> [-n ns]
+  kubectl expose <resource> <name> --type=NodePort|ClusterIP|LoadBalancer --port=P [--target-port=TP] [-n ns]
+  kubectl port-forward <pod|svc/name> <local>:<remote> [-n ns]
+  kubectl apply -f <file|url> [-n ns]
+  kubectl delete <resource> <name> [-n ns]
+  kubectl config get-contexts | current-context
+  kubectl cluster-info (NOT "cluster info")
+  kubectl get events [-n ns] --sort-by=.lastTimestamp
+
+RESOURCE SHORTHANDS: po, deploy, svc, ing, cm, ns, no, rs, sts, ds, hpa, pvc, pv, sa, cj, ep
+
+RULES:
+- Output ONLY the kubectl command, nothing else
+- No explanation, no markdown, no code fences
+- Use proper flag placement
+- Use resource shorthands where appropriate
+- For "expose" requests, use "kubectl expose" with proper --type and --port flags`;
+
+  app.post("/api/ai/translate", async (req: Request, res: Response) => {
+    try {
+      const { prompt, context, namespace } = req.body;
+      if (!prompt || typeof prompt !== "string") {
+        return res.status(400).json({ message: "Missing prompt" });
+      }
+      const ctxHint = context ? ` Current context: ${context}.` : "";
+      const nsHint = namespace && namespace !== "all" ? ` Current namespace: ${namespace}.` : "";
+      const result = await chatCompletion([
+        { role: "system", content: KUBECTL_TRANSLATE_SYSTEM },
+        { role: "user", content: `${prompt}${ctxHint}${nsHint}` },
+      ]);
+      let cmd = result.content.trim()
+        .replace(/^```\w*\n?/, "").replace(/\n?```$/, "")
+        .replace(/^`+|`+$/g, "")
+        .trim();
+      // Sanitize: fix common AI mistakes
+      cmd = cmd.replace(/\bcluster\s+info\b/gi, "cluster-info");
+      // Fix flags before verb
+      if (cmd.startsWith("kubectl ")) {
+        const withoutPrefix = cmd.replace(/^kubectl\s+/, "");
+        const tokens = withoutPrefix.split(/\s+/);
+        const leadingFlags: string[] = [];
+        let i = 0;
+        while (i < tokens.length && tokens[i].startsWith("-")) {
+          leadingFlags.push(tokens[i]);
+          i++;
+        }
+        if (leadingFlags.length > 0 && i < tokens.length) {
+          cmd = "kubectl " + tokens.slice(i).join(" ") + " " + leadingFlags.join(" ");
+        }
+      }
+      res.json({ command: cmd, model: result.model });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "AI translate failed" });
     }
   });
 

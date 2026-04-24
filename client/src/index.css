@@ -8,79 +8,91 @@
   --font-sans: 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
-  --background: 220 14% 96%;
-  --foreground: 224 20% 10%;
+  --background: 0 0% 98%;
+  --foreground: 220 14% 10%;
 
   --card: 0 0% 100%;
-  --card-foreground: 224 20% 10%;
+  --card-foreground: 220 14% 10%;
 
   --popover: 0 0% 100%;
-  --popover-foreground: 224 20% 10%;
+  --popover-foreground: 220 14% 10%;
 
-  --primary: 200 80% 32%;
+  --primary: 15 85% 55%;
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 220 12% 88%;
-  --secondary-foreground: 224 20% 14%;
+  --secondary: 220 8% 92%;
+  --secondary-foreground: 220 12% 18%;
 
-  --muted: 220 12% 90%;
-  --muted-foreground: 220 10% 34%;
+  --muted: 220 8% 94%;
+  --muted-foreground: 220 6% 42%;
 
-  --accent: 200 80% 32%;
+  --accent: 15 85% 55%;
   --accent-foreground: 0 0% 100%;
 
-  --destructive: 0 72% 48%;
+  --destructive: 0 72% 50%;
   --destructive-foreground: 0 0% 100%;
 
-  --border: 220 14% 80%;
-  --input: 220 14% 80%;
-  --ring: 200 80% 40%;
+  --success: 160 65% 38%;
+  --success-foreground: 0 0% 100%;
 
-  --radius: 0.5rem;
+  --warning: 38 92% 50%;
+  --warning-foreground: 220 14% 10%;
 
-  --surface: 0 0% 99%;
-  --surface-inset: 220 12% 92%;
+  --border: 220 8% 89%;
+  --input: 220 8% 89%;
+  --ring: 15 85% 55%;
 
-  --chart-1: 200 80% 32%;
-  --chart-2: 160 65% 32%;
-  --chart-3: 258 55% 48%;
-  --chart-4: 38 75% 44%;
-  --chart-5: 340 65% 48%;
+  --radius: 0.625rem;
+
+  --surface: 220 6% 99%;
+  --surface-inset: 220 8% 95%;
+
+  --chart-1: 15 85% 55%;
+  --chart-2: 160 65% 38%;
+  --chart-3: 258 55% 55%;
+  --chart-4: 38 80% 50%;
+  --chart-5: 340 65% 50%;
 }
 
 .dark {
-  --background: 228 16% 5%;
-  --foreground: 220 10% 88%;
+  --background: 220 6% 5%;
+  --foreground: 220 5% 88%;
 
-  --card: 226 14% 7.5%;
-  --card-foreground: 220 10% 88%;
+  --card: 220 5% 8%;
+  --card-foreground: 220 5% 88%;
 
-  --popover: 226 14% 8%;
-  --popover-foreground: 220 10% 88%;
+  --popover: 220 5% 9%;
+  --popover-foreground: 220 5% 88%;
 
-  --primary: 192 70% 48%;
-  --primary-foreground: 228 16% 5%;
+  --primary: 15 80% 55%;
+  --primary-foreground: 0 0% 100%;
 
-  --secondary: 224 12% 13%;
-  --secondary-foreground: 220 10% 82%;
+  --secondary: 220 5% 14%;
+  --secondary-foreground: 220 5% 82%;
 
-  --muted: 224 12% 12%;
-  --muted-foreground: 220 8% 50%;
+  --muted: 220 5% 13%;
+  --muted-foreground: 220 4% 50%;
 
-  --accent: 192 70% 48%;
-  --accent-foreground: 228 16% 5%;
+  --accent: 15 80% 55%;
+  --accent-foreground: 0 0% 100%;
 
   --destructive: 0 60% 50%;
   --destructive-foreground: 0 0% 95%;
 
-  --border: 224 12% 14%;
-  --input: 224 12% 14%;
-  --ring: 192 60% 45%;
+  --success: 160 55% 42%;
+  --success-foreground: 0 0% 100%;
 
-  --surface: 226 14% 7%;
-  --surface-inset: 228 16% 4%;
+  --warning: 38 80% 50%;
+  --warning-foreground: 220 6% 10%;
 
-  --chart-1: 192 70% 48%;
+  --border: 220 5% 15%;
+  --input: 220 5% 15%;
+  --ring: 15 70% 50%;
+
+  --surface: 220 5% 7%;
+  --surface-inset: 220 6% 4%;
+
+  --chart-1: 15 80% 55%;
   --chart-2: 160 50% 45%;
   --chart-3: 258 50% 58%;
   --chart-4: 38 60% 55%;
@@ -122,20 +134,24 @@
   }
 
   ::selection {
-    @apply bg-primary/30;
+    @apply bg-primary/20;
   }
 }
 
 @layer components {
   .glass-panel {
-    @apply bg-foreground/[0.02] backdrop-blur-md border border-foreground/[0.04] shadow-xl;
+    @apply bg-card/80 backdrop-blur-md border border-border shadow-lg;
   }
 
   .grid-bg {
     background-image:
-      linear-gradient(hsl(var(--primary) / 0.04) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(var(--primary) / 0.04) 1px, transparent 1px);
+      linear-gradient(hsl(var(--primary) / 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--primary) / 0.03) 1px, transparent 1px);
     background-size: 48px 48px;
+  }
+
+  .card-elevated {
+    @apply bg-card rounded-xl border border-border shadow-sm;
   }
 
   .app-header {
@@ -149,6 +165,96 @@
   .app-no-drag {
     -webkit-app-region: no-drag;
   }
+}
+
+/* ── Accent Color Themes ─────────────────────────────────── */
+
+/* Coral (default) — no class needed, it's the base */
+
+/* Ocean Blue */
+.accent-blue {
+  --primary: 210 85% 52%;
+  --accent: 210 85% 52%;
+  --ring: 210 85% 52%;
+  --chart-1: 210 85% 52%;
+}
+.dark.accent-blue, .dark .accent-blue {
+  --primary: 210 80% 58%;
+  --accent: 210 80% 58%;
+  --ring: 210 70% 52%;
+  --chart-1: 210 80% 58%;
+}
+
+/* Violet */
+.accent-violet {
+  --primary: 262 80% 55%;
+  --accent: 262 80% 55%;
+  --ring: 262 80% 55%;
+  --chart-1: 262 80% 55%;
+}
+.dark.accent-violet, .dark .accent-violet {
+  --primary: 262 75% 62%;
+  --accent: 262 75% 62%;
+  --ring: 262 65% 55%;
+  --chart-1: 262 75% 62%;
+}
+
+/* Emerald */
+.accent-emerald {
+  --primary: 160 70% 38%;
+  --accent: 160 70% 38%;
+  --ring: 160 70% 38%;
+  --chart-1: 160 70% 38%;
+}
+.dark.accent-emerald, .dark .accent-emerald {
+  --primary: 160 60% 45%;
+  --accent: 160 60% 45%;
+  --ring: 160 55% 42%;
+  --chart-1: 160 60% 45%;
+}
+
+/* Rose */
+.accent-rose {
+  --primary: 340 75% 52%;
+  --accent: 340 75% 52%;
+  --ring: 340 75% 52%;
+  --chart-1: 340 75% 52%;
+}
+.dark.accent-rose, .dark .accent-rose {
+  --primary: 340 70% 58%;
+  --accent: 340 70% 58%;
+  --ring: 340 65% 52%;
+  --chart-1: 340 70% 58%;
+}
+
+/* Amber */
+.accent-amber {
+  --primary: 38 90% 48%;
+  --accent: 38 90% 48%;
+  --ring: 38 90% 48%;
+  --chart-1: 38 90% 48%;
+  --primary-foreground: 20 15% 10%;
+}
+.dark.accent-amber, .dark .accent-amber {
+  --primary: 38 80% 52%;
+  --accent: 38 80% 52%;
+  --ring: 38 70% 48%;
+  --chart-1: 38 80% 52%;
+  --primary-foreground: 20 15% 10%;
+}
+
+/* Cyan */
+.accent-cyan {
+  --primary: 192 80% 42%;
+  --accent: 192 80% 42%;
+  --ring: 192 80% 42%;
+  --chart-1: 192 80% 42%;
+}
+.dark.accent-cyan, .dark .accent-cyan {
+  --primary: 192 70% 48%;
+  --accent: 192 70% 48%;
+  --ring: 192 60% 45%;
+  --chart-1: 192 70% 48%;
 }
 
 /* xterm.js overrides */
@@ -166,9 +272,9 @@
   background: transparent;
 }
 .xterm-viewport::-webkit-scrollbar-thumb {
-  background: rgba(6, 182, 212, 0.15);
+  background: hsl(var(--primary) / 0.15);
   border-radius: 3px;
 }
 .xterm-viewport::-webkit-scrollbar-thumb:hover {
-  background: rgba(6, 182, 212, 0.3);
+  background: hsl(var(--primary) / 0.3);
 }

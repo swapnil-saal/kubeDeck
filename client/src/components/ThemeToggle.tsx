@@ -8,18 +8,18 @@ export function ThemeToggle() {
 
   useEffect(() => setMounted(true), []);
 
-  if (!mounted) return <div className="w-7 h-7" />;
+  if (!mounted) return <div className="w-8 h-8" />;
 
   return (
     <button
       onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-      className="p-1.5 hover:bg-foreground/5 rounded text-muted-foreground hover:text-foreground transition-all"
+      className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-all"
       title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
     >
       {theme === "dark" ? (
-        <Sun className="w-3.5 h-3.5" />
+        <Sun className="w-4 h-4" />
       ) : (
-        <Moon className="w-3.5 h-3.5" />
+        <Moon className="w-4 h-4" />
       )}
     </button>
   );

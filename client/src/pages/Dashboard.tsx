@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useLocation } from "wouter";
 import { useHashParams } from "@/hooks/use-hash-params";
 import {
@@ -16,7 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Box, Layers, Network, RefreshCw, Terminal, List, Share2, Trash2, Activity,
   Zap, Square, FileText, Lock, Globe, Database, Clock, Server,
-  Gauge, HardDrive, RotateCw, Scaling, HeartPulse, AlertTriangle, ChevronDown, ChevronUp,
+  Gauge, HardDrive, RotateCw, Scaling, HeartPulse, AlertTriangle, ChevronDown, ChevronUp, Sparkles, Loader2,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
+import { useAiConfig, fetchAiSuggestion } from "@/hooks/use-ai-config";
 
 export default function Dashboard() {
   const { context: currentContext, namespace: currentNamespace, setContext: handleSetContext } = useTerminalStore();
@@ -77,6 +78,8 @@ export default function Dashboard() {
 
   const [scaleDialog, setScaleDialog] = useState<{ name: string; current: number } | null>(null);
   const [scaleReplicas, setScaleReplicas] = useState("1");
+  const [logAiSummary, setLogAiSummary] = useState<string | null>(null);
+  const [logAiSummaryLoading, setLogAiSummaryLoading] = useState(false);
 
   const { data: logsData, isLoading: logsLoading } = usePodLogs(
     selectedPod.name, currentContext, currentNamespace, selectedPod.type === 'logs'
@@ -195,15 +198,45 @@ export default function Dashboard() {
 
   const [healthExpanded, setHealthExpanded] = useState(true);
 
+  const { isFastModel } = useAiConfig();
+  const aiSuggestionsCache = useRef<Map<string, string>>(new Map());
+  const [aiSuggestions, setAiSuggestions] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!isFastModel || healthIssues.length === 0) return;
+    const controller = new AbortController();
+    const fetchSuggestions = async () => {
+      for (const issue of healthIssues) {
+        const key = issue.message;
+        if (aiSuggestionsCache.current.has(key)) {
+          setAiSuggestions(prev => ({ ...prev, [key]: aiSuggestionsCache.current.get(key)! }));
+          continue;
+        }
+        try {
+          const suggestion = await fetchAiSuggestion(
+            `In one sentence, explain the likely cause and fix for this Kubernetes issue: ${key}`,
+            200,
+            controller.signal,
+          );
+          aiSuggestionsCache.current.set(key, suggestion);
+          setAiSuggestions(prev => ({ ...prev, [key]: suggestion }));
+        } catch {
+          // ignore abort / failure
+        }
+      }
+    };
+    fetchSuggestions();
+    return () => controller.abort();
+  }, [isFastModel, healthIssues]);
+
   if (!currentContext && !contexts) {
     return (
       <div className="h-full w-full flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
           <div className="relative">
-            <div className="w-12 h-12 border-2 border-foreground/10 border-t-foreground/40 rounded-full animate-spin" />
-            <div className="absolute inset-0 w-12 h-12 border-2 border-transparent border-b-foreground/20 rounded-full animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }} />
+            <div className="w-12 h-12 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
           </div>
-          <p className="text-primary font-mono text-sm tracking-wider">INITIALIZING CLUSTER CONNECTION...</p>
+          <p className="text-muted-foreground text-sm font-medium">Connecting to cluster...</p>
         </div>
       </div>
     );
@@ -223,19 +256,19 @@ export default function Dashboard() {
         onClick={handleRefresh}
         whileTap={{ rotate: 180 }}
         transition={{ duration: 0.3 }}
-        className="p-1.5 hover:bg-foreground/5 rounded text-muted-foreground hover:text-primary transition-all"
+        className="p-2 hover:bg-muted rounded-lg text-muted-foreground hover:text-primary transition-all"
         title="Refresh"
       >
-        <RefreshCw className="w-3.5 h-3.5" />
+        <RefreshCw className="w-4 h-4" />
       </motion.button>
 
-      <div className="flex items-center gap-1.5 px-2.5 py-1 bg-foreground/5 border border-border rounded-sm" title="Auto-refreshing every 10s">
+      <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg" title="Auto-refreshing every 10s">
         <div className="relative">
-          <div className="w-1.5 h-1.5 rounded-full bg-foreground/40" />
-          <div className="absolute inset-0 w-1.5 h-1.5 rounded-full bg-foreground/40 animate-ping opacity-40" />
+          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+          <div className="absolute inset-0 w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping opacity-40" />
         </div>
-        <span className="text-[9px] uppercase tracking-[0.15em] font-bold text-muted-foreground">LIVE</span>
-        <span className="text-[8px] tabular-nums text-muted-foreground/50">10s</span>
+        <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">Live</span>
+        <span className="text-[9px] tabular-nums text-emerald-600/50 dark:text-emerald-400/50">10s</span>
       </div>
     </div>
   );
@@ -249,39 +282,37 @@ export default function Dashboard() {
   const currentCmds = buildListCommands(tabToResource[activeTab] || activeTab, currentContext, currentNamespace);
 
   return (
-    <div className="flex flex-col h-full bg-background overflow-hidden font-mono text-foreground selection:bg-primary/30">
+    <div className="flex flex-col h-full bg-background overflow-hidden text-foreground selection:bg-primary/20">
       <AppHeader breadcrumbs={[{ label: "Dashboard" }]} rightSlot={headerRight} />
 
       {/* ══════ MAIN CONTENT ══════ */}
       <main className="flex-1 overflow-auto relative">
-        <div className="p-5 max-w-[1600px] mx-auto space-y-5">
+        <div className="p-6 max-w-[1600px] mx-auto space-y-6">
           {/* ── STAT CARDS ── */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             {stats.map((stat, i) => (
               <motion.div
                 key={stat.label}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.08 }}
-                className={`group relative overflow-hidden rounded-lg transition-all duration-200 cursor-default
+                className={`group relative overflow-hidden rounded-xl shadow-sm transition-all duration-200 cursor-default hover:shadow-md
                   ${stat.isForbidden
                     ? 'border border-muted bg-muted/30'
                     : stat.isError 
-                      ? 'border border-destructive/30 bg-destructive/5' 
-                      : 'border border-border bg-card hover:border-foreground/15'
+                      ? 'border border-red-500/20 bg-red-500/5' 
+                      : 'border border-border bg-card hover:border-primary/20'
                   }`}
               >
-                <div className="px-4 py-3.5 flex items-center justify-between">
-                  <div className="flex items-center gap-3.5">
-                    <div className={`p-2 rounded-lg ${stat.isError ? 'bg-destructive/10 text-destructive' : 'bg-foreground/5 text-muted-foreground'}`}>
-                      <stat.icon className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <p className="text-[9px] uppercase tracking-[0.2em] text-muted-foreground font-semibold">{stat.label}</p>
-                      <p className={`text-2xl font-bold tabular-nums leading-tight ${stat.isError ? 'text-destructive text-lg' : 'text-foreground'}`}>
-                        {stat.value}
-                      </p>
-                    </div>
+                <div className="px-5 py-4 flex items-center gap-4">
+                  <div className={`p-2.5 rounded-xl ${stat.isError ? 'bg-red-500/10 text-red-500' : 'bg-primary/10 text-primary'}`}>
+                    <stat.icon className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-muted-foreground font-medium">{stat.label}</p>
+                    <p className={`text-3xl font-bold tabular-nums leading-tight ${stat.isError ? 'text-red-500 text-xl' : 'text-foreground'}`}>
+                      {stat.value}
+                    </p>
                   </div>
                 </div>
               </motion.div>
@@ -290,51 +321,69 @@ export default function Dashboard() {
 
           {/* ── HEALTH SUMMARY ── */}
           {!podsLoading && !deployLoading && !nodesLoading && (
-            <div className={`rounded-lg border overflow-hidden transition-all ${
+            <div className={`rounded-xl shadow-sm border overflow-hidden transition-all ${
               healthIssues.length === 0
-                ? "border-foreground/10 bg-foreground/[0.02]"
+                ? "border-emerald-500/20 bg-card"
                 : healthIssues.some(i => i.severity === "critical")
-                  ? "border-destructive/20 bg-destructive/[0.03]"
-                  : "border-amber-500/20 bg-amber-500/[0.03]"
+                  ? "border-red-500/20 bg-card"
+                  : "border-amber-500/20 bg-card"
             }`}>
               <button
                 onClick={() => setHealthExpanded(!healthExpanded)}
-                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left"
+                className="w-full flex items-center gap-3 px-5 py-3.5 text-left"
               >
-                <HeartPulse className={`w-3.5 h-3.5 shrink-0 ${
-                  healthIssues.length === 0 ? "text-foreground/40" : healthIssues.some(i => i.severity === "critical") ? "text-destructive/70" : "text-amber-500/70"
+                <HeartPulse className={`w-4 h-4 shrink-0 ${
+                  healthIssues.length === 0 ? "text-emerald-500" : healthIssues.some(i => i.severity === "critical") ? "text-red-500" : "text-amber-500"
                 }`} />
-                <span className="text-[10px] uppercase tracking-[0.15em] font-bold text-foreground/70">
+                <span className="text-sm font-semibold text-foreground">
                   Cluster Health
                 </span>
                 {healthIssues.length === 0 ? (
-                  <span className="text-[10px] text-foreground/40 ml-1">All systems healthy</span>
+                  <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium ml-1">All systems healthy</span>
                 ) : (
-                  <span className="text-[10px] text-foreground/60 ml-1">
+                  <span className="text-xs text-muted-foreground ml-1 flex gap-2">
                     {healthIssues.filter(i => i.severity === "critical").length > 0 && (
-                      <span className="text-destructive/80 font-bold mr-2">{healthIssues.filter(i => i.severity === "critical").length} critical</span>
+                      <span className="text-red-600 dark:text-red-400 font-semibold">{healthIssues.filter(i => i.severity === "critical").length} critical</span>
                     )}
                     {healthIssues.filter(i => i.severity === "warning").length > 0 && (
-                      <span className="text-amber-500/80 font-bold">{healthIssues.filter(i => i.severity === "warning").length} warning{healthIssues.filter(i => i.severity === "warning").length > 1 ? "s" : ""}</span>
+                      <span className="text-amber-600 dark:text-amber-400 font-semibold">{healthIssues.filter(i => i.severity === "warning").length} warning{healthIssues.filter(i => i.severity === "warning").length > 1 ? "s" : ""}</span>
                     )}
                   </span>
                 )}
                 <div className="ml-auto">
-                  {healthExpanded ? <ChevronUp className="w-3 h-3 text-muted-foreground/40" /> : <ChevronDown className="w-3 h-3 text-muted-foreground/40" />}
+                  {healthExpanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
                 </div>
               </button>
 
               {healthExpanded && healthIssues.length > 0 && (
-                <div className="px-4 pb-3 space-y-1 border-t border-border/30 pt-2">
+                <div className="px-5 pb-4 space-y-1.5 border-t border-border pt-3">
                   {healthIssues.map((issue, i) => (
-                    <div key={i} className="flex items-start gap-2">
-                      <AlertTriangle className={`w-3 h-3 shrink-0 mt-0.5 ${issue.severity === "critical" ? "text-destructive/60" : "text-amber-500/60"}`} />
-                      <button
-                        onClick={() => setActiveTab(issue.tab)}
-                        className="text-[10px] text-foreground/70 hover:text-foreground text-left transition-colors"
-                      >
-                        {issue.message}
-                      </button>
+                    <div key={i} className={`flex flex-col gap-1 px-3 py-2 rounded-lg border-l-2 ${
+                      issue.severity === "critical" ? "border-l-red-500 bg-red-500/5" : "border-l-amber-500 bg-amber-500/5"
+                    }`}>
+                      <div className="flex items-start gap-3">
+                        <AlertTriangle className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${issue.severity === "critical" ? "text-red-500" : "text-amber-500"}`} />
+                        <button
+                          onClick={() => setActiveTab(issue.tab)}
+                          className="text-[12px] text-foreground/80 hover:text-foreground text-left transition-colors flex-1"
+                        >
+                          {issue.message}
+                        </button>
+                        {isFastModel && (
+                          <button
+                            onClick={() => navigate(`/ai?q=${encodeURIComponent(`Fix this Kubernetes issue: ${issue.message}`)}`)}
+                            className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded-md transition-colors shrink-0"
+                          >
+                            <Sparkles className="w-3 h-3" />
+                            AI Fix
+                          </button>
+                        )}
+                      </div>
+                      {isFastModel && aiSuggestions[issue.message] && (
+                        <p className="text-[11px] text-muted-foreground ml-6 pl-0.5 italic">
+                          {aiSuggestions[issue.message]}
+                        </p>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -344,19 +393,19 @@ export default function Dashboard() {
 
           {/* ── RESOURCE TABS ── */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <div className="flex items-center gap-4 mb-4">
-              <TabsList className="bg-card/50 border border-border/60 p-0.5 h-8 rounded-lg gap-0.5 flex-wrap">
+            <div className="flex items-center gap-4 mb-5">
+              <TabsList className="bg-muted/50 border border-border p-1 h-auto rounded-xl gap-1 flex-wrap">
                 {[
                   { val: "pods", label: "Pods", icon: Box },
                   { val: "deployments", label: "Deploy", icon: Layers },
-                  { val: "services", label: "Svc", icon: Network },
-                  { val: "statefulsets", label: "STS", icon: Database },
-                  { val: "daemonsets", label: "DS", icon: Layers },
+                  { val: "services", label: "Services", icon: Network },
+                  { val: "statefulsets", label: "StatefulSets", icon: Database },
+                  { val: "daemonsets", label: "DaemonSets", icon: Layers },
                   { val: "jobs", label: "Jobs", icon: Clock },
-                  { val: "cronjobs", label: "CronJ", icon: Clock },
-                  { val: "configmaps", label: "CM", icon: FileText },
-                  { val: "secrets", label: "Sec", icon: Lock },
-                  { val: "ingresses", label: "Ing", icon: Globe },
+                  { val: "cronjobs", label: "CronJobs", icon: Clock },
+                  { val: "configmaps", label: "ConfigMaps", icon: FileText },
+                  { val: "secrets", label: "Secrets", icon: Lock },
+                  { val: "ingresses", label: "Ingresses", icon: Globe },
                   { val: "nodes", label: "Nodes", icon: Server },
                   { val: "hpa", label: "HPA", icon: Gauge },
                   { val: "pvcs", label: "PVC", icon: HardDrive },
@@ -364,20 +413,20 @@ export default function Dashboard() {
                   <TabsTrigger
                     key={tab.val}
                     value={tab.val}
-                    className="text-[10px] font-bold uppercase tracking-[0.1em] rounded-md px-3 h-7 transition-all gap-1 data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground
-                      data-[state=active]:bg-foreground/8 data-[state=active]:text-foreground data-[state=active]:shadow-none"
+                    className="text-[11px] font-medium rounded-lg px-3 py-1.5 transition-all gap-1.5 data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground data-[state=inactive]:hover:bg-background/60
+                      data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none"
                   >
-                    <tab.icon className="w-3 h-3" />
+                    <tab.icon className="w-3.5 h-3.5" />
                     {tab.label}
                 </TabsTrigger>
                 ))}
               </TabsList>
               
-              <div className="ml-auto text-[10px] text-muted-foreground font-mono flex items-center gap-1.5">
-                <Activity className="w-3 h-3" />
+              <div className="ml-auto text-xs text-muted-foreground flex items-center gap-1.5">
+                <Activity className="w-3.5 h-3.5" />
                 <span>{currentContext}</span>
-                <span className="text-muted-foreground/20">/</span>
-                <span className="text-muted-foreground">{currentNamespace === 'all' ? '*' : currentNamespace}</span>
+                <span className="text-muted-foreground/30">/</span>
+                <span>{currentNamespace === 'all' ? '*' : currentNamespace}</span>
               </div>
             </div>
 
@@ -825,24 +874,59 @@ export default function Dashboard() {
       </main>
 
       {/* ══════ LOGS / ENV DIALOG ══════ */}
-      <Dialog open={selectedPod.type === 'logs' || selectedPod.type === 'env'} onOpenChange={() => setSelectedPod({ name: '', type: null })}>
-        <DialogContent className="max-w-5xl bg-background border-border p-0 overflow-hidden rounded-lg shadow-2xl dark:shadow-foreground/5">
-          <DialogHeader className="px-4 py-2.5 border-b border-border flex flex-row items-center justify-between space-y-0 bg-surface">
-            <DialogTitle className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-2 font-mono">
-              <Terminal className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="text-foreground/70">{selectedPod.type === 'logs' ? 'stdout' : 'env'}</span>
-              <span className="text-muted-foreground/20">|</span>
-              <span className="text-muted-foreground">{selectedPod.name}</span>
+      <Dialog open={selectedPod.type === 'logs' || selectedPod.type === 'env'} onOpenChange={() => { setSelectedPod({ name: '', type: null }); setLogAiSummary(null); }}>
+        <DialogContent className="max-w-5xl bg-card border-border p-0 overflow-hidden rounded-xl shadow-lg">
+          <DialogHeader className="px-5 py-3 border-b border-border flex flex-row items-center justify-between space-y-0">
+            <DialogTitle className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-primary/10">
+                <Terminal className="w-3.5 h-3.5 text-primary" />
+              </div>
+              <span>{selectedPod.type === 'logs' ? 'Logs' : 'Environment'}</span>
+              <span className="text-muted-foreground font-normal text-xs">— {selectedPod.name}</span>
             </DialogTitle>
+            {selectedPod.type === 'logs' && isFastModel && logsData?.logs && (
+              <button
+                onClick={async () => {
+                  if (logAiSummaryLoading) return;
+                  setLogAiSummaryLoading(true);
+                  try {
+                    const logLines = logsData.logs.split("\n").slice(-100).join("\n");
+                    const result = await fetchAiSuggestion(
+                      `Summarize these Kubernetes pod logs in 2-3 sentences, highlighting errors:\n${logLines}`,
+                      300,
+                    );
+                    setLogAiSummary(result);
+                  } catch { /* ignore */ }
+                  setLogAiSummaryLoading(false);
+                }}
+                disabled={logAiSummaryLoading}
+                className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold text-primary bg-primary/10 hover:bg-primary/20 rounded-md transition-colors"
+              >
+                {logAiSummaryLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                Summarize
+              </button>
+            )}
           </DialogHeader>
+          {logAiSummary && (
+            <div className="border-b border-primary/20 bg-primary/5 px-5 py-2.5">
+              <div className="flex items-start gap-2">
+                <Sparkles className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-[10px] font-semibold text-primary mb-0.5">AI Summary</p>
+                  <p className="text-[11px] text-foreground/80 leading-relaxed">{logAiSummary}</p>
+                </div>
+                <button onClick={() => setLogAiSummary(null)} className="text-muted-foreground hover:text-foreground text-xs p-0.5">×</button>
+              </div>
+            </div>
+          )}
           <div className="p-4 bg-surface-inset h-[500px] overflow-auto font-mono text-[12px] leading-relaxed">
             {(logsLoading || envLoading) ? (
               <div className="flex items-center gap-2 text-muted-foreground">
-                <span className="inline-block w-2 h-4 bg-foreground/20 animate-pulse" />
-                <span className="animate-pulse">executing...</span>
+                <span className="inline-block w-2 h-4 bg-primary/30 animate-pulse rounded-sm" />
+                <span className="animate-pulse">Loading...</span>
               </div>
             ) : (
-              <pre className={`whitespace-pre-wrap ${'text-foreground/60'}`}>
+              <pre className="whitespace-pre-wrap text-foreground/70">
                 {selectedPod.type === 'logs' ? logsData?.logs : envData?.env}
               </pre>
             )}
@@ -852,39 +936,40 @@ export default function Dashboard() {
 
       {/* ══════ PORT FORWARD DIALOG ══════ */}
       <Dialog open={selectedPod.type === 'forward'} onOpenChange={() => setSelectedPod({ name: '', type: null })}>
-        <DialogContent className="max-w-sm bg-background border-border p-0 overflow-hidden rounded-lg shadow-2xl">
-          <DialogHeader className="px-4 py-2.5 border-b border-border bg-surface">
-            <DialogTitle className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground font-mono flex items-center gap-2">
-              <Share2 className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="text-foreground/70">port-forward</span>
-              <span className="text-muted-foreground/20">|</span>
-              <span className="text-muted-foreground">{selectedPod.name}</span>
+        <DialogContent className="max-w-sm bg-card border-border p-0 overflow-hidden rounded-xl shadow-lg">
+          <DialogHeader className="px-5 py-3 border-b border-border">
+            <DialogTitle className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-primary/10">
+                <Share2 className="w-3.5 h-3.5 text-primary" />
+              </div>
+              <span>Port Forward</span>
+              <span className="text-muted-foreground font-normal text-xs">— {selectedPod.name}</span>
             </DialogTitle>
           </DialogHeader>
-          <div className="p-4 space-y-4">
-            <div className="grid grid-cols-2 gap-3">
+          <div className="p-5 space-y-4">
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-[9px] uppercase tracking-[0.2em] font-bold text-muted-foreground">Local Port</label>
+                <label className="text-xs font-medium text-muted-foreground">Local Port</label>
                 <Input
                   type="number"
                   min={1}
                   max={65535}
                   value={forwardPort}
                   onChange={(e) => setForwardPort(e.target.value)}
-                  className="bg-foreground/[0.03] border-border font-mono text-foreground text-sm h-8 rounded-sm"
+                  className="bg-muted/50 border-border font-mono text-foreground text-sm h-9 rounded-lg focus-visible:ring-primary/30"
                   placeholder="8080"
                 />
-                <p className="text-[8px] text-muted-foreground/60">Your machine</p>
+                <p className="text-[10px] text-muted-foreground">Your machine</p>
               </div>
               <div className="space-y-2">
-                <label className="text-[9px] uppercase tracking-[0.2em] font-bold text-muted-foreground">Remote Port</label>
+                <label className="text-xs font-medium text-muted-foreground">Remote Port</label>
                 <Input
                   type="number"
                   min={1}
                   max={65535}
                   value={remotePort}
                   onChange={(e) => setRemotePort(e.target.value)}
-                  className="bg-foreground/[0.03] border-border font-mono text-foreground text-sm h-8 rounded-sm"
+                  className="bg-muted/50 border-border font-mono text-foreground text-sm h-9 rounded-lg focus-visible:ring-primary/30"
                   placeholder="80"
                 />
                 {(() => {
@@ -899,10 +984,10 @@ export default function Dashboard() {
                           key={cp.port}
                           type="button"
                           onClick={() => setRemotePort(String(cp.port))}
-                          className={`text-[9px] font-mono px-1.5 py-0.5 rounded-sm border transition-colors ${
+                          className={`text-[10px] font-mono px-2 py-1 rounded-lg border transition-colors ${
                             remotePort === String(cp.port)
-                              ? 'bg-foreground/10 border-foreground/20 text-foreground'
-                              : 'bg-foreground/[0.03] border-border text-muted-foreground hover:text-foreground hover:border-foreground/20'
+                              ? 'bg-primary/10 border-primary/30 text-primary'
+                              : 'bg-muted/50 border-border text-muted-foreground hover:text-foreground hover:border-primary/20'
                           }`}
                         >
                           {cp.port}{cp.name ? `/${cp.name}` : ''}
@@ -913,17 +998,17 @@ export default function Dashboard() {
                 })()}
               </div>
             </div>
-            <div className="text-[10px] text-muted-foreground font-mono bg-foreground/[0.03] px-2.5 py-1.5 rounded-sm border border-border">
-              localhost:<span className="text-foreground">{forwardPort || '?'}</span>
-              <span className="text-muted-foreground/60 mx-1">→</span>
-              {selectedPod.name}:<span className="text-foreground">{remotePort || forwardPort || '?'}</span>
+            <div className="text-xs text-muted-foreground font-mono bg-muted/50 px-3 py-2 rounded-lg border border-border">
+              localhost:<span className="text-foreground font-semibold">{forwardPort || '?'}</span>
+              <span className="text-muted-foreground/50 mx-1.5">→</span>
+              {selectedPod.name}:<span className="text-foreground font-semibold">{remotePort || forwardPort || '?'}</span>
             </div>
-            <div className="flex justify-end gap-2 pt-1">
-              <Button variant="ghost" className="text-[10px] uppercase font-bold tracking-wider h-7 px-3 text-muted-foreground hover:text-foreground" onClick={() => setSelectedPod({ name: '', type: null })}>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="ghost" className="text-xs h-9 px-4 text-muted-foreground hover:text-foreground rounded-lg" onClick={() => setSelectedPod({ name: '', type: null })}>
                 Cancel
               </Button>
               <Button
-                className="bg-foreground/10 hover:bg-foreground/15 text-foreground border border-border text-[10px] uppercase font-bold tracking-wider h-7 px-4 rounded-md"
+                className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-medium h-9 px-5 rounded-lg shadow-sm"
                 onClick={handlePortForward}
                 disabled={portForwardMutation.isPending}
               >
@@ -936,29 +1021,30 @@ export default function Dashboard() {
 
       {/* ══════ SCALE DIALOG ══════ */}
       <Dialog open={!!scaleDialog} onOpenChange={() => setScaleDialog(null)}>
-        <DialogContent className="max-w-sm bg-background border-border p-0 overflow-hidden rounded-lg shadow-2xl">
-          <DialogHeader className="px-4 py-2.5 border-b border-border bg-surface">
-            <DialogTitle className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground font-mono flex items-center gap-2">
-              <Scaling className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="text-foreground/70">scale</span>
-              <span className="text-muted-foreground/20">|</span>
-              <span className="text-muted-foreground">{scaleDialog?.name}</span>
+        <DialogContent className="max-w-sm bg-card border-border p-0 overflow-hidden rounded-xl shadow-lg">
+          <DialogHeader className="px-5 py-3 border-b border-border">
+            <DialogTitle className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-primary/10">
+                <Scaling className="w-3.5 h-3.5 text-primary" />
+              </div>
+              <span>Scale</span>
+              <span className="text-muted-foreground font-normal text-xs">— {scaleDialog?.name}</span>
             </DialogTitle>
           </DialogHeader>
-          <div className="p-4 space-y-4">
+          <div className="p-5 space-y-4">
             <div className="space-y-2">
-              <label className="text-[9px] uppercase tracking-[0.2em] font-bold text-muted-foreground">Replicas</label>
+              <label className="text-xs font-medium text-muted-foreground">Replicas</label>
               <Input 
                 type="number"
                 min={0}
                 value={scaleReplicas}
                 onChange={(e) => setScaleReplicas(e.target.value)}
-                className="bg-foreground/[0.03] border-border font-mono text-foreground text-sm h-8 rounded-sm"
+                className="bg-muted/50 border-border font-mono text-foreground text-sm h-9 rounded-lg focus-visible:ring-primary/30"
               />
             </div>
-            <div className="flex justify-end gap-2 pt-1">
-              <Button variant="ghost" className="text-[10px] uppercase font-bold tracking-wider h-7 px-3 text-muted-foreground hover:text-foreground" onClick={() => setScaleDialog(null)}>Cancel</Button>
-              <Button className="bg-foreground/10 hover:bg-foreground/15 text-foreground border border-border text-[10px] uppercase font-bold tracking-wider h-7 px-4 rounded-md" onClick={handleScale}>Scale</Button>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="ghost" className="text-xs h-9 px-4 text-muted-foreground hover:text-foreground rounded-lg" onClick={() => setScaleDialog(null)}>Cancel</Button>
+              <Button className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-medium h-9 px-5 rounded-lg shadow-sm" onClick={handleScale}>Scale</Button>
             </div>
           </div>
         </DialogContent>
@@ -966,29 +1052,29 @@ export default function Dashboard() {
 
       {/* ══════ PORT FORWARD STATUS BAR ══════ */}
       {portForwards && portForwards.length > 0 && (
-        <div className="border-t border-border bg-surface/90 px-4 py-1.5 flex items-center gap-3 overflow-x-auto shrink-0">
-          <Share2 className="w-3 h-3 text-foreground/50 shrink-0" />
-          <span className="text-[9px] uppercase tracking-wider font-bold text-foreground/50 shrink-0">FORWARDS</span>
-          <div className="w-px h-4 bg-foreground/5" />
+        <div className="border-t border-border bg-card px-5 py-2 flex items-center gap-3 overflow-x-auto shrink-0">
+          <Share2 className="w-3.5 h-3.5 text-primary shrink-0" />
+          <span className="text-[10px] font-semibold text-muted-foreground shrink-0">Forwards</span>
+          <div className="w-px h-4 bg-border" />
           {portForwards.map((fwd) => {
             const isDead = fwd.status === "dead" || fwd.status === "error";
             return (
               <div
                 key={fwd.id}
-                className={`flex items-center gap-2 px-2 py-0.5 rounded-sm shrink-0 border ${
+                className={`flex items-center gap-2 px-2.5 py-1 rounded-lg shrink-0 border ${
                   isDead
-                    ? 'bg-destructive/5 border-destructive/15'
-                    : 'bg-foreground/5 border-border'
+                    ? 'bg-red-500/5 border-red-500/20'
+                    : 'bg-emerald-500/5 border-emerald-500/20'
                 }`}
                 title={isDead ? `Error: ${fwd.error || "Process died"}` : `Active — ${fwd.connections || 0} connections handled`}
               >
                 <div className="relative">
                   {isDead ? (
-                    <div className="w-1.5 h-1.5 rounded-full bg-destructive/60" />
+                    <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
                   ) : (
                     <>
-                      <div className="w-1.5 h-1.5 rounded-full bg-foreground/40" />
-                      <div className="absolute inset-0 w-1.5 h-1.5 rounded-full bg-foreground/40 animate-ping opacity-40" />
+                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      <div className="absolute inset-0 w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping opacity-40" />
                     </>
                   )}
                 </div>
@@ -996,14 +1082,14 @@ export default function Dashboard() {
                   href={`http://localhost:${fwd.localPort}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className={`text-[10px] font-mono hover:underline ${isDead ? 'text-destructive/80' : 'text-foreground/70'}`}
+                  className={`text-[11px] font-mono hover:underline ${isDead ? 'text-red-500' : 'text-foreground/80'}`}
                 >
                   :{fwd.localPort}
                 </a>
-                <span className="text-[9px] text-muted-foreground">{"\u2192"}</span>
-                <span className="text-[10px] font-mono text-muted-foreground">{fwd.pod}:{fwd.remotePort}</span>
+                <span className="text-[10px] text-muted-foreground">{"\u2192"}</span>
+                <span className="text-[11px] font-mono text-muted-foreground">{fwd.pod}:{fwd.remotePort}</span>
                 {isDead && (
-                  <span className="text-[8px] text-destructive/70 uppercase font-bold">DEAD</span>
+                  <span className="text-[9px] text-red-500 font-semibold">DEAD</span>
                 )}
                 <button
                   onClick={async () => {

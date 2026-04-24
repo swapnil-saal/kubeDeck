@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { Command, Search, Copy, Check, Terminal, ArrowRight, Sparkles } from "lucide-react";
+import { Copy, Check, Terminal, ArrowRight, Sparkles, Loader2, ShieldAlert, AlertTriangle } from "lucide-react";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
+import { useAiConfig } from "@/hooks/use-ai-config";
 
 interface MatchedCommand {
   description: string;
@@ -245,12 +246,63 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const [execState, setExecState] = useState<{ idx: number; loading: boolean; result: ExecResult | null; error: string | null } | null>(null);
   const [editedCmds, setEditedCmds] = useState<Record<number, string>>({});
+  const [aiTranslating, setAiTranslating] = useState(false);
+  const [aiTranslated, setAiTranslated] = useState<MatchedCommand | null>(null);
+  const [aiEditedCmd, setAiEditedCmd] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const outputRef = useRef<HTMLPreElement>(null);
+  const aiDebounceRef = useRef<ReturnType<typeof setTimeout>>();
   const { context, namespace } = useTerminalStore();
+  const { isConfigured } = useAiConfig();
 
   const results = useMemo(() => matchQuery(query, context, namespace), [query, context, namespace]);
 
+  const isNaturalLanguage = useMemo(() => {
+    const trimmed = query.trim();
+    if (!trimmed || trimmed.startsWith("kubectl")) return false;
+    if (trimmed.length < 5) return false;
+    const kubectlVerbs = /^(get|describe|logs|exec|apply|delete|scale|rollout|top|cordon|drain|edit|patch|create|replace|annotate|label)\b/i;
+    return !kubectlVerbs.test(trimmed);
+  }, [query]);
+
+  const doAiTranslate = useCallback(async (q: string) => {
+    setAiTranslating(true);
+    setAiTranslated(null);
+    setAiEditedCmd(null);
+    try {
+      const res = await fetch("/api/ai/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: q,
+          context: context || undefined,
+          namespace: namespace && namespace !== "all" ? namespace : undefined,
+        }),
+      });
+      if (!res.ok) throw new Error("Translation failed");
+      const data = await res.json();
+      const cmd = (data.command || "").trim();
+      if (cmd) {
+        setAiTranslated({ description: q, command: cmd, confidence: 0.95 });
+      }
+    } catch { /* ignore */ }
+    setAiTranslating(false);
+  }, [context, namespace]);
+
+  // Auto-translate when no patterns match and it's natural language
+  useEffect(() => {
+    if (aiDebounceRef.current) clearTimeout(aiDebounceRef.current);
+    if (!isConfigured || !isNaturalLanguage || results.length > 0 || !query.trim()) {
+      return;
+    }
+    aiDebounceRef.current = setTimeout(() => {
+      doAiTranslate(query);
+    }, 600);
+    return () => { if (aiDebounceRef.current) clearTimeout(aiDebounceRef.current); };
+  }, [query, isConfigured, isNaturalLanguage, results.length, doAiTranslate]);
+
+  const aiCmd = aiEditedCmd ?? aiTranslated?.command ?? "";
+  const aiPending = isConfigured && isNaturalLanguage && results.length === 0 && query.trim().length >= 5 && !aiTranslated;
   const getCmd = useCallback((idx: number) => editedCmds[idx] ?? results[idx]?.command ?? "", [editedCmds, results]);
 
   useEffect(() => {
@@ -259,12 +311,18 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
       setCopiedIdx(null);
       setExecState(null);
       setEditedCmds({});
+      setAiTranslated(null);
+      setAiEditedCmd(null);
+      setAiTranslating(false);
+      setConfirmState(null);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
   }, [open]);
 
   useEffect(() => {
     setEditedCmds({});
+    setAiTranslated(null);
+    setAiEditedCmd(null);
   }, [query]);
 
   useEffect(() => {
@@ -297,16 +355,24 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
     navigator.clipboard.writeText(text);
   }, [execState]);
 
-  const handleExec = useCallback(async (cmd: string, idx: number) => {
+  const [confirmState, setConfirmState] = useState<{ idx: number; command: string; warning: string } | null>(null);
+
+  const handleExec = useCallback(async (cmd: string, idx: number, confirmed = false) => {
+    setConfirmState(null);
     setExecState({ idx, loading: true, result: null, error: null });
     try {
       const res = await fetch("/api/kubectl/exec", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ command: cmd }),
+        body: JSON.stringify({ command: cmd, confirmed }),
       });
       const data = await res.json();
-      if (!res.ok) {
+      if (data.blocked) {
+        setExecState({ idx, loading: false, result: null, error: `Blocked: ${data.message}` });
+      } else if (data.needsConfirmation) {
+        setExecState(null);
+        setConfirmState({ idx, command: data.command, warning: data.warning });
+      } else if (!res.ok) {
         setExecState({ idx, loading: false, result: null, error: data.message || "Execution failed" });
       } else {
         setExecState({ idx, loading: false, result: data, error: null });
@@ -326,21 +392,22 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
         onClick={(e) => e.stopPropagation()}
       >
         {/* Search input */}
-        <div className="flex items-center gap-3 px-4 h-12 border-b border-border">
-          <Sparkles className="w-4 h-4 text-muted-foreground shrink-0" />
+        <div className="flex items-center gap-3 px-5 h-12 border-b border-border">
+          <Sparkles className="w-4 h-4 text-primary shrink-0" />
           <input
             ref={inputRef}
             value={query}
             onChange={(e) => { setQuery(e.target.value); setExecState(null); }}
             placeholder="Describe what you want… (e.g. 'pods with more than 5 restarts')"
-            className="flex-1 bg-transparent text-[13px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
+            className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
           />
-          <kbd className="hidden sm:flex items-center gap-0.5 px-1.5 py-0.5 rounded border border-border text-[9px] text-muted-foreground/50 font-bold">ESC</kbd>
+          <kbd className="hidden sm:flex items-center gap-0.5 px-2 py-1 rounded-lg border border-border text-[10px] text-muted-foreground/50 font-medium">ESC</kbd>
         </div>
 
         {/* Results */}
         <div className="max-h-[55vh] overflow-auto">
-          {query.trim() && results.length === 0 && (
+          {/* Fallback examples — only when not NL or AI not configured */}
+          {query.trim() && results.length === 0 && !aiTranslated && !aiPending && (
             <div className="px-4 py-8 text-center">
               <p className="text-[11px] text-muted-foreground">No matching patterns. Try phrases like:</p>
               <div className="mt-3 space-y-1.5">
@@ -354,6 +421,154 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* AI translating spinner — visible during debounce + fetch */}
+          {aiPending && !aiTranslated && (
+            <div className="px-4 py-8 flex flex-col items-center gap-3 border-b border-primary/20 bg-primary/[0.02]">
+              <div className="relative">
+                <Sparkles className="w-5 h-5 text-primary animate-pulse" />
+                <Loader2 className="w-5 h-5 text-primary/60 animate-spin absolute inset-0" />
+              </div>
+              <p className="text-[11px] text-primary font-medium">
+                {aiTranslating ? "Translating to kubectl..." : "Preparing AI translation..."}
+              </p>
+              <p className="text-[10px] text-muted-foreground max-w-xs text-center">
+                Using your configured model to generate the kubectl command
+              </p>
+            </div>
+          )}
+
+          {/* AI translated result — full interactive card */}
+          {aiTranslated && (() => {
+            const isInteractive = INTERACTIVE_COMMANDS.test(aiCmd);
+            const isRunning = execState?.idx === -1 && execState.loading;
+            const hasResult = execState?.idx === -1 && !execState.loading && (execState.result || execState.error);
+            const isEdited = aiEditedCmd !== null && aiEditedCmd !== aiTranslated.command;
+
+            return (
+              <div>
+                <div className="group flex flex-col gap-2 px-4 py-3 border-b border-primary/20 bg-primary/[0.03]">
+                  <div className="flex items-center gap-3">
+                    <Sparkles className="w-3.5 h-3.5 text-primary shrink-0" />
+                    <p className="text-[10px] text-primary font-medium flex-1">AI: {aiTranslated.description}</p>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {!isInteractive && (
+                        <button
+                          onClick={() => handleExec(aiCmd, -1)}
+                          disabled={isRunning}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-primary/20 text-[10px] font-medium text-primary bg-primary/5 hover:bg-primary/10 transition-colors disabled:opacity-50"
+                          title="Execute command"
+                        >
+                          {isRunning ? (
+                            <div className="w-3 h-3 border border-primary/40 border-t-primary rounded-full animate-spin" />
+                          ) : (
+                            <ArrowRight className="w-3 h-3" />
+                          )}
+                          <span>{isRunning ? "Running" : "Run"}</span>
+                        </button>
+                      )}
+                      {isInteractive && (
+                        <span className="text-[8px] text-muted-foreground/50 uppercase tracking-wider px-1.5 py-0.5 rounded border border-border/50">interactive</span>
+                      )}
+                      <button
+                        onClick={() => handleCopy(aiCmd, -1)}
+                        className="p-1.5 rounded hover:bg-foreground/8 text-muted-foreground hover:text-foreground transition-colors"
+                        title="Copy command"
+                      >
+                        {copiedIdx === -1 ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="relative">
+                    <textarea
+                      value={aiCmd}
+                      onChange={(e) => setAiEditedCmd(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey && !isInteractive) {
+                          e.preventDefault();
+                          handleExec(aiCmd, -1);
+                        }
+                      }}
+                      rows={Math.min(Math.ceil(aiCmd.length / 70) || 1, 4)}
+                      className="w-full bg-surface-inset border border-primary/20 rounded px-3 py-2 text-[11px] text-foreground/80 font-mono resize-none focus:outline-none focus:border-primary/40 transition-colors leading-relaxed"
+                      spellCheck={false}
+                    />
+                    {isEdited && (
+                      <button
+                        onClick={() => setAiEditedCmd(null)}
+                        className="absolute top-1.5 right-1.5 text-[7px] uppercase tracking-wider font-bold text-muted-foreground/50 hover:text-foreground px-1 py-0.5 rounded border border-border/50 hover:bg-foreground/[0.04] transition-colors"
+                        title="Reset to original"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {hasResult && (
+                  <div className="border-b border-border bg-surface-inset">
+                    <div className="flex items-center gap-2 px-4 py-1.5 border-b border-border/50 bg-foreground/[0.02]">
+                      <span className={`text-[9px] uppercase font-bold tracking-wider ${
+                        execState!.error || (execState!.result && execState!.result.code !== 0)
+                          ? "text-destructive/80" : "text-foreground/50"
+                      }`}>
+                        {execState!.error ? "ERROR" : execState!.result!.code === 0 ? "OUTPUT" : `EXIT ${execState!.result!.code}`}
+                      </span>
+                      {execState!.result && (
+                        <span className="text-[9px] text-muted-foreground/50 tabular-nums">
+                          {(execState!.result.stdout || execState!.result.stderr).split("\n").length} lines
+                        </span>
+                      )}
+                      <div className="ml-auto flex items-center gap-1">
+                        <button
+                          onClick={handleCopyOutput}
+                          className="px-1.5 py-0.5 rounded text-[8px] uppercase font-bold tracking-wider text-muted-foreground/60 hover:text-foreground border border-border/50 hover:bg-foreground/[0.04] transition-colors"
+                        >
+                          Copy output
+                        </button>
+                        <button
+                          onClick={() => setExecState(null)}
+                          className="px-1.5 py-0.5 rounded text-[8px] uppercase font-bold tracking-wider text-muted-foreground/60 hover:text-foreground border border-border/50 hover:bg-foreground/[0.04] transition-colors"
+                        >
+                          Close
+                        </button>
+                      </div>
+                    </div>
+                    <pre
+                      ref={outputRef}
+                      className="px-4 py-3 text-[10px] leading-relaxed overflow-auto max-h-60 whitespace-pre-wrap break-all"
+                    >
+                      {execState!.error ? (
+                        <span className="text-destructive/80">{execState!.error}</span>
+                      ) : (
+                        <>
+                          {execState!.result!.stdout && (
+                            <span className="text-foreground/70">{execState!.result!.stdout}</span>
+                          )}
+                          {execState!.result!.stderr && (
+                            <span className="text-destructive/60">{execState!.result!.stderr}</span>
+                          )}
+                        </>
+                      )}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Manual AI translate button when pattern results exist but query is NL */}
+          {isConfigured && isNaturalLanguage && results.length > 0 && !aiTranslated && !aiTranslating && (
+            <div className="px-4 py-2 border-b border-border/50 bg-foreground/[0.01]">
+              <button
+                onClick={() => doAiTranslate(query)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-medium text-primary bg-primary/5 hover:bg-primary/10 border border-primary/15 transition-colors"
+              >
+                <Sparkles className="w-3 h-3" />
+                AI Translate
+              </button>
             </div>
           )}
 
@@ -375,7 +590,7 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
                         <button
                           onClick={() => handleExec(currentCmd, i)}
                           disabled={isRunning}
-                          className="flex items-center gap-1 px-2 py-1 rounded border border-border text-[9px] uppercase font-bold tracking-wider text-muted-foreground hover:text-foreground hover:bg-foreground/[0.05] hover:border-foreground/15 transition-colors disabled:opacity-50"
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-primary/20 text-[10px] font-medium text-primary bg-primary/5 hover:bg-primary/10 transition-colors disabled:opacity-50"
                           title="Execute command"
                         >
                           {isRunning ? (
@@ -478,8 +693,39 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
           })}
         </div>
 
+        {/* Confirmation dialog for mutating commands */}
+        {confirmState && (
+          <div className="px-4 py-4 border-t border-warning/30 bg-warning/5">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
+              <div className="flex-1 space-y-2">
+                <p className="text-[11px] font-semibold text-warning">Confirmation Required</p>
+                <p className="text-[10px] text-foreground/70">{confirmState.warning}</p>
+                <div className="bg-surface-inset border border-border rounded px-3 py-1.5 text-[10px] font-mono text-foreground/70">
+                  {confirmState.command}
+                </div>
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    onClick={() => handleExec(confirmState.command, confirmState.idx, true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium text-warning-foreground bg-warning hover:bg-warning/90 transition-colors"
+                  >
+                    <ShieldAlert className="w-3 h-3" />
+                    Execute Anyway
+                  </button>
+                  <button
+                    onClick={() => setConfirmState(null)}
+                    className="px-3 py-1.5 rounded-lg text-[10px] font-medium text-muted-foreground border border-border hover:bg-foreground/5 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Footer hints */}
-        {!query.trim() && !execState && (
+        {!query.trim() && !execState && !confirmState && (
           <div className="px-4 py-4 border-t border-border/50">
             <p className="text-[10px] text-muted-foreground/60 mb-2">QUICK EXAMPLES</p>
             <div className="grid grid-cols-2 gap-1.5">
