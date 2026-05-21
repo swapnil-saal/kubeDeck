@@ -534,7 +534,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (req.query.context) args.push(`--context=${String(req.query.context)}`);
     if (req.query.namespace) args.push("-n", String(req.query.namespace));
     if (req.query.container) args.push("-c", String(req.query.container));
-    const proc: ChildProcessWithoutNullStreams = spawn("kubectl", args);
+    const kubeconfigEnv = getKubeconfigEnv();
+    const spawnEnv = Object.keys(kubeconfigEnv).length > 0 ? { env: { ...process.env, ...kubeconfigEnv } } : undefined;
+    const proc: ChildProcessWithoutNullStreams = spawn("kubectl", args, spawnEnv);
     proc.stdout.on("data", (chunk: Buffer) => { for (const line of chunk.toString().split("\n")) { if (line) res.write(`data: ${JSON.stringify(line)}\n\n`); } });
     proc.stderr.on("data", (chunk: Buffer) => { const msg = chunk.toString().trim(); if (msg) res.write(`data: ${JSON.stringify("[stderr] " + msg)}\n\n`); });
     proc.on("close", () => { res.write(`data: ${JSON.stringify("[stream ended]")}\n\n`); res.end(); });
@@ -585,7 +587,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       console.log(`[port-forward] spawning: kubectl ${spawnArgs.join(" ")}`);
 
-      const proc = spawn("kubectl", spawnArgs, { stdio: ["pipe", "pipe", "pipe"] });
+      const pfKubeconfigEnv = getKubeconfigEnv();
+      const pfEnv = Object.keys(pfKubeconfigEnv).length > 0 ? { ...process.env, ...pfKubeconfigEnv } : undefined;
+      const proc = spawn("kubectl", spawnArgs, { stdio: ["pipe", "pipe", "pipe"], env: pfEnv });
       const id = randomUUID().slice(0, 8);
 
       // Create record immediately so we can track status
@@ -983,6 +987,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     env["TERM"] = "xterm-256color";
     env["ROWS"] = "30";
     env["COLS"] = "120";
+    const termKubeconfigEnv = getKubeconfigEnv();
+    if (termKubeconfigEnv.KUBECONFIG) env["KUBECONFIG"] = termKubeconfigEnv.KUBECONFIG;
     if (context) env["KUBECTX"] = context;
     if (namespace && namespace !== "all") env["KUBENS"] = namespace;
 
