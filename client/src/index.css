@@ -8,50 +8,52 @@
   --font-sans: 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
-  --background: 0 0% 98%;
-  --foreground: 220 14% 10%;
+  /* Light theme — background slightly darker than cards so panels "lift". */
+  --background: 220 14% 96%;
+  --foreground: 220 16% 12%;
 
   --card: 0 0% 100%;
-  --card-foreground: 220 14% 10%;
+  --card-foreground: 220 16% 12%;
 
   --popover: 0 0% 100%;
-  --popover-foreground: 220 14% 10%;
+  --popover-foreground: 220 16% 12%;
 
-  --primary: 15 85% 55%;
+  --primary: 15 85% 53%;
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 220 8% 92%;
-  --secondary-foreground: 220 12% 18%;
+  --secondary: 220 12% 90%;
+  --secondary-foreground: 220 14% 18%;
 
-  --muted: 220 8% 94%;
-  --muted-foreground: 220 6% 42%;
+  --muted: 220 12% 91%;
+  --muted-foreground: 220 8% 38%;
 
-  --accent: 15 85% 55%;
+  --accent: 15 85% 53%;
   --accent-foreground: 0 0% 100%;
 
-  --destructive: 0 72% 50%;
+  --destructive: 0 72% 48%;
   --destructive-foreground: 0 0% 100%;
 
-  --success: 160 65% 38%;
+  --success: 160 65% 36%;
   --success-foreground: 0 0% 100%;
 
-  --warning: 38 92% 50%;
-  --warning-foreground: 220 14% 10%;
+  --warning: 38 92% 48%;
+  --warning-foreground: 220 16% 12%;
 
-  --border: 220 8% 89%;
-  --input: 220 8% 89%;
-  --ring: 15 85% 55%;
+  /* Stronger border so card outlines are visible against the lifted background. */
+  --border: 220 13% 83%;
+  --input: 220 13% 83%;
+  --ring: 15 85% 53%;
 
   --radius: 0.625rem;
 
-  --surface: 220 6% 99%;
-  --surface-inset: 220 8% 95%;
+  --surface: 0 0% 100%;
+  --surface-inset: 220 14% 93%;
 
-  --chart-1: 15 85% 55%;
-  --chart-2: 160 65% 38%;
-  --chart-3: 258 55% 55%;
-  --chart-4: 38 80% 50%;
-  --chart-5: 340 65% 50%;
+  --chart-1: 15 85% 53%;
+  --chart-2: 160 65% 36%;
+  --chart-3: 258 55% 53%;
+  --chart-4: 38 80% 48%;
+  --chart-5: 340 65% 48%;
 }
 
 .dark {
@@ -166,6 +168,35 @@
     -webkit-app-region: no-drag;
   }
 }
+
+/* ── Light-mode tint pumps ────────────────────────────────
+ * Many components use `bg-foreground/[0.02..0.08]` for subtle row hovers,
+ * table zebra, button surfaces. In dark mode these read as faint white
+ * highlights. In light mode the same opacity is faint dark on near-white,
+ * which is nearly invisible. Bump the alpha of the most common opacity
+ * stops so light mode keeps the same visual hierarchy as dark.
+ */
+:root:not(.dark) .bg-foreground\/\[0\.02\]   { background-color: hsl(var(--foreground) / 0.04); }
+:root:not(.dark) .bg-foreground\/\[0\.03\]   { background-color: hsl(var(--foreground) / 0.05); }
+:root:not(.dark) .bg-foreground\/\[0\.04\]   { background-color: hsl(var(--foreground) / 0.06); }
+:root:not(.dark) .bg-foreground\/\[0\.05\]   { background-color: hsl(var(--foreground) / 0.07); }
+:root:not(.dark) .bg-foreground\/5            { background-color: hsl(var(--foreground) / 0.06); }
+:root:not(.dark) .bg-foreground\/8            { background-color: hsl(var(--foreground) / 0.10); }
+:root:not(.dark) .hover\:bg-foreground\/\[0\.02\]:hover { background-color: hsl(var(--foreground) / 0.05); }
+:root:not(.dark) .hover\:bg-foreground\/\[0\.03\]:hover { background-color: hsl(var(--foreground) / 0.06); }
+:root:not(.dark) .hover\:bg-foreground\/\[0\.04\]:hover { background-color: hsl(var(--foreground) / 0.07); }
+:root:not(.dark) .hover\:bg-foreground\/5:hover         { background-color: hsl(var(--foreground) / 0.07); }
+:root:not(.dark) .hover\:bg-foreground\/8:hover         { background-color: hsl(var(--foreground) / 0.10); }
+
+/* Same problem for `bg-muted/30..60` — too washed-out in light mode. */
+:root:not(.dark) .bg-muted\/20 { background-color: hsl(var(--muted) / 0.6); }
+:root:not(.dark) .bg-muted\/30 { background-color: hsl(var(--muted) / 0.7); }
+:root:not(.dark) .bg-muted\/40 { background-color: hsl(var(--muted) / 0.8); }
+:root:not(.dark) .bg-muted\/50 { background-color: hsl(var(--muted) / 0.9); }
+:root:not(.dark) .hover\:bg-muted\/40:hover { background-color: hsl(var(--muted) / 0.85); }
+:root:not(.dark) .hover\:bg-muted\/50:hover { background-color: hsl(var(--muted) / 0.95); }
+:root:not(.dark) .hover\:bg-muted\/60:hover { background-color: hsl(var(--muted) / 1); }
+
 
 /* ── Accent Color Themes ─────────────────────────────────── */
 
