@@ -179,5 +179,49 @@ export function searchResourceNames(
     }
   }
 
+  // Pattern 3: "name [kind] verb" — natural word order, e.g. "course pod logs"
+  // or "flarum deployment restart". Pull out the verb and an optional kind hint.
+  const verbAtEnd = trimmed.match(/\b(logs?|describe|exec|delete|restart|rollout|top|get)\b\s*$/);
+  if (verbAtEnd) {
+    const verb = verbAtEnd[1].toLowerCase().replace(/^log$/, "logs");
+    const beforeVerb = trimmed.slice(0, verbAtEnd.index).trim();
+    const kindMatch = beforeVerb.match(
+      /\b(pod|pods?|deployment|deployments?|deploy|service|services?|svc|configmap|configmaps?|cm|secret|secrets?|ingress|ingresses?|ing|statefulset|statefulsets?|sts|daemonset|daemonsets?|ds|job|jobs?|cronjob|cronjobs?|cj|node|nodes?|no|hpa|pvc|pvcs?)\b/i,
+    );
+    const targetType = kindMatch ? normalizeType(kindMatch[1]) : null;
+    const tokens = beforeVerb
+      .replace(/\b(pod|pods?|deployment|deployments?|deploy|service|services?|svc|configmap|configmaps?|cm|secret|secrets?|ingress|ingresses?|ing|statefulset|statefulsets?|sts|daemonset|daemonsets?|ds|job|jobs?|cronjob|cronjobs?|cj|node|nodes?|no|hpa|pvc|pvcs?)\b/gi, " ")
+      .split(/\s+/)
+      .filter(Boolean);
+    const partial = tokens.join("-").toLowerCase();
+    if (partial && partial.length >= 2) {
+      const matches = entries.filter((e) => {
+        if (targetType && e.type !== targetType) return false;
+        const lower = e.name.toLowerCase();
+        return lower.includes(partial) || partial.split("-").every((t) => lower.includes(t));
+      });
+      if (matches.length > 0) {
+        const builders: Record<string, (t: string, n: string) => string> = {
+          get: (t, n) => `kubectl get ${t} ${n}${ctxFlag}${nsFlag}`,
+          describe: (t, n) => `kubectl describe ${t} ${n}${ctxFlag}${nsFlag}`,
+          logs: (_t, n) => `kubectl logs ${n}${ctxFlag}${nsFlag} --tail=100`,
+          exec: (_t, n) => `kubectl exec -it ${n}${ctxFlag}${nsFlag} -- /bin/sh`,
+          delete: (t, n) => `kubectl delete ${t} ${n}${ctxFlag}${nsFlag}`,
+          restart: (t, n) => `kubectl rollout restart ${t}/${n}${ctxFlag}${nsFlag}`,
+          rollout: (t, n) => `kubectl rollout status ${t}/${n}${ctxFlag}${nsFlag}`,
+          top: (_t, n) => `kubectl top pod ${n}${ctxFlag}${nsFlag}`,
+        };
+        const buildCmd = builders[verb] || builders.get;
+        return matches.slice(0, 8).map((m) => ({
+          description: `${verb} ${m.type} ${m.name}`,
+          command: buildCmd(m.type, m.name),
+          confidence: m.name.toLowerCase().startsWith(partial) ? 0.9 : 0.8,
+          resourceName: m.name,
+          resourceType: m.type,
+        })).sort((a, b) => b.confidence - a.confidence);
+      }
+    }
+  }
+
   return [];
 }

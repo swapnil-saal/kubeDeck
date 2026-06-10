@@ -6,6 +6,8 @@ import { AssistantRuntimeProvider } from "@assistant-ui/react";
 import { useLangGraphRuntime } from "@assistant-ui/react-langgraph";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
 import { useSettings } from "@/hooks/use-settings";
+import { useK8sPods, useK8sDeployments, useK8sServices } from "@/hooks/use-k8s";
+import { useResourceNames } from "@/hooks/use-resource-names";
 import { AppHeader } from "@/components/AppHeader";
 import { Thread, type Suggestion } from "@/components/assistant/Thread";
 import { ChatDeepLink } from "@/components/assistant/ChatDeepLink";
@@ -74,13 +76,39 @@ export default function AiChatPage() {
   const provider = settings?.ai?.provider || "openai";
   const model = settings?.ai?.model || "gpt-4o-mini";
 
+  // Warm the cache for the scope so resource names are available immediately.
+  useK8sPods(context, namespace);
+  useK8sDeployments(context, namespace);
+  useK8sServices(context, namespace);
+  const resourceNames = useResourceNames();
+
+  // Build a compact resource catalog that the agent can use to resolve fuzzy
+  // names. Re-evaluated on every send so it always reflects current state.
+  const buildSystemMessage = () => {
+    const base = `[Context: ${context || "default"}, Namespace: ${namespace || "all"}]`;
+    if (resourceNames.length === 0) return base;
+    const byKind: Record<string, string[]> = {};
+    for (const r of resourceNames) {
+      if (!byKind[r.type]) byKind[r.type] = [];
+      if (!byKind[r.type].includes(r.name)) byKind[r.type].push(r.name);
+    }
+    const lines: string[] = [];
+    for (const [k, ns] of Object.entries(byKind)) {
+      if (ns.length === 0) continue;
+      lines.push(`${k}: ${ns.slice(0, 40).join(", ")}`);
+    }
+    if (lines.length === 0) return base;
+    return `${base}\n\nAvailable resources in scope (use these EXACT names when the user refers to a resource by a fragment like "course" or "flarum"):\n${lines.join("\n")}`;
+  };
+
   const stream = useMemo(
     () =>
       buildKubeChatStream({
-        systemMessage: () => `[Context: ${context || "default"}, Namespace: ${namespace || "all"}]`,
+        systemMessage: buildSystemMessage,
         threadId: () => getThreadId(),
       }),
-    [context, namespace],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [context, namespace, resourceNames.length],
   );
 
   const runtime = useLangGraphRuntime({

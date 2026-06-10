@@ -1,8 +1,17 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { Copy, Check, Terminal, ArrowRight, Sparkles, Loader2, ShieldAlert, AlertTriangle, Search } from "lucide-react";
+import {
+  Copy, Check, Terminal, ArrowRight, Sparkles, Loader2, ShieldAlert, AlertTriangle,
+  Search, Box, History, X, Clock, Bug, ScrollText, RotateCcw, Layers, Activity, Cpu, MessageSquare,
+} from "lucide-react";
+import { navigate as hashNavigate } from "wouter/use-hash-location";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
 import { useAiConfig } from "@/hooks/use-ai-config";
 import { useResourceNames, searchResourceNames } from "@/hooks/use-resource-names";
+import { useSmartSuggestions, type SmartSuggestion } from "@/hooks/use-smart-suggestions";
+import {
+  getKubectlHistory, recordKubectlHistory, clearKubectlHistory,
+} from "@/lib/kubectl-history";
+import { useK8sNamespaces, useK8sPods, useK8sDeployments, useK8sServices } from "@/hooks/use-k8s";
 
 interface MatchedCommand {
   description: string;
@@ -253,9 +262,26 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
   const inputRef = useRef<HTMLInputElement>(null);
   const outputRef = useRef<HTMLPreElement>(null);
   const aiDebounceRef = useRef<ReturnType<typeof setTimeout>>();
-  const { context, namespace } = useTerminalStore();
+  const { context, namespace, setNamespace } = useTerminalStore();
   const { isConfigured } = useAiConfig();
   const resourceNames = useResourceNames();
+  const smartSuggestions = useSmartSuggestions(context, namespace);
+  const { data: namespaces } = useK8sNamespaces(context);
+  // Warm the cache so resource-name autocomplete + AI translation have data
+  // even if the user opens the palette without visiting the dashboard first.
+  // These hooks dedupe with the dashboard's identical queries, so there's no
+  // extra cost when they overlap.
+  useK8sPods(context, namespace);
+  useK8sDeployments(context, namespace);
+  useK8sServices(context, namespace);
+  // The palette lives outside the hash router; use wouter's hash navigate
+  // directly so query strings end up in location.search (where useSearch
+  // expects them), not crammed into the hash.
+  const navigateHash = useCallback((to: string) => {
+    hashNavigate(to);
+  }, []);
+  const [history, setHistory] = useState(() => getKubectlHistory(context, namespace));
+  const [selectedIdx, setSelectedIdx] = useState(0);
 
   const results = useMemo(() => matchQuery(query, context, namespace), [query, context, namespace]);
 
@@ -280,6 +306,17 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
     setAiTranslated(null);
     setAiEditedCmd(null);
     try {
+      // Build a per-kind resource catalog from the React Query cache so the
+      // translator can resolve fuzzy names ("course" → "e2-course-…").
+      const byKind: Record<string, string[]> = {};
+      for (const r of resourceNames) {
+        const k = r.type;
+        if (!byKind[k]) byKind[k] = [];
+        // Avoid pushing the same name multiple times (the cache can yield dups
+        // when results come from different namespaces).
+        if (!byKind[k].includes(r.name)) byKind[k].push(r.name);
+      }
+
       const res = await fetch("/api/ai/translate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -287,6 +324,7 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
           prompt: q,
           context: context || undefined,
           namespace: namespace && namespace !== "all" ? namespace : undefined,
+          resources: byKind,
         }),
       });
       if (!res.ok) throw new Error("Translation failed");
@@ -297,7 +335,7 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
       }
     } catch { /* ignore */ }
     setAiTranslating(false);
-  }, [context, namespace]);
+  }, [context, namespace, resourceNames]);
 
   // Auto-translate when no patterns and no name matches and it's natural language
   useEffect(() => {
@@ -325,9 +363,11 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
       setAiEditedCmd(null);
       setAiTranslating(false);
       setConfirmState(null);
+      setHistory(getKubectlHistory(context, namespace));
+      setSelectedIdx(0);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
-  }, [open]);
+  }, [open, context, namespace]);
 
   useEffect(() => {
     setEditedCmds({});
@@ -341,11 +381,57 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
       if (e.key === "Escape") {
         e.preventDefault();
         if (execState) { setExecState(null); } else { onClose(); }
+        return;
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [open, onClose, execState]);
+
+  // ── Keyboard nav for the results list ────────────
+  // We compose a virtual "navigable list": [smart suggestions if empty query]
+  // OR [aiTranslated + nameResults + results] when query has text.
+  const navigableCmds = useMemo<string[]>(() => {
+    if (!query.trim()) {
+      return smartSuggestions.map((s) => s.command);
+    }
+    const list: string[] = [];
+    if (aiTranslated) list.push(aiCmd);
+    for (const nr of nameResults) list.push(nr.command);
+    for (const r of results) list.push(r.command);
+    return list;
+  }, [query, smartSuggestions, aiTranslated, aiCmd, nameResults, results]);
+
+  // Reset selection when the underlying list changes
+  useEffect(() => {
+    setSelectedIdx((i) => (i >= navigableCmds.length ? 0 : i));
+  }, [navigableCmds.length]);
+
+  // Indirect `handleExec` through a ref so this effect can be defined before
+  // `handleExec` without tripping the TDZ.
+  const execRef = useRef<((cmd: string, idx: number) => void) | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "ArrowDown") {
+        if (navigableCmds.length === 0) return;
+        e.preventDefault();
+        setSelectedIdx((i) => Math.min(navigableCmds.length - 1, i + 1));
+      } else if (e.key === "ArrowUp") {
+        if (navigableCmds.length === 0) return;
+        e.preventDefault();
+        setSelectedIdx((i) => Math.max(0, i - 1));
+      } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+        // Cmd+Enter runs the selected command from anywhere
+        e.preventDefault();
+        const cmd = navigableCmds[selectedIdx];
+        if (cmd) execRef.current?.(cmd, -3);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [open, navigableCmds, selectedIdx]);
 
   useEffect(() => {
     if (execState?.result && outputRef.current) {
@@ -386,11 +472,20 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
         setExecState({ idx, loading: false, result: null, error: data.message || "Execution failed" });
       } else {
         setExecState({ idx, loading: false, result: data, error: null });
+        // Record the successful execution in history (scoped to ctx+ns)
+        recordKubectlHistory(cmd, context, namespace);
+        setHistory(getKubectlHistory(context, namespace));
       }
     } catch (err: any) {
       setExecState({ idx, loading: false, result: null, error: err.message || "Network error" });
     }
-  }, []);
+  }, [context, namespace]);
+
+  // Bind the ref so the keyboard-nav effect (declared earlier) can call this
+  // without a TDZ violation.
+  useEffect(() => {
+    execRef.current = handleExec;
+  }, [handleExec]);
 
   if (!open) return null;
 
@@ -407,12 +502,29 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
           <input
             ref={inputRef}
             value={query}
-            onChange={(e) => { setQuery(e.target.value); setExecState(null); }}
-            placeholder="Describe what you want… (e.g. 'pods with more than 5 restarts')"
+            onChange={(e) => { setQuery(e.target.value); setExecState(null); setSelectedIdx(0); }}
+            placeholder="Describe what you want, paste kubectl, or search resources… (e.g. 'logs for e2-course')"
             className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
           />
           <kbd className="hidden sm:flex items-center gap-0.5 px-2 py-1 rounded-lg border border-border text-[10px] text-muted-foreground/50 font-medium">ESC</kbd>
         </div>
+
+        {/* Scope strip — shows active ctx/ns + inline namespace switcher */}
+        <ScopeStrip
+          context={context}
+          namespace={namespace}
+          namespaces={namespaces?.map((n) => n.name) || []}
+          onNamespaceChange={setNamespace}
+          onAskAi={() => {
+            const q = query.trim();
+            navigateHash(
+              `/ai?q=${encodeURIComponent(q || "Help me investigate this cluster")}` +
+                `&context=${encodeURIComponent(context)}` +
+                `&namespace=${encodeURIComponent(namespace)}`,
+            );
+            onClose();
+          }}
+        />
 
         {/* Results */}
         <div className="max-h-[55vh] overflow-auto">
@@ -825,32 +937,233 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
 
         {/* Footer hints */}
         {!query.trim() && !execState && !confirmState && (
-          <div className="px-4 py-4 border-t border-border/50">
-            <p className="text-[10px] text-muted-foreground/60 mb-2">QUICK EXAMPLES</p>
-            <div className="grid grid-cols-2 gap-1.5">
-              {[
-                "show me crashing pods",
-                "pods with more than 5 restarts",
-                "top pods by cpu",
-                "scale my-deployment to 3",
-                "exec into my-pod",
-                "logs for my-pod",
-                "restart my-deployment",
-                "list all services",
-                "events in this namespace",
-                "port-forward my-pod 8080:80",
-              ].map(ex => (
-                <button
-                  key={ex}
-                  onClick={() => setQuery(ex)}
-                  className="text-left text-[10px] text-foreground/50 hover:text-foreground bg-foreground/[0.02] hover:bg-foreground/[0.05] px-2.5 py-1.5 rounded border border-border/50 transition-colors truncate"
-                >
-                  {ex}
-                </button>
-              ))}
-            </div>
-          </div>
+          <EmptyState
+            smartSuggestions={smartSuggestions}
+            history={history}
+            onPick={(cmd) => setQuery(cmd)}
+            onRun={(cmd) => handleExec(cmd, -2)}
+            onClearHistory={() => {
+              clearKubectlHistory(context, namespace);
+              setHistory([]);
+            }}
+            context={context}
+            namespace={namespace}
+          />
         )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Scope strip ──────────────────────────────────────────────
+
+function ScopeStrip({
+  context, namespace, namespaces, onNamespaceChange, onAskAi,
+}: {
+  context: string;
+  namespace: string;
+  namespaces: string[];
+  onNamespaceChange: (ns: string) => void;
+  onAskAi: () => void;
+}) {
+  const [pickingNs, setPickingNs] = useState(false);
+  const [nsFilter, setNsFilter] = useState("");
+  const filtered = useMemo(() => {
+    const q = nsFilter.trim().toLowerCase();
+    const all = ["all", ...namespaces];
+    if (!q) return all.slice(0, 50);
+    return all.filter((n) => n.toLowerCase().includes(q)).slice(0, 50);
+  }, [namespaces, nsFilter]);
+
+  return (
+    <div className="relative flex items-center gap-2 px-4 py-2 border-b border-border bg-muted/20">
+      <span className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground/70">Scope</span>
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono bg-primary/10 text-primary border border-primary/20">
+        <Box className="w-2.5 h-2.5" />
+        {context || "no-context"}
+      </span>
+      <span className="text-primary/40 text-[10px]">/</span>
+      <button
+        onClick={() => setPickingNs((v) => !v)}
+        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono bg-primary/10 text-primary border border-primary/20 hover:bg-primary/15 transition-colors"
+        title="Change namespace"
+      >
+        <Layers className="w-2.5 h-2.5" />
+        {namespace || "all"}
+      </button>
+      <button
+        onClick={onAskAi}
+        className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
+        title="Open this query in AI chat"
+      >
+        <MessageSquare className="w-2.5 h-2.5" />
+        Ask AI
+      </button>
+
+      {pickingNs && (
+        <div className="absolute left-2 right-2 top-full mt-1 z-10 bg-popover border border-border rounded-lg shadow-lg overflow-hidden">
+          <input
+            autoFocus
+            value={nsFilter}
+            onChange={(e) => setNsFilter(e.target.value)}
+            placeholder="Filter namespaces…"
+            className="w-full bg-transparent px-3 py-2 text-xs border-b border-border focus:outline-none"
+          />
+          <div className="max-h-60 overflow-auto py-1">
+            {filtered.length === 0 && (
+              <div className="px-3 py-2 text-xs text-muted-foreground">No namespaces match.</div>
+            )}
+            {filtered.map((n) => (
+              <button
+                key={n}
+                onClick={() => { onNamespaceChange(n); setPickingNs(false); setNsFilter(""); }}
+                className={`w-full text-left px-3 py-1.5 text-xs font-mono hover:bg-muted/60 transition-colors ${
+                  n === namespace ? "text-primary bg-primary/5" : "text-foreground/80"
+                }`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Empty state with smart suggestions + history ─────────────
+
+const SMART_ICON: Record<SmartSuggestion["icon"], typeof Bug> = {
+  bug: Bug,
+  log: ScrollText,
+  restart: RotateCcw,
+  deploy: Layers,
+  event: Activity,
+  cpu: Cpu,
+};
+
+function EmptyState({
+  smartSuggestions, history, onPick, onRun, onClearHistory, context, namespace,
+}: {
+  smartSuggestions: SmartSuggestion[];
+  history: { command: string; at: number }[];
+  onPick: (cmd: string) => void;
+  onRun: (cmd: string) => void;
+  onClearHistory: () => void;
+  context: string;
+  namespace: string;
+}) {
+  const STATIC_EXAMPLES = [
+    "show me crashing pods",
+    "pods with more than 5 restarts",
+    "top pods by cpu",
+    "scale my-deployment to 3",
+    "exec into my-pod",
+    "logs for my-pod",
+    "restart my-deployment",
+    "list all services",
+    "events in this namespace",
+    "port-forward my-pod 8080:80",
+  ];
+
+  return (
+    <div className="border-t border-border/50 max-h-[55vh] overflow-auto">
+      {/* Smart suggestions — only when we have cluster data */}
+      {smartSuggestions.length > 0 && (
+        <div className="px-4 py-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Sparkles className="w-3 h-3 text-primary" />
+            <p className="text-[10px] uppercase font-bold tracking-wider text-primary">
+              For this scope ({context}/{namespace || "all"})
+            </p>
+          </div>
+          <div className="space-y-1">
+            {smartSuggestions.map((s, i) => {
+              const Icon = SMART_ICON[s.icon] || Terminal;
+              return (
+                <div
+                  key={i}
+                  className="group flex items-start gap-2 px-2 py-1.5 rounded-md hover:bg-muted/40 transition-colors"
+                >
+                  <Icon className="w-3 h-3 shrink-0 mt-0.5 text-primary/70" />
+                  <button
+                    onClick={() => onPick(s.command)}
+                    className="flex-1 min-w-0 text-left"
+                  >
+                    <div className="text-[11px] text-foreground">{s.label}</div>
+                    <div className="text-[10px] text-muted-foreground/80 truncate font-mono">{s.command}</div>
+                    <div className="text-[10px] text-muted-foreground/60 italic">{s.reason}</div>
+                  </button>
+                  <button
+                    onClick={() => onRun(s.command)}
+                    className="shrink-0 opacity-0 group-hover:opacity-100 px-2 py-0.5 rounded text-[10px] font-medium text-primary bg-primary/10 hover:bg-primary/20 transition-all"
+                    title="Run now"
+                  >
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Recent commands for this scope */}
+      {history.length > 0 && (
+        <div className="px-4 py-3 border-t border-border/50">
+          <div className="flex items-center gap-2 mb-2">
+            <History className="w-3 h-3 text-muted-foreground" />
+            <p className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
+              Recent in {namespace || "all"}
+            </p>
+            <button
+              onClick={onClearHistory}
+              className="ml-auto text-[9px] text-muted-foreground/60 hover:text-foreground transition-colors flex items-center gap-1"
+              title="Clear scope history"
+            >
+              <X className="w-2.5 h-2.5" /> clear
+            </button>
+          </div>
+          <div className="space-y-0.5">
+            {history.map((h, i) => (
+              <div
+                key={i}
+                className="group flex items-center gap-2 px-2 py-1 rounded hover:bg-muted/40 transition-colors"
+              >
+                <Clock className="w-3 h-3 shrink-0 text-muted-foreground/50" />
+                <button
+                  onClick={() => onPick(h.command)}
+                  className="flex-1 min-w-0 text-left text-[10px] font-mono text-foreground/80 truncate"
+                >
+                  {h.command}
+                </button>
+                <button
+                  onClick={() => onRun(h.command)}
+                  className="shrink-0 opacity-0 group-hover:opacity-100 px-2 py-0.5 rounded text-[10px] font-medium text-primary bg-primary/10 hover:bg-primary/20 transition-all"
+                  title="Run again"
+                >
+                  <ArrowRight className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Static examples — always at bottom */}
+      <div className="px-4 py-3 border-t border-border/50">
+        <p className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground/60 mb-2">Try asking</p>
+        <div className="grid grid-cols-2 gap-1.5">
+          {STATIC_EXAMPLES.map((ex) => (
+            <button
+              key={ex}
+              onClick={() => onPick(ex)}
+              className="text-left text-[10px] text-foreground/50 hover:text-foreground bg-foreground/[0.02] hover:bg-foreground/[0.05] px-2.5 py-1.5 rounded border border-border/50 transition-colors truncate"
+            >
+              {ex}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

@@ -1410,6 +1410,14 @@ COMMON COMMANDS:
 
 RESOURCE SHORTHANDS: po, deploy, svc, ing, cm, ns, no, rs, sts, ds, hpa, pvc, pv, sa, cj, ep
 
+NAME RESOLUTION (CRITICAL):
+- When the user uses a short word (e.g. "course", "flarum") that is meant to refer to a real resource, you MUST resolve it against the AVAILABLE RESOURCES list provided in the user message.
+- Prefer an exact name match. Otherwise pick the resource whose name CONTAINS the user's token. If multiple match, pick the one of the requested kind (pod/deploy/svc/…) with the most recent / shortest suffix.
+- Examples:
+    "course pod logs" + pods=[e2-course-54458c5484-n2fn5, e2-flarum-…] → kubectl logs e2-course-54458c5484-n2fn5 -n <ns>
+    "describe flarum"  + deploys=[e2-flarum] → kubectl describe deployment e2-flarum -n <ns>
+- NEVER pick a name that isn't in the AVAILABLE RESOURCES list. If nothing matches, output a "kubectl get <kind>" command so the user can see what exists.
+
 RULES:
 - Output ONLY the kubectl command, nothing else
 - No explanation, no markdown, no code fences
@@ -1419,15 +1427,31 @@ RULES:
 
   app.post("/api/ai/translate", async (req: Request, res: Response) => {
     try {
-      const { prompt, context, namespace } = req.body;
+      const { prompt, context, namespace, resources } = req.body;
       if (!prompt || typeof prompt !== "string") {
         return res.status(400).json({ message: "Missing prompt" });
       }
       const ctxHint = context ? ` Current context: ${context}.` : "";
       const nsHint = namespace && namespace !== "all" ? ` Current namespace: ${namespace}.` : "";
+
+      // Format the resource catalog so the model can resolve fuzzy names.
+      // Cap each kind's list so the prompt stays small.
+      let resourcesHint = "";
+      if (resources && typeof resources === "object") {
+        const lines: string[] = [];
+        for (const [kind, names] of Object.entries(resources)) {
+          if (!Array.isArray(names) || names.length === 0) continue;
+          const list = (names as string[]).slice(0, 50).join(", ");
+          lines.push(`${kind}: ${list}`);
+        }
+        if (lines.length > 0) {
+          resourcesHint = `\n\nAVAILABLE RESOURCES in current scope (use these EXACT names):\n${lines.join("\n")}`;
+        }
+      }
+
       const result = await chatCompletion([
         { role: "system", content: KUBECTL_TRANSLATE_SYSTEM },
-        { role: "user", content: `${prompt}${ctxHint}${nsHint}` },
+        { role: "user", content: `${prompt}${ctxHint}${nsHint}${resourcesHint}` },
       ], { useFastModel: true });
       let cmd = result.content.trim()
         .replace(/^```\w*\n?/, "").replace(/\n?```$/, "")
