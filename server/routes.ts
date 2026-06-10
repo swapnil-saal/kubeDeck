@@ -783,6 +783,48 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     } catch (err) { res.status(500).json({ message: String(err) }); }
   });
 
+  // ── Cluster-wide events (last N minutes, optionally filtered) ────
+  app.get(api.k8s.clusterEvents.path, async (req, res) => {
+    try {
+      const context = req.query.context ? `--context=${req.query.context}` : "";
+      const namespace = req.query.namespace && req.query.namespace !== "all"
+        ? `-n ${req.query.namespace}`
+        : "-A";
+      const warningsOnly = String(req.query.warningsOnly ?? "true") === "true";
+      const maxAgeMinutes = Math.max(1, Math.min(360, Number(req.query.maxAgeMinutes ?? 60)));
+      const data = await runKubectl(`get events ${context} ${namespace}`);
+      if (data._forbidden) return res.status(403).json({ message: data._error || "Access denied" });
+
+      const cutoff = Date.now() - maxAgeMinutes * 60_000;
+      const items = (data.items || [])
+        .map((e: any) => {
+          const last = e.lastTimestamp || e.eventTime || e.metadata?.creationTimestamp || null;
+          return {
+            lastTimestamp: last,
+            firstTimestamp: e.firstTimestamp || null,
+            count: e.count ?? 1,
+            type: e.type || "Normal",
+            reason: e.reason || "",
+            message: e.message || "",
+            objectKind: e.involvedObject?.kind || "",
+            objectName: e.involvedObject?.name || "",
+            namespace: e.metadata?.namespace || e.involvedObject?.namespace || "",
+          };
+        })
+        .filter((e: any) => !warningsOnly || e.type === "Warning")
+        .filter((e: any) => {
+          if (!e.lastTimestamp) return true;
+          return new Date(e.lastTimestamp).getTime() >= cutoff;
+        })
+        .sort((a: any, b: any) =>
+          new Date(b.lastTimestamp || 0).getTime() - new Date(a.lastTimestamp || 0).getTime(),
+        )
+        .slice(0, 200);
+
+      res.json(items);
+    } catch (err) { res.status(500).json({ message: String(err) }); }
+  });
+
   // ── Related resources ─────────────────────────────
   app.get(api.k8s.resourceRelated.path, async (req, res) => {
     try {
@@ -1198,9 +1240,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/ai/chat", async (req: Request, res: Response) => {
     try {
-      const { messages, stream } = req.body;
-      if (!Array.isArray(messages)) {
-        return res.status(400).json({ message: "messages must be an array" });
+      const { messages, stream, threadId, resume } = req.body;
+      const isResume = typeof resume === "string";
+      if (!isResume && !Array.isArray(messages)) {
+        return res.status(400).json({ message: "messages must be an array (or pass 'resume' to continue an interrupted thread)" });
       }
 
       if (!stream) {
@@ -1212,15 +1255,33 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
         "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
       });
 
       const sse = (obj: Record<string, unknown>) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+      const tid = typeof threadId === "string" && threadId.length > 0 ? threadId : `thread_${Date.now()}`;
+      sse({ event: "info", data: { threadId: tid } });
+
+      const abort = new AbortController();
+      // Use res.on("close") — fires when the response is actually torn down.
+      // req.on("close") fires as soon as the request body finishes parsing,
+      // which would abort the agent immediately.
+      res.on("close", () => {
+        if (!res.writableEnded) abort.abort();
+      });
 
       try {
-        await runAgent(messages, (event) => sse(event as Record<string, unknown>));
+        await runAgent(
+          isResume ? [] : (messages as any[]),
+          tid,
+          (event) => sse(event as unknown as Record<string, unknown>),
+          abort.signal,
+          isResume ? { resumeValue: resume } : undefined,
+        );
       } catch (err: any) {
-        sse({ error: err.message });
+        sse({ event: "error", data: { message: err?.message || "Agent error" } });
       }
+      res.write(`data: [DONE]\n\n`);
       res.end();
     } catch (err: any) {
       res.status(500).json({ message: err.message || "AI request failed" });
@@ -1282,6 +1343,44 @@ Be concise. Use markdown formatting. If the resource looks healthy, say so brief
       res.json({ suggestion, model: result.model });
     } catch (err: any) {
       res.status(500).json({ message: err.message || "AI suggest failed" });
+    }
+  });
+
+  // ── AI cluster briefing: takes structured signals and returns a short SRE-style summary
+  app.post("/api/ai/cluster-briefing", async (req: Request, res: Response) => {
+    try {
+      const { context, namespace, signals } = req.body;
+      if (!signals || typeof signals !== "object") {
+        return res.status(400).json({ message: "Missing signals" });
+      }
+      const compact = JSON.stringify(signals).slice(0, 6000);
+      const systemPrompt = `You are a senior Kubernetes SRE writing a 30-second daily briefing for an operator. Be terse, scannable, and concrete.
+
+Output MUST be valid markdown with EXACTLY these sections (no extra prose, no preamble):
+
+**Headline:** <one sentence: overall posture — "healthy" or "X critical / Y warning, focus on Z">
+**Top 3 actions** (numbered, each: one sentence + the exact kubectl command in a code span):
+1. ...
+2. ...
+3. ...
+**Watch:** <one line on what to keep an eye on, or "nothing unusual">
+
+Rules:
+- If signals show no issues, say "Cluster is healthy." for the headline and put one positive "Watch" line.
+- Cite specific resource names from signals when relevant.
+- Do not invent issues that aren't in signals.
+- No headings other than the four labels above. No tables. Keep under 120 words.`;
+
+      const userContent = `Context: ${context || "default"}, Namespace: ${namespace || "all"}\n\nSignals (JSON):\n${compact}`;
+
+      const result = await chatCompletion([
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContent },
+      ], { useFastModel: true });
+
+      res.json({ briefing: result.content, model: result.model });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "AI briefing failed" });
     }
   });
 

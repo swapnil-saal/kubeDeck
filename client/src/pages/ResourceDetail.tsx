@@ -21,6 +21,7 @@ import { AppHeader } from "@/components/AppHeader";
 import { CommandBar, buildDetailCommands } from "@/components/CommandBar";
 import { AiTroubleshootButton } from "@/components/AiTroubleshoot";
 import { AiExplainButton } from "@/components/AiExplainYaml";
+import { ResourceAiInsight } from "@/components/ResourceAiInsight";
 import { useAiConfig, fetchAiSuggestion } from "@/hooks/use-ai-config";
 
 const TYPE_META: Record<string, { label: string }> = {
@@ -791,6 +792,16 @@ export default function ResourceDetail() {
           { label: meta.label },
           { label: name },
         ]}
+      />
+
+      <ResourceAiInsight
+        resourceType={type}
+        name={name}
+        namespace={namespace}
+        context={context}
+        describe={describeData?.content}
+        events={eventsData?.content}
+        autoRun={false}
       />
 
       {/* ══════ CONTENT ══════ */}

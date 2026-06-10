@@ -12,3 +12,4 @@ release/
 *.zip.blockmap
 release
 release-notes.md
+.gitnexus

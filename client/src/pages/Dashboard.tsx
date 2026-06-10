@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
 import { useAiConfig, fetchAiSuggestion } from "@/hooks/use-ai-config";
+import { ClusterHealthPanel, type HealthIssue } from "@/components/ClusterHealthPanel";
 
 export default function Dashboard() {
   const { context: currentContext, namespace: currentNamespace, setContext: handleSetContext } = useTerminalStore();
@@ -156,44 +157,120 @@ export default function Dashboard() {
   };
 
   // ── Health Summary (hook must be before any early return) ──
-  const healthIssues = useMemo(() => {
-    const issues: { severity: "critical" | "warning" | "info"; message: string; tab: string }[] = [];
+  const healthIssues = useMemo<HealthIssue[]>(() => {
+    const out: HealthIssue[] = [];
 
     if (pods) {
-      const crashing = pods.filter(p => ["CrashLoopBackOff", "Error", "ImagePullBackOff", "ErrImagePull", "OOMKilled"].includes(p.status));
-      if (crashing.length > 0) issues.push({ severity: "critical", message: `${crashing.length} pod${crashing.length > 1 ? "s" : ""} in error state (${crashing.slice(0, 3).map(p => p.name.slice(0, 25)).join(", ")}${crashing.length > 3 ? "…" : ""})`, tab: "pods" });
+      const errorReasons = ["CrashLoopBackOff", "Error", "ImagePullBackOff", "ErrImagePull", "OOMKilled", "CreateContainerConfigError", "InvalidImageName"];
+      // Group error pods by their specific failure reason
+      const byReason = new Map<string, typeof pods>();
+      for (const p of pods) {
+        if (errorReasons.includes(p.status)) {
+          if (!byReason.has(p.status)) byReason.set(p.status, []);
+          byReason.get(p.status)!.push(p);
+        }
+      }
+      for (const [reason, ps] of Array.from(byReason.entries())) {
+        out.push({
+          severity: "critical",
+          category: "Pods",
+          reason,
+          title: `Pods in ${reason}`,
+          items: ps.map((p) => ({ name: p.name, detail: `restarts=${p.restarts}, age=${p.age}`, namespace: (p as any).namespace, kind: "Pod" })),
+          tab: "pods",
+        });
+      }
 
-      const pending = pods.filter(p => ["Pending", "ContainerCreating"].includes(p.status));
-      if (pending.length > 0) issues.push({ severity: "warning", message: `${pending.length} pod${pending.length > 1 ? "s" : ""} pending`, tab: "pods" });
+      const pending = pods.filter((p) => ["Pending", "ContainerCreating", "PodInitializing"].includes(p.status));
+      if (pending.length > 0) {
+        out.push({
+          severity: "warning",
+          category: "Pods",
+          reason: "Pending",
+          title: "Pods stuck pending",
+          items: pending.map((p) => ({ name: p.name, detail: p.status, namespace: (p as any).namespace, kind: "Pod" })),
+          tab: "pods",
+        });
+      }
 
-      const highRestarts = pods.filter(p => p.restarts > 5);
-      if (highRestarts.length > 0) issues.push({ severity: "warning", message: `${highRestarts.length} pod${highRestarts.length > 1 ? "s" : ""} with >5 restarts (${highRestarts.slice(0, 2).map(p => `${p.name.slice(0, 20)}:${p.restarts}`).join(", ")})`, tab: "pods" });
+      const highRestarts = pods.filter((p) => p.restarts > 5 && !errorReasons.includes(p.status));
+      if (highRestarts.length > 0) {
+        out.push({
+          severity: "warning",
+          category: "Pods",
+          reason: "HighRestartCount",
+          title: "Pods with elevated restart count",
+          items: highRestarts.map((p) => ({ name: p.name, detail: `${p.restarts} restarts`, namespace: (p as any).namespace, kind: "Pod" })),
+          tab: "pods",
+        });
+      }
     }
 
     if (deployments) {
-      const unhealthy = deployments.filter(d => {
+      const unhealthy = deployments.filter((d) => {
         const [cur, tot] = d.ready.split("/");
         return Number(cur) < Number(tot) || Number(tot) === 0;
       });
-      if (unhealthy.length > 0) issues.push({ severity: "critical", message: `${unhealthy.length} deployment${unhealthy.length > 1 ? "s" : ""} not fully ready (${unhealthy.slice(0, 3).map(d => `${d.name.slice(0, 20)} ${d.ready}`).join(", ")})`, tab: "deployments" });
+      if (unhealthy.length > 0) {
+        out.push({
+          severity: "critical",
+          category: "Deployments",
+          reason: "NotReady",
+          title: "Deployments not fully ready",
+          items: unhealthy.map((d) => ({ name: d.name, detail: `${d.ready} ready`, namespace: (d as any).namespace, kind: "Deployment" })),
+          tab: "deployments",
+        });
+      }
     }
 
     if (nodes) {
-      const notReady = nodes.filter(n => n.status !== "Ready");
-      if (notReady.length > 0) issues.push({ severity: "critical", message: `${notReady.length} node${notReady.length > 1 ? "s" : ""} not ready (${notReady.map(n => n.name.slice(0, 20)).join(", ")})`, tab: "nodes" });
+      const notReady = nodes.filter((n) => n.status !== "Ready");
+      if (notReady.length > 0) {
+        out.push({
+          severity: "critical",
+          category: "Nodes",
+          reason: "NotReady",
+          title: "Nodes not Ready",
+          items: notReady.map((n) => ({ name: n.name, detail: n.status, kind: "Node" })),
+          tab: "nodes",
+        });
+      }
     }
 
     if (jobs) {
-      const failed = jobs.filter(j => j.status === "Failed");
-      if (failed.length > 0) issues.push({ severity: "warning", message: `${failed.length} failed job${failed.length > 1 ? "s" : ""}`, tab: "jobs" });
+      const failed = jobs.filter((j) => j.status === "Failed");
+      if (failed.length > 0) {
+        out.push({
+          severity: "warning",
+          category: "Jobs",
+          reason: "Failed",
+          title: "Failed jobs",
+          items: failed.map((j) => ({ name: j.name, detail: j.status, namespace: (j as any).namespace, kind: "Job" })),
+          tab: "jobs",
+        });
+      }
     }
 
     if (pvcs) {
-      const pending = pvcs.filter(p => p.status !== "Bound");
-      if (pending.length > 0) issues.push({ severity: "warning", message: `${pending.length} PVC${pending.length > 1 ? "s" : ""} not bound`, tab: "pvcs" });
+      const unbound = pvcs.filter((p) => p.status !== "Bound");
+      if (unbound.length > 0) {
+        out.push({
+          severity: "warning",
+          category: "PVCs",
+          reason: "NotBound",
+          title: "PVCs not bound",
+          items: unbound.map((p) => ({ name: p.name, detail: p.status, namespace: (p as any).namespace, kind: "PersistentVolumeClaim" })),
+          tab: "pvcs",
+        });
+      }
     }
 
-    return issues;
+    // Sort: critical first, then by item count desc
+    return out.sort((a, b) => {
+      const sev = (x: HealthIssue) => (x.severity === "critical" ? 0 : x.severity === "warning" ? 1 : 2);
+      const d = sev(a) - sev(b);
+      return d !== 0 ? d : b.items.length - a.items.length;
+    });
   }, [pods, deployments, nodes, jobs, pvcs]);
 
   const [healthExpanded, setHealthExpanded] = useState(true);
@@ -207,19 +284,19 @@ export default function Dashboard() {
     const controller = new AbortController();
     const fetchSuggestions = async () => {
       for (const issue of healthIssues) {
-        const key = issue.message;
+        const key = `${issue.category}/${issue.reason}`;
         if (aiSuggestionsCache.current.has(key)) {
-          setAiSuggestions(prev => ({ ...prev, [key]: aiSuggestionsCache.current.get(key)! }));
+          setAiSuggestions((prev) => ({ ...prev, [key]: aiSuggestionsCache.current.get(key)! }));
           continue;
         }
         try {
           const suggestion = await fetchAiSuggestion(
-            `In one sentence, explain the likely cause and fix for this Kubernetes issue: ${key}`,
+            `In one sentence, explain the most likely cause and fix for: ${issue.title} (reason=${issue.reason}, count=${issue.items.length}).`,
             200,
             controller.signal,
           );
           aiSuggestionsCache.current.set(key, suggestion);
-          setAiSuggestions(prev => ({ ...prev, [key]: suggestion }));
+          setAiSuggestions((prev) => ({ ...prev, [key]: suggestion }));
         } catch {
           // ignore abort / failure
         }
@@ -321,74 +398,13 @@ export default function Dashboard() {
 
           {/* ── HEALTH SUMMARY ── */}
           {!podsLoading && !deployLoading && !nodesLoading && (
-            <div className={`rounded-xl shadow-sm border overflow-hidden transition-all ${
-              healthIssues.length === 0
-                ? "border-emerald-500/20 bg-card"
-                : healthIssues.some(i => i.severity === "critical")
-                  ? "border-red-500/20 bg-card"
-                  : "border-amber-500/20 bg-card"
-            }`}>
-              <button
-                onClick={() => setHealthExpanded(!healthExpanded)}
-                className="w-full flex items-center gap-3 px-5 py-3.5 text-left"
-              >
-                <HeartPulse className={`w-4 h-4 shrink-0 ${
-                  healthIssues.length === 0 ? "text-emerald-500" : healthIssues.some(i => i.severity === "critical") ? "text-red-500" : "text-amber-500"
-                }`} />
-                <span className="text-sm font-semibold text-foreground">
-                  Cluster Health
-                </span>
-                {healthIssues.length === 0 ? (
-                  <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium ml-1">All systems healthy</span>
-                ) : (
-                  <span className="text-xs text-muted-foreground ml-1 flex gap-2">
-                    {healthIssues.filter(i => i.severity === "critical").length > 0 && (
-                      <span className="text-red-600 dark:text-red-400 font-semibold">{healthIssues.filter(i => i.severity === "critical").length} critical</span>
-                    )}
-                    {healthIssues.filter(i => i.severity === "warning").length > 0 && (
-                      <span className="text-amber-600 dark:text-amber-400 font-semibold">{healthIssues.filter(i => i.severity === "warning").length} warning{healthIssues.filter(i => i.severity === "warning").length > 1 ? "s" : ""}</span>
-                    )}
-                  </span>
-                )}
-                <div className="ml-auto">
-                  {healthExpanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
-                </div>
-              </button>
-
-              {healthExpanded && healthIssues.length > 0 && (
-                <div className="px-5 pb-4 space-y-1.5 border-t border-border pt-3">
-                  {healthIssues.map((issue, i) => (
-                    <div key={i} className={`flex flex-col gap-1 px-3 py-2 rounded-lg border-l-2 ${
-                      issue.severity === "critical" ? "border-l-red-500 bg-red-500/5" : "border-l-amber-500 bg-amber-500/5"
-                    }`}>
-                      <div className="flex items-start gap-3">
-                        <AlertTriangle className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${issue.severity === "critical" ? "text-red-500" : "text-amber-500"}`} />
-                        <button
-                          onClick={() => setActiveTab(issue.tab)}
-                          className="text-[12px] text-foreground/80 hover:text-foreground text-left transition-colors flex-1"
-                        >
-                          {issue.message}
-                        </button>
-                        {isFastModel && (
-                          <button
-                            onClick={() => navigate(`/ai?q=${encodeURIComponent(`Fix this Kubernetes issue: ${issue.message}`)}`)}
-                            className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded-md transition-colors shrink-0"
-                          >
-                            <Sparkles className="w-3 h-3" />
-                            AI Fix
-                          </button>
-                        )}
-                      </div>
-                      {isFastModel && aiSuggestions[issue.message] && (
-                        <p className="text-[11px] text-muted-foreground ml-6 pl-0.5 italic">
-                          {aiSuggestions[issue.message]}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <ClusterHealthPanel
+              context={currentContext}
+              namespace={currentNamespace}
+              issues={healthIssues}
+              loading={false}
+              onJumpToTab={setActiveTab}
+            />
           )}
 
           {/* ── RESOURCE TABS ── */}

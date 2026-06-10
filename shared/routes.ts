@@ -171,6 +171,24 @@ export const api = {
       path: '/api/k8s/resource/:type/:name/events' as const,
       responses: { 200: z.object({ content: z.string() }), 500: errorSchemas.internal },
     },
+    clusterEvents: {
+      method: 'GET' as const,
+      path: '/api/k8s/cluster-events' as const,
+      responses: {
+        200: z.array(z.object({
+          lastTimestamp: z.string().nullable(),
+          firstTimestamp: z.string().nullable(),
+          count: z.number(),
+          type: z.string(),
+          reason: z.string(),
+          message: z.string(),
+          objectKind: z.string(),
+          objectName: z.string(),
+          namespace: z.string(),
+        })),
+        500: errorSchemas.internal,
+      },
+    },
     resourceRelated: {
       method: 'GET' as const,
       path: '/api/k8s/resource/:type/:name/related' as const,

@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 import { useLocation } from "wouter";
 import { ChevronRight, Settings, LayoutDashboard, Sparkles, Bot, Box, MessageSquare } from "lucide-react";
+import { useEffect } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
@@ -22,6 +23,15 @@ export function AppHeader({ breadcrumbs, rightSlot, showSelectors = true }: AppH
   const { context: currentContext, namespace: currentNamespace, setContext, setNamespace } = useTerminalStore();
   const { data: contexts } = useK8sContexts();
   const { data: namespaces } = useK8sNamespaces(currentContext);
+
+  // Seed currentContext from kubectl's current-context on first load so the
+  // namespace dropdown isn't empty before the user picks one manually.
+  useEffect(() => {
+    if (currentContext) return;
+    if (!contexts || contexts.length === 0) return;
+    const initial = contexts.find((c) => c.isCurrent) ?? contexts[0];
+    if (initial) setContext(initial.name);
+  }, [contexts, currentContext, setContext]);
 
   const isActive = (path: string) => location === path;
 

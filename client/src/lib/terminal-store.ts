@@ -46,7 +46,7 @@ export function getTerminalState() {
 }
 
 export function setContext(ctx: string) {
-  state = { ...state, context: ctx, namespace: "default" };
+  state = { ...state, context: ctx, namespace: "all" };
   persist();
   notify();
 }

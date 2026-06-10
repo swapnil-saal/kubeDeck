@@ -339,6 +339,41 @@ export function useResourceEvents(type: string, name: string, context: string, n
   });
 }
 
+export interface ClusterEvent {
+  lastTimestamp: string | null;
+  firstTimestamp: string | null;
+  count: number;
+  type: string;
+  reason: string;
+  message: string;
+  objectKind: string;
+  objectName: string;
+  namespace: string;
+}
+
+export function useClusterEvents(
+  context?: string,
+  namespace?: string,
+  opts: { warningsOnly?: boolean; maxAgeMinutes?: number; enabled?: boolean } = {},
+) {
+  const { warningsOnly = true, maxAgeMinutes = 60, enabled = true } = opts;
+  return useQuery({
+    queryKey: ["clusterEvents", context, namespace, warningsOnly, maxAgeMinutes],
+    queryFn: () => {
+      const url = buildUrl(api.k8s.clusterEvents.path, {
+        context: context || "",
+        namespace: namespace || "",
+        warningsOnly: String(warningsOnly),
+        maxAgeMinutes: String(maxAgeMinutes),
+      });
+      return k8sFetchJson<ClusterEvent[]>(url);
+    },
+    enabled: !!context && enabled,
+    refetchInterval: 20000,
+    retry: (fc, err) => err instanceof K8sError && err.isForbidden ? false : fc < 2,
+  });
+}
+
 export function useResourceRelated(type: string, name: string, context: string, namespace: string, enabled = true) {
   return useQuery({
     queryKey: ["resourceRelated", type, name, context, namespace],
