@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import {
   HeartPulse, ChevronDown, ChevronUp, AlertTriangle, AlertOctagon,
   CheckCircle2, Sparkles, Loader2, ChevronRight, Activity, RefreshCw, Clock,
+  ExternalLink,
 } from "lucide-react";
 import { Markdown } from "@/components/assistant/Markdown";
 import { useClusterEvents, type ClusterEvent } from "@/hooks/use-k8s";
@@ -11,11 +12,11 @@ export type HealthSeverity = "critical" | "warning" | "info";
 
 export interface HealthIssue {
   severity: HealthSeverity;
-  category: string;        // e.g. "Pods", "Deployments", "Nodes"
-  reason: string;          // e.g. "CrashLoopBackOff", "NotReady"
-  title: string;           // e.g. "Pod in error state"
+  category: string;
+  reason: string;
+  title: string;
   items: { name: string; detail?: string; tab?: string; namespace?: string; kind?: string }[];
-  tab?: string;            // dashboard tab to jump to
+  tab?: string;
 }
 
 interface Props {
@@ -26,10 +27,6 @@ interface Props {
   onJumpToTab?: (tab: string) => void;
 }
 
-/**
- * Score = 100 - (criticalWeight * groups + warningWeight * groups), clamped 0..100.
- * Items inside a group bump the score lower with diminishing returns.
- */
 function computeScore(issues: HealthIssue[]): number {
   if (issues.length === 0) return 100;
   let penalty = 0;
@@ -64,13 +61,13 @@ function shortAge(iso: string | null | undefined): string {
 export function ClusterHealthPanel({ context, namespace, issues, loading, onJumpToTab }: Props) {
   const [, navigate] = useLocation();
   const [expanded, setExpanded] = useState(true);
-  const [activeTab, setActiveTab] = useState<"issues" | "events" | "brief">("issues");
+  const [activeFilter, setActiveFilter] = useState<"issues" | "events">("issues");
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const score = computeScore(issues);
   const scoreUi = scoreColor(score);
   const criticalCount = issues.filter((i) => i.severity === "critical").length;
   const warningCount = issues.filter((i) => i.severity === "warning").length;
 
-  // Trend: compare score to previous render (cached in ref).
   const prevScoreRef = useRef(score);
   const delta = score - prevScoreRef.current;
   useEffect(() => {
@@ -82,20 +79,34 @@ export function ClusterHealthPanel({ context, namespace, issues, loading, onJump
 
   const eventGroupCount = events?.length ?? 0;
 
+  // Auto-expand the first critical issue
+  useEffect(() => {
+    if (issues.length > 0 && expandedKey === null) {
+      const firstCritical = issues.findIndex((i) => i.severity === "critical");
+      if (firstCritical >= 0) {
+        setExpandedKey(`issue-${firstCritical}`);
+      }
+    }
+  }, [issues, expandedKey]);
+
+  const toggleRow = (key: string) => {
+    setExpandedKey((prev) => (prev === key ? null : key));
+  };
+
   return (
-    <div className={`rounded-xl shadow-sm border overflow-hidden transition-all ${scoreUi.ring} ${scoreUi.bg} border-border`}>
+    <div className={`rounded-xl shadow-sm border overflow-hidden transition-all backdrop-blur bg-card/50 ${scoreUi.ring} border-border/50`}>
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center gap-3 px-5 py-3.5 text-left"
       >
-        <div className={`relative w-10 h-10 rounded-full ${scoreUi.bg} ring-2 ${scoreUi.ring} flex items-center justify-center shrink-0`}>
+        <div className={`relative w-10 h-10 rounded-xl ${scoreUi.bg} ring-2 ${scoreUi.ring} flex items-center justify-center shrink-0`}>
           <span className={`text-sm font-bold tabular-nums ${scoreUi.text}`}>{loading ? "…" : score}</span>
         </div>
         <div className="flex flex-col min-w-0">
           <div className="flex items-center gap-2">
-            <HeartPulse className={`w-4 h-4 shrink-0 ${scoreUi.text}`} />
+            <HeartPulse size={14} className={`shrink-0 ${scoreUi.text}`} />
             <span className="text-sm font-semibold text-foreground">Cluster Health</span>
-            <span className={`text-[10px] font-semibold uppercase tracking-wider ${scoreUi.text}`}>{scoreUi.label}</span>
+            <span className={`text-[10px] font-semibold uppercase tracking-widest ${scoreUi.text}`}>{scoreUi.label}</span>
             {delta !== 0 && !loading && (
               <span className={`text-[10px] tabular-nums ${delta > 0 ? "text-emerald-500" : "text-red-500"}`}>
                 {delta > 0 ? "▲" : "▼"} {Math.abs(delta)}
@@ -116,32 +127,58 @@ export function ClusterHealthPanel({ context, namespace, issues, loading, onJump
 
       {expanded && (
         <div className="border-t border-border">
-          {/* Tab bar */}
-          <div className="flex items-center gap-0.5 px-3 pt-2 border-b border-border bg-background/40">
-            <TabButton active={activeTab === "issues"} onClick={() => setActiveTab("issues")} icon={AlertOctagon} label="Issues" count={issues.length} />
-            <TabButton active={activeTab === "events"} onClick={() => setActiveTab("events")} icon={Activity} label="Events" count={eventGroupCount} />
-            <TabButton active={activeTab === "brief"} onClick={() => setActiveTab("brief")} icon={Sparkles} label="AI Brief" />
-            <div className="ml-auto" />
-            {activeTab === "events" && (
-              <button
-                onClick={() => refetchEvents()}
-                className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-                title="Refresh"
-              >
-                <RefreshCw className={`w-3 h-3 ${eventsLoading ? "animate-spin" : ""}`} />
-              </button>
-            )}
+          {/* Segmented filter control */}
+          <div className="flex items-center gap-1 px-4 py-2 border-b border-border bg-background/40">
+            <FilterChip
+              active={activeFilter === "issues"}
+              onClick={() => { setActiveFilter("issues"); setExpandedKey(null); }}
+              icon={AlertOctagon}
+              label="Issues"
+              count={issues.length}
+            />
+            <FilterChip
+              active={activeFilter === "events"}
+              onClick={() => { setActiveFilter("events"); setExpandedKey(null); }}
+              icon={Activity}
+              label="Events"
+              count={eventGroupCount}
+            />
+            <div className="ml-auto">
+              {activeFilter === "events" && (
+                <button
+                  onClick={() => refetchEvents()}
+                  className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+                  title="Refresh events"
+                >
+                  <RefreshCw className={`w-3 h-3 ${eventsLoading ? "animate-spin" : ""}`} />
+                </button>
+              )}
+            </div>
           </div>
 
-          <div className="px-4 py-3">
-            {activeTab === "issues" && (
-              <IssuesView issues={issues} loading={loading} onJumpToTab={onJumpToTab} navigate={navigate} context={context} namespace={namespace} />
+          <div className="px-4 py-2">
+            {activeFilter === "issues" && (
+              <IssuesView
+                issues={issues}
+                loading={loading}
+                onJumpToTab={onJumpToTab}
+                navigate={navigate}
+                context={context}
+                namespace={namespace}
+                expandedKey={expandedKey}
+                onToggle={toggleRow}
+              />
             )}
-            {activeTab === "events" && (
-              <EventsView events={events ?? []} loading={eventsLoading} navigate={navigate} context={context} namespace={namespace} />
-            )}
-            {activeTab === "brief" && (
-              <AiBriefView context={context} namespace={namespace} issues={issues} events={events ?? []} />
+            {activeFilter === "events" && (
+              <EventsView
+                events={events ?? []}
+                loading={eventsLoading}
+                navigate={navigate}
+                context={context}
+                namespace={namespace}
+                expandedKey={expandedKey}
+                onToggle={toggleRow}
+              />
             )}
           </div>
         </div>
@@ -150,9 +187,9 @@ export function ClusterHealthPanel({ context, namespace, issues, loading, onJump
   );
 }
 
-// ─── Tab button ──────────────────────────────────────────────
+// ─── Filter chip (segmented control item) ────────────────────
 
-function TabButton({
+function FilterChip({
   active, onClick, icon: Icon, label, count,
 }: {
   active: boolean;
@@ -164,16 +201,16 @@ function TabButton({
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium rounded-t-md transition-colors ${
+      className={`flex items-center gap-1.5 px-3 py-1 text-[11px] font-semibold rounded-md transition-colors ${
         active
-          ? "bg-card text-foreground border border-border border-b-card -mb-px"
-          : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
+          ? "bg-primary/10 text-primary border border-primary/20"
+          : "text-muted-foreground hover:text-foreground hover:bg-secondary/40"
       }`}
     >
-      <Icon className="w-3 h-3" />
+      <Icon size={11} />
       {label}
       {count !== undefined && count > 0 && (
-        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${active ? "bg-primary/15 text-primary" : "bg-muted/60 text-muted-foreground"}`}>
+        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${active ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground"}`}>
           {count}
         </span>
       )}
@@ -181,10 +218,10 @@ function TabButton({
   );
 }
 
-// ─── Issues view (grouped, expandable) ───────────────────────
+// ─── Issues view (compact rows, single-expand) ──────────────
 
 function IssuesView({
-  issues, loading, onJumpToTab, navigate, context, namespace,
+  issues, loading, onJumpToTab, navigate, context, namespace, expandedKey, onToggle,
 }: {
   issues: HealthIssue[];
   loading: boolean;
@@ -192,6 +229,8 @@ function IssuesView({
   navigate: (to: string) => void;
   context: string;
   namespace: string;
+  expandedKey: string | null;
+  onToggle: (key: string) => void;
 }) {
   if (loading) return <div className="text-xs text-muted-foreground py-2">Computing health…</div>;
   if (issues.length === 0) {
@@ -203,29 +242,38 @@ function IssuesView({
     );
   }
   return (
-    <div className="space-y-1.5">
-      {issues.map((issue, i) => (
-        <IssueGroup
-          key={i}
-          issue={issue}
-          onJumpToTab={onJumpToTab}
-          onInvestigate={(prompt) =>
-            navigate(`/ai?q=${encodeURIComponent(prompt)}&context=${encodeURIComponent(context)}&namespace=${encodeURIComponent(namespace)}`)
-          }
-        />
-      ))}
+    <div className="space-y-1">
+      {issues.map((issue, i) => {
+        const key = `issue-${i}`;
+        const isOpen = expandedKey === key;
+        return (
+          <IssueRow
+            key={key}
+            issue={issue}
+            isOpen={isOpen}
+            onToggle={() => onToggle(key)}
+            onJumpToTab={onJumpToTab}
+            navigate={navigate}
+            context={context}
+            namespace={namespace}
+          />
+        );
+      })}
     </div>
   );
 }
 
-function IssueGroup({
-  issue, onJumpToTab, onInvestigate,
+function IssueRow({
+  issue, isOpen, onToggle, onJumpToTab, navigate, context, namespace,
 }: {
   issue: HealthIssue;
+  isOpen: boolean;
+  onToggle: () => void;
   onJumpToTab?: (tab: string) => void;
-  onInvestigate: (prompt: string) => void;
+  navigate: (to: string) => void;
+  context: string;
+  namespace: string;
 }) {
-  const [open, setOpen] = useState(issue.severity === "critical");
   const isCritical = issue.severity === "critical";
   const borderL = isCritical ? "border-l-red-500" : "border-l-amber-500";
   const Icon = isCritical ? AlertOctagon : AlertTriangle;
@@ -235,74 +283,86 @@ function IssueGroup({
 
   return (
     <div className={`rounded-lg border-l-2 ${borderL} bg-background/50 border border-border overflow-hidden`}>
+      {/* Collapsed row — one line */}
       <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-start gap-2.5 px-3 py-2 text-left hover:bg-muted/30 transition-colors"
+        onClick={onToggle}
+        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/30 transition-colors"
       >
-        {open
-          ? <ChevronDown className="w-3 h-3 shrink-0 mt-1 text-muted-foreground" />
-          : <ChevronRight className="w-3 h-3 shrink-0 mt-1 text-muted-foreground" />}
-        <Icon className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${iconCol}`} />
-        <div className="flex-1 min-w-0">
-          <div className="text-[12px] text-foreground font-medium">
-            {issue.title}
-            <span className="ml-2 text-muted-foreground font-normal">
-              ({issue.items.length} {issue.category.toLowerCase()}
-              {issue.items.length === 1 ? "" : "s"})
-            </span>
-          </div>
-          {issue.reason && (
-            <div className="text-[10px] text-muted-foreground font-mono mt-0.5">{issue.reason}</div>
-          )}
-        </div>
-        <button
-          onClick={(e) => { e.stopPropagation(); onInvestigate(investigatePrompt); }}
-          className="shrink-0 flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded-md transition-colors"
-          title="Investigate with AI"
-        >
-          <Sparkles className="w-3 h-3" />
-          Investigate
-        </button>
+        {isOpen
+          ? <ChevronDown className="w-3 h-3 shrink-0 text-muted-foreground" />
+          : <ChevronRight className="w-3 h-3 shrink-0 text-muted-foreground" />}
+        <Icon className={`w-3.5 h-3.5 shrink-0 ${iconCol}`} />
+        <span className="text-[12px] text-foreground font-medium truncate">{issue.title}</span>
+        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-secondary text-muted-foreground shrink-0">
+          {issue.items.length}
+        </span>
+        {issue.reason && (
+          <code className="text-[10px] text-muted-foreground font-mono truncate hidden sm:inline">{issue.reason}</code>
+        )}
       </button>
 
-      {open && (
-        <div className="border-t border-border/60 bg-muted/10 px-3 py-2 space-y-1">
-          {issue.items.slice(0, 30).map((item, i) => (
-            <div key={i} className="flex items-center gap-2 text-[11px] group">
-              <span className="text-muted-foreground/60">•</span>
-              <code className="font-mono text-foreground/80">{item.name}</code>
-              {item.detail && <span className="text-muted-foreground">— {item.detail}</span>}
-              {issue.tab && onJumpToTab && (
-                <button
-                  onClick={() => onJumpToTab(issue.tab!)}
-                  className="ml-auto opacity-0 group-hover:opacity-100 text-[10px] text-primary hover:underline transition-opacity"
-                >
-                  view →
-                </button>
-              )}
-            </div>
-          ))}
-          {issue.items.length > 30 && (
-            <div className="text-[10px] text-muted-foreground italic">
-              … and {issue.items.length - 30} more
-            </div>
-          )}
+      {/* Expanded drawer */}
+      {isOpen && (
+        <div className="border-t border-border/60 bg-muted/10 px-3 py-2.5 space-y-3">
+          {/* Sample items — max 3 */}
+          <div className="space-y-1">
+            {issue.items.slice(0, 3).map((item, i) => (
+              <div key={i} className="flex items-center gap-2 text-[11px] group">
+                <span className="text-muted-foreground/60">•</span>
+                <code className="font-mono text-foreground/80">{item.name}</code>
+                {item.detail && <span className="text-muted-foreground truncate">— {item.detail}</span>}
+                {issue.tab && onJumpToTab && (
+                  <button
+                    onClick={() => onJumpToTab(issue.tab!)}
+                    className="ml-auto opacity-0 group-hover:opacity-100 text-[10px] text-primary hover:underline transition-opacity"
+                  >
+                    view →
+                  </button>
+                )}
+              </div>
+            ))}
+            {issue.items.length > 3 && (
+              <div className="text-[10px] text-muted-foreground italic pl-4">
+                +{issue.items.length - 3} more
+              </div>
+            )}
+          </div>
+
+          {/* Inline AI panel */}
+          <AlertAiPanel
+            context={context}
+            namespace={namespace}
+            issue={issue}
+          />
+
+          {/* Investigate in chat link */}
+          <button
+            onClick={() =>
+              navigate(`/ai?prompt=${encodeURIComponent(investigatePrompt)}&context=${encodeURIComponent(context)}&namespace=${encodeURIComponent(namespace)}`)
+            }
+            className="flex items-center gap-1.5 text-[10px] text-primary hover:underline"
+          >
+            <ExternalLink className="w-3 h-3" />
+            Investigate in AI chat
+          </button>
         </div>
       )}
     </div>
   );
 }
 
-// ─── Events view ─────────────────────────────────────────────
+// ─── Events view (compact rows, single-expand) ──────────────
 
 function EventsView({
-  events, loading, navigate, context, namespace,
+  events, loading, navigate, context, namespace, expandedKey, onToggle,
 }: {
   events: ClusterEvent[];
   loading: boolean;
   navigate: (to: string) => void;
   context: string;
   namespace: string;
+  expandedKey: string | null;
+  onToggle: (key: string) => void;
 }) {
   if (loading && events.length === 0) {
     return <div className="text-xs text-muted-foreground py-2 flex items-center gap-2"><Loader2 className="w-3 h-3 animate-spin" /> Fetching events…</div>;
@@ -316,64 +376,97 @@ function EventsView({
   }
   return (
     <div className="space-y-1 max-h-80 overflow-auto">
-      {events.map((e, i) => (
-        <div key={i} className="flex items-start gap-2 px-2 py-1.5 rounded hover:bg-muted/40 transition-colors text-[11px]">
-          <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5 text-amber-500" />
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-mono text-foreground font-medium">{e.reason}</span>
-              <code className="text-muted-foreground text-[10px]">{e.objectKind}/{e.objectName}</code>
-              {e.namespace && <code className="text-muted-foreground/60 text-[10px]">ns={e.namespace}</code>}
-              {e.count > 1 && <span className="text-[10px] px-1 py-0 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400">×{e.count}</span>}
-              <span className="ml-auto flex items-center gap-1 text-muted-foreground/70 text-[10px]">
-                <Clock className="w-2.5 h-2.5" />
-                {shortAge(e.lastTimestamp)}
-              </span>
-            </div>
-            <div className="text-foreground/70 mt-0.5 break-words">{e.message}</div>
-            <div className="mt-1 flex items-center gap-2">
-              <button
-                onClick={() =>
-                  navigate(`/ai?q=${encodeURIComponent(
-                    `Explain this Kubernetes event and propose a fix: ${e.reason} on ${e.objectKind}/${e.objectName} (ns=${e.namespace}): ${e.message}`,
-                  )}&context=${encodeURIComponent(context)}&namespace=${encodeURIComponent(namespace)}`)
-                }
-                className="flex items-center gap-1 text-[10px] text-primary hover:underline"
-              >
-                <Sparkles className="w-2.5 h-2.5" /> investigate
-              </button>
-            </div>
-          </div>
-        </div>
-      ))}
+      {events.map((e, i) => {
+        const key = `event-${i}`;
+        const isOpen = expandedKey === key;
+        return (
+          <EventRow
+            key={key}
+            event={e}
+            isOpen={isOpen}
+            onToggle={() => onToggle(key)}
+            navigate={navigate}
+            context={context}
+            namespace={namespace}
+          />
+        );
+      })}
     </div>
   );
 }
 
-// ─── AI Brief view ───────────────────────────────────────────
+function EventRow({
+  event: e, isOpen, onToggle, navigate, context, namespace,
+}: {
+  event: ClusterEvent;
+  isOpen: boolean;
+  onToggle: () => void;
+  navigate: (to: string) => void;
+  context: string;
+  namespace: string;
+}) {
+  const investigatePrompt = `Explain this Kubernetes event and propose a fix: ${e.reason} on ${e.objectKind}/${e.objectName} (ns=${e.namespace}): ${e.message}`;
 
-function AiBriefView({
-  context, namespace, issues, events,
+  return (
+    <div className="rounded-lg bg-background/50 border border-border overflow-hidden">
+      {/* Collapsed row */}
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/30 transition-colors text-[11px]"
+      >
+        {isOpen
+          ? <ChevronDown className="w-3 h-3 shrink-0 text-muted-foreground" />
+          : <ChevronRight className="w-3 h-3 shrink-0 text-muted-foreground" />}
+        <AlertTriangle className="w-3 h-3 shrink-0 text-amber-500" />
+        <span className="font-mono text-foreground font-medium truncate">{e.reason}</span>
+        <code className="text-muted-foreground text-[10px] truncate">{e.objectKind}/{e.objectName}</code>
+        {e.count > 1 && (
+          <span className="text-[10px] px-1 py-0 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 shrink-0">×{e.count}</span>
+        )}
+        <span className="ml-auto flex items-center gap-1 text-muted-foreground/70 text-[10px] shrink-0">
+          <Clock className="w-2.5 h-2.5" />
+          {shortAge(e.lastTimestamp)}
+        </span>
+      </button>
+
+      {/* Expanded drawer */}
+      {isOpen && (
+        <div className="border-t border-border/60 bg-muted/10 px-3 py-2.5 space-y-2">
+          {e.namespace && (
+            <div className="text-[10px] text-muted-foreground">
+              namespace: <code className="font-mono">{e.namespace}</code>
+            </div>
+          )}
+          <div className="text-[11px] text-foreground/80 break-words">{e.message}</div>
+
+          <button
+            onClick={() =>
+              navigate(`/ai?prompt=${encodeURIComponent(investigatePrompt)}&context=${encodeURIComponent(context)}&namespace=${encodeURIComponent(namespace)}`)
+            }
+            className="flex items-center gap-1.5 text-[10px] text-primary hover:underline"
+          >
+            <Sparkles className="w-3 h-3" />
+            Investigate in AI chat
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Inline AI panel (per-issue, lazy-loaded) ────────────────
+
+function AlertAiPanel({
+  context, namespace, issue,
 }: {
   context: string;
   namespace: string;
-  issues: HealthIssue[];
-  events: ClusterEvent[];
+  issue: HealthIssue;
 }) {
   const [content, setContent] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Stable signal signature so we don't re-fetch on every render
-  const signalKey = useMemo(() => {
-    const slim = {
-      ctx: context,
-      ns: namespace,
-      issues: issues.map((g) => `${g.severity}:${g.category}:${g.reason}:${g.items.length}`),
-      events: events.slice(0, 20).map((e) => `${e.reason}:${e.objectKind}/${e.objectName}:${e.count}`),
-    };
-    return JSON.stringify(slim);
-  }, [context, namespace, issues, events]);
+  const fetchedRef = useRef(false);
 
   const run = async () => {
     setLoading(true);
@@ -386,23 +479,15 @@ function AiBriefView({
           context,
           namespace,
           signals: {
-            issues: issues.map((g) => ({
-              severity: g.severity,
-              category: g.category,
-              reason: g.reason,
-              title: g.title,
-              count: g.items.length,
-              samples: g.items.slice(0, 5).map((i) => ({ name: i.name, detail: i.detail })),
-            })),
-            recentWarningEvents: events.slice(0, 30).map((e) => ({
-              reason: e.reason,
-              kind: e.objectKind,
-              name: e.objectName,
-              namespace: e.namespace,
-              count: e.count,
-              age: shortAge(e.lastTimestamp),
-              message: e.message,
-            })),
+            issues: [{
+              severity: issue.severity,
+              category: issue.category,
+              reason: issue.reason,
+              title: issue.title,
+              count: issue.items.length,
+              samples: issue.items.slice(0, 5).map((i) => ({ name: i.name, detail: i.detail })),
+            }],
+            recentWarningEvents: [],
           },
         }),
       });
@@ -419,20 +504,20 @@ function AiBriefView({
     }
   };
 
-  // Auto-run once when entering tab if we have a context
   useEffect(() => {
-    if (!context) return;
-    if (content || loading) return;
-    void run();
+    if (!fetchedRef.current && context) {
+      fetchedRef.current = true;
+      void run();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [context]);
+  }, []);
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
+    <div className="rounded-md border border-primary/15 bg-primary/5 px-3 py-2">
+      <div className="flex items-center justify-between mb-1.5">
         <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
           <Sparkles className="w-3 h-3 text-primary" />
-          AI briefing
+          AI insight
         </div>
         <button
           onClick={run}
@@ -440,27 +525,23 @@ function AiBriefView({
           className="flex items-center gap-1 text-[10px] text-primary hover:underline disabled:opacity-40"
         >
           {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-          {loading ? "Generating…" : "Regenerate"}
+          {loading ? "Analyzing…" : "Retry"}
         </button>
       </div>
       {error && (
-        <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded px-2 py-1.5">{error}</div>
-      )}
-      {!error && !content && !loading && (
-        <div className="text-xs text-muted-foreground italic py-3">Click Regenerate to get an AI-summarized briefing of this cluster.</div>
+        <div className="text-[11px] text-destructive">{error}</div>
       )}
       {!error && !content && loading && (
-        <div className="text-xs text-muted-foreground py-3 flex items-center gap-2">
+        <div className="text-[11px] text-muted-foreground flex items-center gap-1.5">
           <Loader2 className="w-3 h-3 animate-spin text-primary" />
-          Asking the AI for a briefing… (uses your fast model)
+          Analyzing this issue…
         </div>
       )}
-      {content && (
-        <div className="text-xs">
+      {!error && content && (
+        <div className="text-[11px] leading-relaxed [&_p]:mb-1 [&_ul]:ml-3 [&_li]:list-disc">
           <Markdown text={content} />
         </div>
       )}
-      <input type="hidden" value={signalKey} readOnly />
     </div>
   );
 }

@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
-import { useHashLocation } from "wouter/use-hash-location";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
@@ -14,7 +13,7 @@ import NotFound from "@/pages/not-found";
 import { TerminalPanel } from "@/components/TerminalPanel";
 import { KubectlPalette } from "@/components/KubectlPalette";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
-import { useAccent } from "@/hooks/use-accent";
+import { useAppHashLocation, useAppHashSearch } from "@/lib/hash-router";
 
 function Routes() {
   return (
@@ -29,7 +28,6 @@ function Routes() {
 }
 
 function AppShell() {
-  useAccent();
   const { context, namespace, terminalOpen, toggleTerminal } = useTerminalStore();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const closePalette = useCallback(() => setPaletteOpen(false), []);
@@ -42,7 +40,7 @@ function AppShell() {
       }
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
-        setPaletteOpen(prev => !prev);
+        setPaletteOpen((prev) => !prev);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -50,9 +48,13 @@ function AppShell() {
   }, [toggleTerminal]);
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
-      <div className="flex-1 overflow-auto min-h-0">
-        <WouterRouter hook={useHashLocation}>
+    <div className="flex flex-col h-screen bg-background text-foreground overflow-hidden">
+      <div className="flex-1 overflow-hidden min-h-0 relative flex flex-col">
+        <WouterRouter
+          // Custom hash location keeps query inside the hash only
+          hook={useAppHashLocation as never}
+          searchHook={useAppHashSearch as never}
+        >
           <Routes />
         </WouterRouter>
       </div>
@@ -71,7 +73,13 @@ function AppShell() {
 
 function App() {
   return (
-    <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
+    <ThemeProvider
+      attribute="class"
+      defaultTheme="dark"
+      forcedTheme="dark"
+      enableSystem={false}
+      storageKey="kubedeck-theme"
+    >
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <Toaster />

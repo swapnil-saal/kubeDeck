@@ -2,10 +2,9 @@ import { useCallback } from "react";
 import { useLocation, useSearch } from "wouter";
 
 /**
- * Read/write query params inside the hash portion of the URL.
- * Works with wouter's useHashLocation router.
- *
- * URL shape: http://host/#/path?tab=pods&q=certi
+ * Read/write query params in the hash (`#/path?tab=pods&q=certi`).
+ * Params stay on the current path and are cleared when you navigate away
+ * (see hash-router: no shared window.location.search).
  */
 export function useHashParams() {
   const [location, setLocation] = useLocation();
@@ -30,8 +29,8 @@ export function useHashParams() {
         sp.set(key, value);
       }
       const qs = sp.toString();
-      const newPath = qs ? `${location.split("?")[0]}?${qs}` : location.split("?")[0];
-      setLocation(newPath, { replace: true });
+      const path = location.split("?")[0] || "/";
+      setLocation(qs ? `${path}?${qs}` : path, { replace: true });
     },
     [location, searchString, setLocation],
   );
@@ -47,8 +46,8 @@ export function useHashParams() {
         }
       }
       const qs = sp.toString();
-      const newPath = qs ? `${location.split("?")[0]}?${qs}` : location.split("?")[0];
-      setLocation(newPath, { replace: true });
+      const path = location.split("?")[0] || "/";
+      setLocation(qs ? `${path}?${qs}` : path, { replace: true });
     },
     [location, searchString, setLocation],
   );

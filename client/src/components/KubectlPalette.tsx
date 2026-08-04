@@ -3,7 +3,7 @@ import {
   Copy, Check, Terminal, ArrowRight, Sparkles, Loader2, ShieldAlert, AlertTriangle,
   Search, Box, History, X, Clock, Bug, ScrollText, RotateCcw, Layers, Activity, Cpu, MessageSquare,
 } from "lucide-react";
-import { navigate as hashNavigate } from "wouter/use-hash-location";
+import { navigateHash as hashNavigate } from "@/lib/hash-router";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
 import { useAiConfig } from "@/hooks/use-ai-config";
 import { useResourceNames, searchResourceNames } from "@/hooks/use-resource-names";
@@ -274,9 +274,8 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
   useK8sPods(context, namespace);
   useK8sDeployments(context, namespace);
   useK8sServices(context, namespace);
-  // The palette lives outside the hash router; use wouter's hash navigate
-  // directly so query strings end up in location.search (where useSearch
-  // expects them), not crammed into the hash.
+  // The palette lives outside Route tree; use shared hash navigate so query
+  // stays in the hash (and is cleared when leaving the page).
   const navigateHash = useCallback((to: string) => {
     hashNavigate(to);
   }, []);
@@ -493,11 +492,11 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
     <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[10vh]" onClick={() => { if (!execState) onClose(); }}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div
-        className="relative w-full max-w-2xl bg-card border border-border rounded-xl shadow-2xl overflow-hidden font-mono"
+        className="relative w-full max-w-2xl bg-card/95 backdrop-blur border border-border/50 rounded-xl shadow-xl overflow-hidden font-mono"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Search input */}
-        <div className="flex items-center gap-3 px-5 h-12 border-b border-border">
+        <div className="flex items-center gap-3 px-5 h-12 border-b border-border/50">
           <Sparkles className="w-4 h-4 text-primary shrink-0" />
           <input
             ref={inputRef}
@@ -506,7 +505,7 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
             placeholder="Describe what you want, paste kubectl, or search resources… (e.g. 'logs for e2-course')"
             className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
           />
-          <kbd className="hidden sm:flex items-center gap-0.5 px-2 py-1 rounded-lg border border-border text-[10px] text-muted-foreground/50 font-medium">ESC</kbd>
+          <kbd className="hidden sm:flex items-center gap-0.5 px-2 py-1 rounded-lg border border-border/50 text-[10px] text-muted-foreground/50 font-semibold">ESC</kbd>
         </div>
 
         {/* Scope strip — shows active ctx/ns + inline namespace switcher */}
@@ -518,7 +517,7 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
           onAskAi={() => {
             const q = query.trim();
             navigateHash(
-              `/ai?q=${encodeURIComponent(q || "Help me investigate this cluster")}` +
+              `/ai?prompt=${encodeURIComponent(q || "Help me investigate this cluster")}` +
                 `&context=${encodeURIComponent(context)}` +
                 `&namespace=${encodeURIComponent(namespace)}`,
             );

@@ -100,39 +100,39 @@ export function ResourceAiInsight({
 
   const handleDiscuss = () => {
     const prompt = `Continue investigating ${resourceType}/${name} in namespace ${namespace}. Look at logs, events, and dependent resources to identify the root cause and propose fixes.`;
-    navigate(`/ai?q=${encodeURIComponent(prompt)}&context=${encodeURIComponent(context)}&namespace=${encodeURIComponent(namespace)}`);
+    navigate(`/ai?prompt=${encodeURIComponent(prompt)}&context=${encodeURIComponent(context)}&namespace=${encodeURIComponent(namespace)}`);
   };
 
   return (
-    <div className="mx-6 mt-3 rounded-lg border border-primary/20 bg-primary/[0.03] overflow-hidden">
+    <div className="mx-7 mt-3 rounded-xl border border-primary/20 bg-primary/5 overflow-hidden">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-2 px-4 py-2 text-left hover:bg-primary/[0.05] transition-colors"
+        className="w-full flex items-center gap-2 px-4 py-2 text-left hover:bg-primary/10 transition-colors"
       >
-        <Sparkles className="w-3.5 h-3.5 text-primary shrink-0" />
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-primary">AI Insight</span>
-        <span className="text-[11px] text-muted-foreground truncate">
+        <Sparkles size={14} className="text-primary shrink-0" />
+        <span className="text-[10px] font-semibold uppercase tracking-widest text-primary">AI Insight</span>
+        <span className="text-xs text-muted-foreground truncate">
           {loading ? "Analyzing…" : error ? "Failed to analyze" : content ? "Diagnosis ready" : "Click to analyze this resource"}
         </span>
         <div className="ml-auto flex items-center gap-2">
           {content && !loading && (
             <button
               onClick={(e) => { e.stopPropagation(); void run(); }}
-              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
               title="Re-analyze"
             >
-              <RefreshCw className="w-3 h-3" />
+              <RefreshCw size={12} />
             </button>
           )}
           <button
             onClick={(e) => { e.stopPropagation(); handleDiscuss(); }}
-            className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded-md transition-colors"
+            className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold text-primary bg-primary/10 hover:bg-primary/20 border border-primary/20 rounded-full transition-colors"
             title="Open in chat for follow-up investigation"
           >
-            <MessageSquare className="w-3 h-3" />
+            <MessageSquare size={12} />
             Discuss in chat
           </button>
-          {open ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
+          {open ? <ChevronUp size={14} className="text-muted-foreground" /> : <ChevronDown size={14} className="text-muted-foreground" />}
         </div>
       </button>
 

@@ -333,19 +333,19 @@ export default function Dashboard() {
         onClick={handleRefresh}
         whileTap={{ rotate: 180 }}
         transition={{ duration: 0.3 }}
-        className="p-2 hover:bg-muted rounded-lg text-muted-foreground hover:text-primary transition-all"
+        className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground hover:text-primary transition-colors"
         title="Refresh"
       >
-        <RefreshCw className="w-4 h-4" />
+        <RefreshCw size={15} />
       </motion.button>
 
-      <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg" title="Auto-refreshing every 10s">
+      <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full" title="Auto-refreshing every 10s">
         <div className="relative">
-          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-          <div className="absolute inset-0 w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping opacity-40" />
+          <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_5px_rgba(34,197,94,0.5)]" />
+          <div className="absolute inset-0 w-1.5 h-1.5 rounded-full bg-green-500 animate-ping opacity-40" />
         </div>
         <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">Live</span>
-        <span className="text-[9px] tabular-nums text-emerald-600/50 dark:text-emerald-400/50">10s</span>
+        <span className="text-[10px] tabular-nums text-emerald-600/50 dark:text-emerald-400/50">10s</span>
       </div>
     </div>
   );
@@ -359,35 +359,41 @@ export default function Dashboard() {
   const currentCmds = buildListCommands(tabToResource[activeTab] || activeTab, currentContext, currentNamespace);
 
   return (
-    <div className="flex flex-col h-full bg-background overflow-hidden text-foreground selection:bg-primary/20">
+    <div className="flex flex-col h-full overflow-hidden text-foreground selection:bg-primary/20">
       <AppHeader breadcrumbs={[{ label: "Dashboard" }]} rightSlot={headerRight} />
 
       {/* ══════ MAIN CONTENT ══════ */}
-      <main className="flex-1 overflow-auto relative">
-        <div className="p-6 max-w-[1600px] mx-auto space-y-6">
+      <main className="flex-1 overflow-y-auto relative">
+        <div className="p-7 max-w-7xl mx-auto space-y-7">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">Overview</h1>
+            <p className="text-xs text-muted-foreground mt-1">Cluster resources and health for the selected context.</p>
+          </div>
+
           {/* ── STAT CARDS ── */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
             {stats.map((stat, i) => (
               <motion.div
                 key={stat.label}
-                initial={{ opacity: 0, y: 10 }}
+                initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.08 }}
-                className={`group relative overflow-hidden rounded-xl shadow-sm transition-all duration-200 cursor-default hover:shadow-md
+                transition={{ delay: i * 0.05, duration: 0.3 }}
+                whileHover={{ y: -2 }}
+                className={`group relative overflow-hidden rounded-xl shadow-sm transition-colors cursor-default
                   ${stat.isForbidden
-                    ? 'border border-muted bg-muted/30'
+                    ? 'border border-border/50 bg-muted/30'
                     : stat.isError 
-                      ? 'border border-red-500/20 bg-red-500/5' 
-                      : 'border border-border bg-card hover:border-primary/20'
+                      ? 'border border-destructive/20 bg-destructive/5' 
+                      : 'border border-border/50 bg-card/50 backdrop-blur hover:border-primary/20'
                   }`}
               >
-                <div className="px-5 py-4 flex items-center gap-4">
-                  <div className={`p-2.5 rounded-xl ${stat.isError ? 'bg-red-500/10 text-red-500' : 'bg-primary/10 text-primary'}`}>
-                    <stat.icon className="w-5 h-5" />
+                <div className="px-4 py-4 flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${stat.isError ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary'}`}>
+                    <stat.icon size={18} />
                   </div>
                   <div>
-                    <p className="text-[11px] text-muted-foreground font-medium">{stat.label}</p>
-                    <p className={`text-3xl font-bold tabular-nums leading-tight ${stat.isError ? 'text-red-500 text-xl' : 'text-foreground'}`}>
+                    <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-widest">{stat.label}</p>
+                    <p className={`text-2xl font-bold tabular-nums leading-tight tracking-tight ${stat.isError ? 'text-destructive text-lg' : 'text-foreground'}`}>
                       {stat.value}
                     </p>
                   </div>
@@ -398,19 +404,24 @@ export default function Dashboard() {
 
           {/* ── HEALTH SUMMARY ── */}
           {!podsLoading && !deployLoading && !nodesLoading && (
-            <ClusterHealthPanel
-              context={currentContext}
-              namespace={currentNamespace}
-              issues={healthIssues}
-              loading={false}
-              onJumpToTab={setActiveTab}
-            />
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Health</p>
+              <ClusterHealthPanel
+                context={currentContext}
+                namespace={currentNamespace}
+                issues={healthIssues}
+                loading={false}
+                onJumpToTab={setActiveTab}
+              />
+            </div>
           )}
 
           {/* ── RESOURCE TABS ── */}
+          <div className="space-y-3">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Resources</p>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <div className="flex items-center gap-4 mb-5">
-              <TabsList className="bg-muted/50 border border-border p-1 h-auto rounded-xl gap-1 flex-wrap">
+              <TabsList className="bg-secondary/50 border border-border/50 p-1 h-auto rounded-xl gap-1 flex-nowrap overflow-x-auto no-scrollbar">
                 {[
                   { val: "pods", label: "Pods", icon: Box },
                   { val: "deployments", label: "Deploy", icon: Layers },
@@ -429,10 +440,10 @@ export default function Dashboard() {
                   <TabsTrigger
                     key={tab.val}
                     value={tab.val}
-                    className="text-[11px] font-medium rounded-lg px-3 py-1.5 transition-all gap-1.5 data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground data-[state=inactive]:hover:bg-background/60
-                      data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none"
+                    className="text-[11px] font-semibold rounded-lg px-3 py-1.5 transition-colors gap-1.5 shrink-0 data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground data-[state=inactive]:hover:bg-background/60
+                      data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-none"
                   >
-                    <tab.icon className="w-3.5 h-3.5" />
+                    <tab.icon size={13} />
                     {tab.label}
                 </TabsTrigger>
                 ))}
@@ -886,6 +897,7 @@ export default function Dashboard() {
                 </TabsContent>
               </AnimatePresence>
             </Tabs>
+          </div>
         </div>
       </main>
 

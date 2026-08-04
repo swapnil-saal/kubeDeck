@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import {
-  Bot, Bug, Search, Zap, GitBranch, Trash2, Network, Activity, Eye,
+  Bug, Search, Zap, Trash2, Network, Activity, Eye,
 } from "lucide-react";
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
 import { useLangGraphRuntime } from "@assistant-ui/react-langgraph";
@@ -11,16 +11,59 @@ import { useResourceNames } from "@/hooks/use-resource-names";
 import { AppHeader } from "@/components/AppHeader";
 import { Thread, type Suggestion } from "@/components/assistant/Thread";
 import { ChatDeepLink } from "@/components/assistant/ChatDeepLink";
+import { AiAvatarChip } from "@/components/assistant/AiAvatar";
 import { buildKubeChatStream, getThreadId, resetThreadId } from "@/lib/ai-runtime";
 
 const SUGGESTIONS: Suggestion[] = [
-  { label: "DEBUG API",   prompt: "I need to debug an API call end-to-end. Ask me which service is the entrypoint, then map the call graph and pull logs from every service in the path.", icon: <Network className="w-3.5 h-3.5" /> },
-  { label: "TRACE ID",    prompt: "I'm going to give you a request id. Find every log line mentioning it across all services in the current namespace and build a chronological timeline.", icon: <GitBranch className="w-3.5 h-3.5" /> },
-  { label: "WATCH",       prompt: "Watch the logs of a pod I'll specify and alert me to any new errors over the next few minutes.", icon: <Eye className="w-3.5 h-3.5" /> },
-  { label: "DIAGNOSE",    prompt: "Why is my pod in CrashLoopBackOff?", icon: <Bug className="w-3.5 h-3.5" /> },
-  { label: "INSPECT",     prompt: "Show pods with high restart counts and tell me what's wrong with the worst one.", icon: <Search className="w-3.5 h-3.5" /> },
-  { label: "HEALTH",      prompt: "Give me a full cluster health report.", icon: <Zap className="w-3.5 h-3.5" /> },
-  { label: "ROLLOUT",     prompt: "Check all deployments' rollout status.", icon: <Activity className="w-3.5 h-3.5" /> },
+  {
+    category: "Investigate",
+    label: "Pod crash",
+    description: "Diagnose CrashLoopBackOff and find the root cause",
+    prompt: "Why is my pod in CrashLoopBackOff? Inspect the worst offenders in this namespace, then show a dashboard of restarts and issues.",
+    icon: <Bug className="w-3.5 h-3.5" />,
+  },
+  {
+    category: "Cluster",
+    label: "Health board",
+    description: "Visual SRE dashboard for this namespace",
+    prompt: "Build a full health dashboard for the current namespace: pod health, deployment readiness, top restarting pods, recent warning/error events. Use present_dashboard with KPIs, charts, and an issues list.",
+    icon: <Zap className="w-3.5 h-3.5" />,
+  },
+  {
+    category: "Cluster",
+    label: "Performance",
+    description: "CPU/memory tops and noisy neighbors",
+    prompt: "Show performance for this namespace using kubectl top if available: busiest pods/nodes, utilization charts, and flag anything over-pressured. Use present_dashboard.",
+    icon: <Activity className="w-3.5 h-3.5" />,
+  },
+  {
+    category: "Investigate",
+    label: "Restarts",
+    description: "Find high-restart pods and explain what broke",
+    prompt: "Show pods with high restart counts, chart the top 10, and diagnose the worst one.",
+    icon: <Search className="w-3.5 h-3.5" />,
+  },
+  {
+    category: "Investigate",
+    label: "Rollouts",
+    description: "Check deployment readiness across the namespace",
+    prompt: "Check all deployments' rollout status and list any that are not fully ready, as a dashboard plus findings.",
+    icon: <Activity className="w-3.5 h-3.5" />,
+  },
+  {
+    category: "Debug API",
+    label: "End-to-end call",
+    description: "Map the call graph and pull service logs",
+    prompt: "I need to debug an API call end-to-end. Ask me which service is the entrypoint, then map the call graph and pull logs from every service in the path.",
+    icon: <Network className="w-3.5 h-3.5" />,
+  },
+  {
+    category: "Observe",
+    label: "Watch logs",
+    description: "Live-tail a pod for new errors",
+    prompt: "Watch the logs of a pod I'll specify and alert me to any new errors over the next few minutes.",
+    icon: <Eye className="w-3.5 h-3.5" />,
+  },
 ];
 
 function ChatHeader({
@@ -33,39 +76,48 @@ function ChatHeader({
   onClear: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between px-5 h-12 border-b border-border bg-card/40 backdrop-blur-sm">
-      <div className="flex items-center gap-3">
-        <div className="p-1.5 rounded-lg bg-primary/10 ring-1 ring-primary/20">
-          <Bot className="w-3.5 h-3.5 text-primary" />
-        </div>
-        <div className="flex flex-col">
-          <span className="text-sm font-semibold text-foreground leading-tight">KubeDeck AI</span>
-          <span className="text-[10px] text-muted-foreground font-mono leading-tight">
+    <div className="flex items-center justify-between gap-3 px-5 h-14 border-b border-border bg-card shrink-0">
+      <div className="flex items-center gap-3 min-w-0">
+        <AiAvatarChip size="md" />
+        <div className="flex flex-col min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-foreground leading-tight tracking-tight">
+              AI Operator
+            </span>
+            <span className="hidden sm:inline-flex items-center rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary ring-1 ring-primary/15">
+              live
+            </span>
+          </div>
+          <span className="text-[10px] text-muted-foreground font-mono leading-tight truncate">
             {provider} · {model}
           </span>
         </div>
-        <div className="flex items-center gap-1.5 ml-2 pl-3 border-l border-border">
-          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Scope</span>
+
+        <div className="hidden md:flex items-center gap-1.5 ml-1 pl-3 border-l border-border/50 min-w-0">
+          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.14em] shrink-0">
+            Scope
+          </span>
           <span
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono bg-primary/10 text-primary border border-primary/20"
-            title="The agent will scope kubectl commands to this context and namespace by default."
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-mono bg-secondary/80 text-secondary-foreground border border-border/50 truncate max-w-[16rem]"
+            title="Default kubectl context and namespace for this session"
           >
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
             {context || "current-context"}
-            <span className="text-primary/40">/</span>
+            <span className="text-muted-foreground/50">/</span>
             {namespace || "all"}
           </span>
         </div>
       </div>
-      <div className="flex items-center gap-1">
-        <button
-          onClick={onClear}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-          title="Start new conversation"
-        >
-          <Trash2 className="w-3 h-3" />
-          New chat
-        </button>
-      </div>
+
+      <button
+        type="button"
+        onClick={onClear}
+        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-muted-foreground hover:text-foreground hover:bg-secondary/80 transition-colors shrink-0"
+        title="Start new conversation"
+      >
+        <Trash2 size={12} />
+        <span className="hidden sm:inline">New chat</span>
+      </button>
     </div>
   );
 }
@@ -76,14 +128,11 @@ export default function AiChatPage() {
   const provider = settings?.ai?.provider || "openai";
   const model = settings?.ai?.model || "gpt-4o-mini";
 
-  // Warm the cache for the scope so resource names are available immediately.
   useK8sPods(context, namespace);
   useK8sDeployments(context, namespace);
   useK8sServices(context, namespace);
   const resourceNames = useResourceNames();
 
-  // Build a compact resource catalog that the agent can use to resolve fuzzy
-  // names. Re-evaluated on every send so it always reflects current state.
   const buildSystemMessage = () => {
     const base = `[Context: ${context || "default"}, Namespace: ${namespace || "all"}]`;
     if (resourceNames.length === 0) return base;
@@ -118,12 +167,15 @@ export default function AiChatPage() {
 
   const handleClear = () => {
     resetThreadId();
-    // Re-mount to wipe runtime state (cheap and reliable).
     window.location.reload();
   };
 
+  const scopeLabel = context
+    ? `${context} / ${namespace || "all"}`
+    : undefined;
+
   return (
-    <div className="flex flex-col h-full bg-background overflow-hidden text-foreground">
+    <div className="flex flex-col h-full overflow-hidden text-foreground bg-background">
       <AppHeader />
       <ChatHeader
         provider={provider}
@@ -132,18 +184,21 @@ export default function AiChatPage() {
         namespace={namespace}
         onClear={handleClear}
       />
-      <AssistantRuntimeProvider runtime={runtime}>
-        <ChatDeepLink />
-        <Thread
-          suggestions={SUGGESTIONS}
-          welcomeTitle="How can I help with your cluster?"
-          welcomeSubtitle={
-            context
-              ? `Scoped to context "${context}", namespace "${namespace || "all"}" — change in the header above. Ask anything.`
-              : `Loading your kubectl context... Pick one in the header above if it doesn't auto-select.`
-          }
-        />
-      </AssistantRuntimeProvider>
+      <div className="flex-1 min-h-0">
+        <AssistantRuntimeProvider runtime={runtime}>
+          <ChatDeepLink />
+          <Thread
+            suggestions={SUGGESTIONS}
+            scopeLabel={scopeLabel}
+            welcomeTitle="What should we investigate?"
+            welcomeSubtitle={
+              context
+                ? "Cluster-aware SRE assistant with live kubectl. Pick a skill or type a question."
+                : "Loading kubectl context… set one in the header if needed."
+            }
+          />
+        </AssistantRuntimeProvider>
+      </div>
     </div>
   );
 }

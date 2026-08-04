@@ -27,21 +27,21 @@ export function CommandBar({ commands }: CommandBarProps) {
   };
 
   return (
-    <div className="flex items-center gap-0 h-7 border-t border-border bg-surface-inset/80 shrink-0 overflow-hidden pr-28">
-      <div className="flex items-center gap-1 px-2 h-full border-r border-border bg-foreground/[0.02] shrink-0">
+    <div className="flex items-center gap-0 h-7 border-t border-border/50 bg-card/50 backdrop-blur shrink-0 overflow-hidden pr-28">
+      <div className="flex items-center gap-1 px-2 h-full border-r border-border/50 bg-secondary/40 shrink-0">
         <Terminal className="w-2.5 h-2.5 text-muted-foreground/60" />
       </div>
 
       {commands.length > 1 && (
-        <div ref={scrollRef} className="flex items-center h-full border-r border-border shrink-0">
+        <div ref={scrollRef} className="flex items-center h-full border-r border-border/50 shrink-0">
           {commands.map((c, i) => (
             <button
               key={i}
               onClick={() => { setActiveIdx(i); setCopied(false); }}
-              className={`px-2 h-full text-[8px] uppercase tracking-[0.15em] font-bold transition-colors whitespace-nowrap ${
+              className={`px-2 h-full text-[10px] uppercase tracking-widest font-semibold transition-colors whitespace-nowrap ${
                 i === activeIdx
-                  ? "text-foreground bg-foreground/[0.05]"
-                  : "text-muted-foreground/60 hover:text-muted-foreground hover:bg-foreground/[0.02]"
+                  ? "text-primary bg-primary/10"
+                  : "text-muted-foreground/60 hover:text-muted-foreground hover:bg-secondary/50"
               }`}
             >
               {c.label}
@@ -51,12 +51,12 @@ export function CommandBar({ commands }: CommandBarProps) {
       )}
 
       <div className="flex-1 min-w-0 px-2 flex items-center gap-1.5">
-        <code className="text-[10px] text-foreground/70 truncate font-mono select-all">
+        <code className="text-[10px] text-muted-foreground truncate font-mono select-all">
           {current.cmd}
         </code>
         <button
           onClick={handleCopy}
-          className="shrink-0 p-1 rounded hover:bg-foreground/8 text-muted-foreground/50 hover:text-foreground transition-colors"
+          className="shrink-0 p-1 rounded-md hover:bg-secondary text-muted-foreground/50 hover:text-foreground transition-colors"
           title="Copy command"
         >
           {copied ? (

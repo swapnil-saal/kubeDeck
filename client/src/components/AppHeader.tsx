@@ -1,11 +1,12 @@
-import { type ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 import { useLocation } from "wouter";
-import { ChevronRight, Settings, LayoutDashboard, Sparkles, Bot, Box, MessageSquare } from "lucide-react";
-import { useEffect } from "react";
+import {
+  ChevronRight, Settings, LayoutDashboard, Sparkles, Bot,
+} from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
 import { useK8sContexts, useK8sNamespaces } from "@/hooks/use-k8s";
+import { KubeDeckLogo } from "@/components/KubeDeckLogo";
 
 interface Breadcrumb {
   label: string;
@@ -24,8 +25,6 @@ export function AppHeader({ breadcrumbs, rightSlot, showSelectors = true }: AppH
   const { data: contexts } = useK8sContexts();
   const { data: namespaces } = useK8sNamespaces(currentContext);
 
-  // Seed currentContext from kubectl's current-context on first load so the
-  // namespace dropdown isn't empty before the user picks one manually.
   useEffect(() => {
     if (currentContext) return;
     if (!contexts || contexts.length === 0) return;
@@ -33,74 +32,63 @@ export function AppHeader({ breadcrumbs, rightSlot, showSelectors = true }: AppH
     if (initial) setContext(initial.name);
   }, [contexts, currentContext, setContext]);
 
-  const isActive = (path: string) => location === path;
+  const isActive = (path: string) => {
+    if (path === "/") return location === "/" || location.startsWith("/resource");
+    return location === path || location.startsWith(path + "/");
+  };
 
   return (
-    <header className="app-header relative z-10 border-b border-border bg-card/95 backdrop-blur-xl">
+    <header className="app-header relative z-10 border-b border-border bg-card shrink-0">
       <div className="flex items-center h-14 pl-20 pr-5 gap-0">
         {/* Logo */}
         <button
           onClick={() => navigate("/")}
-          className="flex items-center gap-2.5 pr-5 border-r border-border hover:opacity-80 transition-opacity"
+          className="flex items-center pr-5 border-r border-border hover:opacity-85 transition-opacity py-1"
         >
-          <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
-            <Box className="w-4 h-4 text-primary" />
-          </div>
-          <span className="text-[13px] font-bold text-foreground tracking-tight">KubeDeck</span>
+          <KubeDeckLogo size="xl" />
         </button>
 
         {/* Nav links */}
         <div className="flex items-center gap-1 px-3 border-r border-border">
           <button
             onClick={() => navigate("/")}
-            className={`p-2 rounded-lg transition-all ${
+            className={`p-2 rounded-lg transition-colors ${
               isActive("/")
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground hover:bg-secondary"
             }`}
             title="Dashboard"
           >
-            <LayoutDashboard className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => navigate("/ai")}
-            className={`p-2 rounded-lg transition-all ${
-              isActive("/ai")
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted"
-            }`}
-            title="AI Assistant"
-          >
-            <MessageSquare className="w-4 h-4" />
+            <LayoutDashboard size={16} />
           </button>
           <button
             onClick={() => navigate("/settings")}
-            className={`p-2 rounded-lg transition-all ${
+            className={`p-2 rounded-lg transition-colors ${
               isActive("/settings")
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground hover:bg-secondary"
             }`}
             title="Settings"
           >
-            <Settings className="w-4 h-4" />
+            <Settings size={16} />
           </button>
         </div>
 
         {/* Breadcrumbs */}
         {breadcrumbs && breadcrumbs.length > 0 && (
-          <div className="flex items-center gap-0">
+          <div className="flex items-center gap-0 min-w-0">
             {breadcrumbs.map((crumb, i) => (
-              <div key={i} className="flex items-center">
-                <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/30 mx-2" />
+              <div key={i} className="flex items-center min-w-0">
+                <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/30 mx-2 shrink-0" />
                 {crumb.href ? (
                   <button
                     onClick={() => navigate(crumb.href!)}
-                    className="text-[12px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+                    className="text-xs font-medium text-muted-foreground hover:text-foreground transition-colors truncate"
                   >
                     {crumb.label}
                   </button>
                 ) : (
-                  <span className="text-[12px] font-semibold text-foreground">
+                  <span className="text-xs font-semibold text-foreground truncate">
                     {crumb.label}
                   </span>
                 )}
@@ -112,16 +100,16 @@ export function AppHeader({ breadcrumbs, rightSlot, showSelectors = true }: AppH
         {/* Context/Namespace selectors */}
         {showSelectors && (
           <>
-            <div className="w-px h-6 bg-border mx-3" />
+            <div className="w-px h-6 bg-border/50 mx-3" />
             <div className="flex items-center gap-2 pr-4">
-              <span className="text-[10px] font-semibold text-muted-foreground">Context</span>
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Context</span>
               <Select value={currentContext} onValueChange={setContext}>
-                <SelectTrigger className="w-44 h-8 bg-muted/50 border-border hover:border-primary/30 focus:ring-1 focus:ring-primary/20 focus:ring-offset-0 text-[12px] text-foreground rounded-lg px-2.5">
+                <SelectTrigger className="w-44 h-8 bg-secondary/50 border-border/50 hover:border-primary/30 focus:ring-1 focus:ring-primary/20 focus:ring-offset-0 text-xs text-foreground rounded-lg px-2.5">
                   <SelectValue placeholder="select context" />
                 </SelectTrigger>
                 <SelectContent className="bg-popover border-border text-foreground rounded-xl">
                   {contexts?.map((ctx) => (
-                    <SelectItem key={ctx.name} value={ctx.name} className="text-[12px] focus:bg-primary/10 focus:text-foreground rounded-lg">
+                    <SelectItem key={ctx.name} value={ctx.name} className="text-xs focus:bg-primary/10 focus:text-foreground rounded-lg">
                       <div className="flex items-center gap-2">
                         {ctx.isCurrent && <div className="w-1.5 h-1.5 rounded-full bg-primary" />}
                         {ctx.name}
@@ -133,17 +121,17 @@ export function AppHeader({ breadcrumbs, rightSlot, showSelectors = true }: AppH
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-semibold text-muted-foreground">Namespace</span>
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Namespace</span>
               <Select value={currentNamespace} onValueChange={setNamespace}>
-                <SelectTrigger className="w-44 h-8 bg-muted/50 border-border hover:border-primary/30 focus:ring-1 focus:ring-primary/20 focus:ring-offset-0 text-[12px] text-foreground rounded-lg px-2.5">
+                <SelectTrigger className="w-44 h-8 bg-secondary/50 border-border/50 hover:border-primary/30 focus:ring-1 focus:ring-primary/20 focus:ring-offset-0 text-xs text-foreground rounded-lg px-2.5">
                   <SelectValue placeholder="select namespace" />
                 </SelectTrigger>
                 <SelectContent className="bg-popover border-border text-foreground rounded-xl max-h-64">
-                  <SelectItem value="all" className="text-[12px] focus:bg-primary/10 focus:text-foreground rounded-lg">
+                  <SelectItem value="all" className="text-xs focus:bg-primary/10 focus:text-foreground rounded-lg">
                     All namespaces
                   </SelectItem>
                   {namespaces?.map((ns) => (
-                    <SelectItem key={ns.name} value={ns.name} className="text-[12px] focus:bg-primary/10 focus:text-foreground rounded-lg">
+                    <SelectItem key={ns.name} value={ns.name} className="text-xs focus:bg-primary/10 focus:text-foreground rounded-lg">
                       {ns.name}
                     </SelectItem>
                   ))}
@@ -157,26 +145,25 @@ export function AppHeader({ breadcrumbs, rightSlot, showSelectors = true }: AppH
         <div className="ml-auto flex items-center gap-2">
           <button
             onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }))}
-            className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-border bg-muted/50 text-muted-foreground hover:text-foreground hover:border-primary/30 hover:bg-primary/5 transition-all"
+            className="flex items-center gap-1.5 h-8 px-3 rounded-full border border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/10 transition-colors text-xs font-semibold"
             title="kubectl command palette (⌘K)"
           >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span className="text-[11px] font-medium">kubectl</span>
-            <kbd className="text-[9px] font-medium text-muted-foreground/50 bg-background border border-border px-1.5 py-0.5 rounded-md ml-1">⌘K</kbd>
+            <Sparkles size={13} />
+            <span>kubectl</span>
+            <kbd className="text-[9px] font-medium text-muted-foreground/70 bg-background border border-border px-1.5 py-0.5 rounded-md ml-0.5">⌘K</kbd>
           </button>
           <button
             onClick={() => navigate("/ai")}
-            className={`flex items-center gap-1.5 h-8 px-3 rounded-lg border transition-all ${
+            className={`flex items-center gap-1.5 h-8 px-3 rounded-full border transition-colors text-xs font-semibold ${
               isActive("/ai")
-                ? "bg-primary/15 text-primary border-primary/30"
-                : "bg-primary/10 text-primary hover:bg-primary/15 border-primary/20"
+                ? "bg-primary text-primary-foreground border-primary"
+                : "text-primary bg-primary/10 border-primary/25 hover:bg-primary/15"
             }`}
             title="AI Assistant"
           >
-            <Bot className="w-3.5 h-3.5" />
-            <span className="text-[11px] font-medium">AI</span>
+            <Bot size={13} />
+            <span>AI</span>
           </button>
-          <ThemeToggle />
           {rightSlot}
         </div>
       </div>

@@ -1,7 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { type Server } from "http";
 import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from "child_process";
-import { WebSocketServer, WebSocket } from "ws";
 import { writeFileSync, existsSync } from "fs";
 import * as path from "path";
 import * as net from "net";
@@ -11,6 +10,7 @@ import * as os from "os";
 import { loadSettings, saveSettings, getKubeconfigEnv, scanKubeconfigs } from "./settings";
 import { chatCompletion, streamChatCompletion } from "./ai";
 import { runAgent } from "./agent";
+import { registerTerminalWebSocket } from "./terminal-ws";
 
 /** Quick TCP connect test — resolves true if something is listening on host:port */
 function tcpProbe(host: string, port: number, timeoutMs = 2000): Promise<boolean> {
@@ -92,11 +92,9 @@ async function runKubectl(command: string): Promise<KubectlResult> {
     if (combined.includes("no resources found") || combined.includes("not found")) {
       return { items: [] };
     }
-    console.error(`[kubectl] exit ${code}: ${stderr.substring(0, 300)}`);
     throw new Error(stderr.substring(0, 200) || `kubectl exited with code ${code}`);
   }
   try { return JSON.parse(stdout); } catch {
-    console.error(`[kubectl] Failed to parse JSON (${stdout.length} bytes)`);
     throw new Error("Failed to parse kubectl output");
   }
 }
@@ -585,7 +583,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (context) spawnArgs.push(`--context=${context}`);
       if (namespace) spawnArgs.push("-n", namespace);
 
-      console.log(`[port-forward] spawning: kubectl ${spawnArgs.join(" ")}`);
 
       const pfKubeconfigEnv = getKubeconfigEnv();
       const pfEnv = Object.keys(pfKubeconfigEnv).length > 0 ? { ...process.env, ...pfKubeconfigEnv } : undefined;
@@ -612,8 +609,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
         proc.stdout!.on("data", (chunk: Buffer) => {
           const text = chunk.toString();
-          console.log(`[port-forward:${id}] stdout: ${text.trim()}`);
-
           // kubectl prints "Forwarding from 127.0.0.1:XXXX -> YYYY" when ready
           if (!settled && text.includes("Forwarding from")) {
             settled = true;
@@ -630,7 +625,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
         proc.stderr!.on("data", (chunk: Buffer) => {
           const text = chunk.toString();
-          console.log(`[port-forward:${id}] stderr: ${text.trim()}`);
           stderrBuf += text;
 
           // Some kubectl versions print "Forwarding from" on stderr
@@ -642,7 +636,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         });
 
         proc.on("close", (code) => {
-          console.log(`[port-forward:${id}] process exited with code ${code}`);
           if (!settled) {
             settled = true;
             clearTimeout(timeout);
@@ -655,7 +648,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         });
 
         proc.on("error", (err) => {
-          console.log(`[port-forward:${id}] process error: ${err.message}`);
           if (!settled) {
             settled = true;
             clearTimeout(timeout);
@@ -672,15 +664,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       }
 
       activePortForwards.set(id, record);
-      console.log(`[port-forward:${id}] established — localhost:${localPort} → ${name}:${remotePort} (ns: ${namespace || "default"}, ctx: ${context})`);
-
       // Verify the port is actually reachable (non-blocking — log result)
       setTimeout(async () => {
         const ok = await tcpProbe("127.0.0.1", localPort, 3000);
-        if (ok) {
-          console.log(`[port-forward:${id}] ✓ TCP verify SUCCESS — 127.0.0.1:${localPort} is reachable`);
-        } else {
-          console.warn(`[port-forward:${id}] ✗ TCP verify FAILED — 127.0.0.1:${localPort} not reachable (kubectl may not have bound yet)`);
+        if (!ok) {
           record.error = `Port ${localPort} not reachable after forward established`;
         }
       }, 500);
@@ -715,7 +702,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       setTimeout(() => { try { record.process.kill("SIGKILL"); } catch {} }, 2000);
     } catch {}
     activePortForwards.delete(id);
-    console.log(`[port-forward:${id}] stopped by user`);
     res.json({ message: `Port forward ${id} stopped (${record.pod}:${record.localPort})` });
   });
 
@@ -726,7 +712,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const alive = record.process.exitCode === null && !record.process.killed;
     if (!alive) return res.json({ reachable: false, message: "kubectl process has exited" });
     const ok = await tcpProbe("127.0.0.1", record.localPort, 3000);
-    console.log(`[port-forward:${record.id}] TCP test → ${ok ? "REACHABLE" : "UNREACHABLE"} on 127.0.0.1:${record.localPort}`);
     res.json({
       reachable: ok,
       localPort: record.localPort,
@@ -951,187 +936,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     } catch (err) { res.status(500).json({ message: String(err) }); }
   });
 
-  // ═══════════════════════════════════════════════════
-  //  INTERACTIVE TERMINAL (WebSocket + Python PTY)
-  // ═══════════════════════════════════════════════════
-
-  // Write Python PTY relay to temp file once at startup.
-  // Python's pty.fork() uses forkpty() which creates a real pseudo-terminal.
-  const ptyRelayPath = path.join(os.tmpdir(), "kubedeck-pty-relay.py");
-  const ptyRelayCode = [
-    "import os,sys,pty,select,struct,fcntl,termios,signal",
-    "def sz(fd,r,c):",
-    "  fcntl.ioctl(fd,termios.TIOCSWINSZ,struct.pack('HHHH',r,c,0,0))",
-    "def main():",
-    "  sh=os.environ.get('SHELL','/bin/zsh')",
-    "  pid,fd=pty.fork()",
-    "  if pid==0:",
-    "    os.execvp(sh,[sh,'-i','-l'])",
-    "    os._exit(1)",
-    "  sz(fd,int(os.environ.get('ROWS','30')),int(os.environ.get('COLS','120')))",
-    "  try:",
-    "    while True:",
-    "      try:",
-    "        rl,_,_=select.select([0,fd],[],[],0.02)",
-    "      except: break",
-    "      if 0 in rl:",
-    "        try: d=os.read(0,16384)",
-    "        except: break",
-    "        if not d: break",
-    "        os.write(fd,d)",
-    "      if fd in rl:",
-    "        try: d=os.read(fd,16384)",
-    "        except OSError: break",
-    "        if not d: break",
-    "        os.write(1,d)",
-    "  except: pass",
-    "  finally:",
-    "    os.close(fd)",
-    "    try:",
-    "      os.kill(pid,signal.SIGHUP)",
-    "      os.waitpid(pid,0)",
-    "    except: pass",
-    "main()",
-  ].join("\n");
-
-  try {
-    writeFileSync(ptyRelayPath, ptyRelayCode, { mode: 0o755 });
-  } catch (e: any) {
-    console.error("[terminal] Could not write PTY relay script:", e.message);
-  }
-
-  const wss = new WebSocketServer({ noServer: true });
-
-  httpServer.on("upgrade", (req, socket, head) => {
-    const url = new URL(req.url || "/", `http://${req.headers.host}`);
-    if (url.pathname === api.k8s.terminal.path) {
-      wss.handleUpgrade(req, socket, head, (ws) => {
-        wss.emit("connection", ws, req);
-      });
-    } else {
-      // Let other upgrade handlers (like Vite HMR) pass through
-    }
-  });
-
-  wss.on("connection", (ws: WebSocket, req) => {
-    const url = new URL(req.url || "/", `http://${req.headers.host}`);
-    const context = url.searchParams.get("context") || "";
-    const namespace = url.searchParams.get("namespace") || "";
-
-    const isWindows = os.platform() === "win32";
-    const userShell = process.env.SHELL || "/bin/zsh";
-
-    // Build env
-    const env: Record<string, string> = {};
-    for (const [k, v] of Object.entries(process.env)) {
-      if (v !== undefined) env[k] = v;
-    }
-    env["TERM"] = "xterm-256color";
-    env["ROWS"] = "30";
-    env["COLS"] = "120";
-    const termKubeconfigEnv = getKubeconfigEnv();
-    if (termKubeconfigEnv.KUBECONFIG) env["KUBECONFIG"] = termKubeconfigEnv.KUBECONFIG;
-    if (context) env["KUBECTX"] = context;
-    if (namespace && namespace !== "all") env["KUBENS"] = namespace;
-
-    let shell: ChildProcess;
-
-    try {
-      if (isWindows) {
-        shell = spawn("cmd.exe", [], {
-          env, cwd: os.homedir(), stdio: ["pipe", "pipe", "pipe"],
-        });
-      } else {
-        // Use Python PTY relay — creates a real pseudo-terminal via forkpty()
-        shell = spawn("python3", [ptyRelayPath], {
-          env, cwd: os.homedir(), stdio: ["pipe", "pipe", "pipe"],
-        });
-      }
-    } catch (e: any) {
-      console.error("[terminal] Failed to spawn:", e.message);
-      ws.send(JSON.stringify({ type: "output", data: `\r\n\x1b[31m[error] Could not spawn shell: ${e.message}\x1b[0m\r\n` }));
-      ws.close();
-      return;
-    }
-
-    // Send welcome banner directly via WebSocket (no shell echo pollution)
-    const bannerLines: string[] = [
-      "\x1b[36m╔══════════════════════════════════════════════════╗\x1b[0m",
-      "\x1b[36m║\x1b[0m  \x1b[1;37mKubeDeck Terminal\x1b[0m                               \x1b[36m║\x1b[0m",
-    ];
-    if (context) {
-      const ctxDisplay = context.length > 40 ? context.substring(0, 37) + "..." : context;
-      const pad = " ".repeat(Math.max(0, 40 - 10 - ctxDisplay.length));
-      bannerLines.push(`\x1b[36m║\x1b[0m  \x1b[33mcontext:\x1b[0m  \x1b[32m${ctxDisplay}\x1b[0m${pad}\x1b[36m║\x1b[0m`);
-    }
-    if (namespace && namespace !== "all") {
-      const nsDisplay = namespace.length > 40 ? namespace.substring(0, 37) + "..." : namespace;
-      const pad = " ".repeat(Math.max(0, 40 - 12 - nsDisplay.length));
-      bannerLines.push(`\x1b[36m║\x1b[0m  \x1b[33mnamespace:\x1b[0m  \x1b[32m${nsDisplay}\x1b[0m${pad}\x1b[36m║\x1b[0m`);
-    }
-    bannerLines.push("\x1b[36m║\x1b[0m  \x1b[90mkubectl/k aliased to include ctx/ns\x1b[0m        \x1b[36m║\x1b[0m");
-    bannerLines.push("\x1b[36m╚══════════════════════════════════════════════════╝\x1b[0m");
-    bannerLines.push("");
-
-    ws.send(JSON.stringify({ type: "output", data: bannerLines.join("\r\n") + "\r\n" }));
-
-    // Silently set up aliases after shell initializes (no visible output)
-    setTimeout(() => {
-      if (!shell.stdin?.writable) return;
-      if (context && namespace && namespace !== "all") {
-        shell.stdin.write(`alias kubectl='kubectl --context=${context} -n ${namespace}' 2>/dev/null\n`);
-        shell.stdin.write(`alias k='kubectl --context=${context} -n ${namespace}' 2>/dev/null\n`);
-      } else if (context) {
-        shell.stdin.write(`alias kubectl='kubectl --context=${context}' 2>/dev/null\n`);
-        shell.stdin.write(`alias k='kubectl --context=${context}' 2>/dev/null\n`);
-      }
-      shell.stdin.write("clear\n");
-    }, 500);
-
-    // Forward shell stdout → WebSocket
-    shell.stdout?.on("data", (data: Buffer) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "output", data: data.toString("utf-8") }));
-      }
-    });
-
-    shell.stderr?.on("data", (data: Buffer) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "output", data: data.toString("utf-8") }));
-      }
-    });
-
-    shell.on("close", (code) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "exit", code }));
-        ws.close();
-      }
-    });
-
-    shell.on("error", (err) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "error", data: err.message }));
-      }
-    });
-
-    // Forward WebSocket messages → shell stdin
-    ws.on("message", (msg) => {
-      try {
-        const parsed = JSON.parse(msg.toString());
-        if (parsed.type === "input" && shell.stdin?.writable) {
-          shell.stdin.write(parsed.data);
-        }
-      } catch {
-        if (shell.stdin?.writable) {
-          shell.stdin.write(msg.toString());
-        }
-      }
-    });
-
-    ws.on("close", () => {
-      try { shell.kill(); } catch {}
-    });
-  });
+  // ── Interactive terminal (WebSocket ↔ stdin/stdout) ─
+  registerTerminalWebSocket(httpServer);
 
   // ── Settings endpoints ────────────────────────────
 

@@ -4,6 +4,7 @@ import { ChatOllama } from "@langchain/ollama";
 import { HumanMessage, SystemMessage, AIMessage, type BaseMessage } from "@langchain/core/messages";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { loadSettings, type AiProviderSettings } from "./settings";
+import { openaiCompatFetch } from "./openai-compat-fetch";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -75,13 +76,23 @@ export function getChatModel(opts: ChatModelOptions = {}): BaseChatModel {
 
   // openai or openai-compatible "custom"
   const baseURL = config.baseUrl || DEFAULTS[config.provider]?.baseUrl || DEFAULTS.openai.baseUrl;
+  // Many OpenAI-compatible gateways (vLLM + Qwen / saal-dgx):
+  // 1) break when stream=true AND tools are present (empty deltas) — so disable streaming
+  // 2) return 503s that the OpenAI SDK retries for minutes — cap retries
+  // 3) put assistant text in `reasoning` with content=null — rewrite via openaiCompatFetch
+  const isCustom = config.provider === "custom";
   return new ChatOpenAI({
     model,
     apiKey: config.apiKey || "EMPTY",
     temperature,
     maxTokens,
-    streaming,
-    configuration: { baseURL },
+    streaming: isCustom ? false : streaming,
+    maxRetries: isCustom ? 1 : 2,
+    timeout: isCustom ? 90_000 : undefined,
+    configuration: {
+      baseURL,
+      ...(isCustom ? { fetch: openaiCompatFetch } : {}),
+    },
   }) as unknown as BaseChatModel;
 }
 

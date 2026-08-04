@@ -69,23 +69,23 @@ export function ResourceTable<T extends { name: string; status?: string }>({
   return (
     <div className="card-elevated overflow-hidden">
       {/* Search bar */}
-      <div className="flex items-center gap-3 px-5 py-3 border-b border-border">
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-border/50">
         <div className="relative w-80">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
           <input 
             placeholder="Filter resources..." 
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full h-9 pl-10 pr-3 bg-muted/50 border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-all"
+            className="w-full h-8 pl-9 pr-3 bg-secondary/50 border border-border/50 rounded-lg text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-colors"
           />
         </div>
         <div className="text-xs text-muted-foreground ml-auto tabular-nums">
           {isForbidden ? (
-            <span className="text-amber-600 dark:text-amber-400 flex items-center gap-1.5 font-medium"><ShieldOff className="w-3.5 h-3.5" /> Access denied</span>
+            <span className="text-amber-600 dark:text-amber-400 flex items-center gap-1.5 font-semibold text-[10px]"><ShieldOff size={13} /> Access denied</span>
           ) : isError ? (
-            <span className="text-red-600 dark:text-red-400 flex items-center gap-1.5 font-medium"><AlertTriangle className="w-3.5 h-3.5" /> Fetch error</span>
+            <span className="text-red-600 dark:text-red-400 flex items-center gap-1.5 font-semibold text-[10px]"><AlertTriangle size={13} /> Fetch error</span>
           ) : (
-            <span className="bg-primary/10 text-primary px-2.5 py-1 rounded-full text-[11px] font-semibold">{filteredData?.length ?? 0} resources</span>
+            <span className="bg-primary/10 text-primary border border-primary/20 px-2.5 py-1 rounded-full text-[10px] font-semibold">{filteredData?.length ?? 0} resources</span>
           )}
         </div>
       </div>
@@ -118,11 +118,11 @@ export function ResourceTable<T extends { name: string; status?: string }>({
         ) : (
           <table className="w-full border-collapse text-sm table-auto">
             <thead>
-              <tr className="bg-muted/40 border-b border-border">
+              <tr className="bg-secondary/40 border-b border-border/50">
                 {columns.map((col, i) => (
                   <th
                     key={i}
-                    className="px-4 py-2.5 text-left text-[11px] font-medium text-muted-foreground whitespace-nowrap"
+                    className="px-4 py-2.5 text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-widest whitespace-nowrap"
                   >
                     {col.header}
                   </th>

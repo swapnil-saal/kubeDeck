@@ -6,171 +6,54 @@ import {
   AIMessage, AIMessageChunk, HumanMessage, SystemMessage, ToolMessage,
   type BaseMessage, type BaseMessageChunk,
 } from "@langchain/core/messages";
-import { createDeepAgent } from "deepagents";
+import { createAgent } from "langchain";
 import { getKubeconfigEnv } from "./settings";
 import { getChatModel } from "./ai";
+import { xmlToolCallMiddleware } from "./xml-tool-calls";
 
-const MAX_OUTPUT_LENGTH = 8000;
+const MAX_OUTPUT_LENGTH = 6000;
 
-// ═══════════════════════════════════════════════════
-//  KUBECTL CHEATSHEET + SYSTEM PROMPT
-// ═══════════════════════════════════════════════════
+// SRE operator — gather real cluster data, then present dashboards when useful.
+const MAIN_SYSTEM_PROMPT = `You are KubeDeck AI — a senior SRE / platform engineer with live kubectl access.
 
-const KUBECTL_CHEATSHEET = `
-KUBECTL SYNTAX RULES (CRITICAL — follow exactly):
-  kubectl <verb> <resource> [name] [flags]
-  Flags ALWAYS go AFTER the verb and resource, NEVER before.
-  CORRECT: get pods --context=mycluster -n default
-  WRONG:   --context=mycluster get pods -n default
+## Core method
+1. ALWAYS inspect the cluster with tools before answering about state, health, performance, or failures.
+2. Prefer a SHORT data pass: 1–3 compact kubectl calls, then synthesize. Do NOT keep re-querying.
+3. Never invent pods, events, metrics, or IP addresses.
+4. Be decisive once you have list/status data.
 
-COMMON VERBS & USAGE:
-  get <resource> [name] [-n ns] [-o wide|yaml|json] [--sort-by=.field] [--field-selector=key=val]
-  describe <resource> <name> [-n ns]
-  logs <pod> [-n ns] [--tail=N] [-f] [-c container] [--previous]
-  exec -it <pod> [-n ns] [-c container] -- <command>
-  top pods|nodes [-n ns] [--sort-by=cpu|memory]
-  scale deployment/<name> --replicas=N [-n ns]
-  rollout status|restart|undo deployment/<name> [-n ns]
-  apply -f <file|url> [-n ns]
-  port-forward <pod|svc/name> <local>:<remote> [-n ns]
-  config get-contexts | current-context | use-context <name>
-  cluster-info
-  api-resources [--namespaced=true]
-  events [-n ns] [--sort-by=.lastTimestamp] [--field-selector=involvedObject.name=X]
-  expose <resource> <name> --type=NodePort|ClusterIP|LoadBalancer --port=P [--target-port=TP] [-n ns]
-  label|annotate <resource> <name> key=value [-n ns]
+## Anti-loop (CRITICAL — never break these)
+- Never say "I need the full output" / "let me try again" / "let me re-run". Truncated output is enough.
+- Never re-run the same or nearly identical kubectl/bash command. Tools will refuse and return prior data.
+- After you have deployment/pod status (even partial), call present_dashboard and finish with a short verdict.
+- If a command returns data OR says ALREADY_HAVE_DATA / STOP, immediately present_dashboard or answer — no more discovery loops.
 
-RESOURCE SHORTHANDS:
-  po=pods, deploy=deployments, svc=services, ing=ingress, cm=configmaps,
-  ns=namespaces, no=nodes, rs=replicasets, sts=statefulsets, ds=daemonsets,
-  hpa=horizontalpodautoscalers, pvc=persistentvolumeclaims, pv=persistentvolumes,
-  sa=serviceaccounts, cj=cronjobs, ep=endpoints
-`;
+## Deployments health (recommended single pass — 2 tools max then dashboard)
+1. kubectl: \`get deploy -o wide --no-headers\`
+2. kubectl: \`get pods -o wide --no-headers\`  (STATUS column shows CrashLoopBackOff / ImagePullBackOff — do not re-filter via jsonpath)
+3. present_dashboard immediately — READY ratios, issues for non-ready deploys / bad STATUS pods, high restart pods
+4. Brief markdown. Done. Never bash+jsonpath+grep loops.
 
-const MAIN_SYSTEM_PROMPT = `You are KubeDeck AI — a Kubernetes expert with live cluster access through tools.
+Prefer table output. Avoid \`-o yaml\`, \`-o json\`, and complex jsonpath for list inventory.
 
-CRITICAL RULES FOR TOOL USAGE:
-- You MUST use the kubectl or bash tool to answer ANY question about cluster state, resources, status, logs, metrics, or configuration. NEVER guess or assume — always query the cluster first.
-- For questions that don't need cluster data (general K8s knowledge, explaining concepts), respond directly without tools.
-- You can call tools multiple times. Chain commands to build a complete picture: e.g., first list pods, then describe a failing one, then check its logs.
-- Always analyze tool output thoroughly before giving your final answer. Cite specific names, numbers, and details from the output.
+## Tools
+- kubectl: args WITHOUT the "kubectl" prefix. Context and active namespace are auto-injected.
+- bash: pipes only when needed.
+- monitor_logs: live tail for intermittent issues.
+- ask_human: only for genuine ambiguity.
+- present_dashboard: visual board after you have numbers. Required for health/dashboard/performance questions.
 
-RESOURCE NAME RESOLUTION (IMPORTANT):
-- The session context block (which arrives in the user message as "[Context: …, Namespace: …]" plus an "Available resources in scope" listing) contains the EXACT names of pods, deployments, services, etc. currently in the user's scope.
-- When the user uses a short word (e.g. "course", "flarum", "exam") that obviously refers to a resource, resolve it against that list yourself — do NOT ask the user which one they mean.
-  • Prefer an exact name match. Otherwise pick the resource whose name contains the user's token.
-  • If multiple match and the user named a kind (pod / deploy / svc), narrow to that kind.
-  • If multiple still match, pick one and proceed — mention the others briefly in your answer ("matched X; also saw Y, Z — let me know if you wanted those instead").
-- Only call ask_human if no name in the available resources reasonably matches and the request truly can't be answered without clarification.
-- If "Available resources in scope" is empty, run 'get pods' / 'get deploy' to discover names before asking the user.
+## present_dashboard rules
+- Use only tool-collected numbers (never fabricate).
+- One board per user question when possible.
+- Issues: severity critical|warning|info with resource names.
 
-TOOL GUIDELINES:
-- kubectl tool: Pass the command WITHOUT the "kubectl" prefix. Example: "get pods -n default"
-- bash tool: Use for piped commands, sorting, filtering. Include "kubectl" in the command. Example: "kubectl get pods -A --no-headers | wc -l"
-- Prefer plain-text output for readability (avoid -o json unless parsing specific fields)
-- Use --tail=100 for logs to avoid overwhelming output
-- BLOCKED (destructive): delete, drain, cordon, taint — explain what WOULD be done, do not execute
-- The --context flag is added automatically — do NOT add it yourself unless the user specifies a different context
+## Safety
+- BLOCKED: delete, drain, cordon, taint.
+- Mutating ops: describe only unless user clearly requested.
 
-PARALLEL INVESTIGATION:
-- For complex, multi-faceted questions (e.g. "give me a full cluster health report"), use the "task" tool to dispatch the "kubernetes-investigator" subagent multiple times IN PARALLEL.
-- Each subagent runs its own kubectl/bash commands and returns a focused summary.
-- Synthesize the results into one cohesive answer.
-- Only use subagents for genuinely multi-faceted questions. Simple queries should call kubectl/bash directly.
-
-END-TO-END API DEBUGGING:
-When the user asks to debug an API call, a failing request, a slow endpoint, or to trace a request across services, ALWAYS use the specialized debug sub-agents via the "task" tool:
-  - "topology-mapper" — discovers the service call graph: ingress routes, services that the target depends on (env vars referencing other svc DNS names, service selectors). Call this FIRST to understand which pods are in play.
-  - "log-hunter" — pulls and scans logs from one or more pods for errors/exceptions/timeouts/slow responses in a time window. Dispatch multiple in parallel (one per service in the call graph).
-  - "trace-correlator" — given a correlation id (request-id, trace-id, x-correlation-id, customer id, timestamp) it greps that id across all services' logs and aligns the matches on a timeline so you can see who called what when.
-  - "root-cause-synthesizer" — once you have evidence from the above, dispatch this to write the final hypothesis, citing exact log lines.
-
-ASK FOR CLARIFICATION (Human-in-the-loop):
-- If essential info is missing (e.g. which pod is the entrypoint, what request id to trace, time window), call the "ask_human" tool BEFORE running investigations. Do not guess.
-
-CONTINUOUS MONITORING:
-- The "monitor_logs" tool tails new log lines from a pod since the last call. Use it inside a debug session when the user asks to "watch", "keep an eye on", or reproduce an intermittent issue.
-- Repeated calls to monitor_logs for the SAME pod are aggregated into a single live-streaming panel in the UI — keep calling it on the same target to keep the stream going. Do NOT spam dozens of calls back-to-back; pace them (every few seconds) and stop when you have enough or the user says stop.
-
-${KUBECTL_CHEATSHEET}
-RESPONSE FORMAT:
-- Be concise — use markdown headers, bold, code blocks, and lists
-- Always include specific data from command output
-- If unsure, say so — never hallucinate`;
-
-const INVESTIGATOR_SYSTEM_PROMPT = `You are a focused Kubernetes investigation sub-agent. Your ONLY job is to answer the specific question you receive by running kubectl/bash commands and returning a concise summary.
-
-KUBECTL SYNTAX (flags go AFTER verb, never before):
-  kubectl <verb> <resource> [name] [flags]
-  CORRECT: get pods -n default
-  WRONG:   --context=mycluster get pods
-
-Rules:
-- Run the minimum commands needed to answer the question
-- Return a concise summary of your findings with specific data (names, numbers, statuses)
-- The --context flag is auto-injected — do NOT add it yourself
-- Do NOT delegate to other subagents
-${KUBECTL_CHEATSHEET}`;
-
-const TOPOLOGY_MAPPER_PROMPT = `You are the TOPOLOGY MAPPER. Given a target service or pod, your job is to map its end-to-end call graph.
-
-Steps:
-1. Find the target deployment/pod and read its spec (env vars, ports, container args). Look for URLs / service DNS names like \`http://foo.namespace:8080\`, \`grpc://bar:9090\`, env vars ending in _URL / _HOST / _ENDPOINT / _SERVICE.
-2. Look at the Service / Ingress that fronts the target — find which clients call it (search Ingress rules, NetworkPolicies, ConfigMaps referencing the service).
-3. Recursively resolve downstream services (one hop only — depth 2 unless asked) using the same method.
-4. Return a concise, structured topology:
-   - **Entrypoint**: how requests reach the target (ingress host/path, NodePort, etc.)
-   - **Target**: service / deployment / pod names + namespace
-   - **Upstream callers**: services that call the target (best-effort from ingress, network policies, env references)
-   - **Downstream dependencies**: services the target calls
-   - **Notes**: anything unusual (sidecars, init containers, mTLS via Istio, etc.)
-
-Use kubectl/bash tools. Do NOT delegate. Do NOT make up services that aren't there.
-${KUBECTL_CHEATSHEET}`;
-
-const LOG_HUNTER_PROMPT = `You are the LOG HUNTER. You search logs from one or more pods for problems.
-
-Inputs you'll receive: pod name(s) (or label selector), namespace, time window (default: last 15 minutes), and optionally a pattern or keyword.
-
-Steps:
-1. Identify the target pods. If given a label selector, resolve to actual pod names with \`get pods -l <selector> -n <ns> -o name\`.
-2. For each pod, run \`logs <pod> -n <ns> --since=15m --tail=500\` (use the requested window). For multi-container pods, iterate containers.
-3. Scan output for: ERROR/Error/Exception/FATAL/panic, HTTP 5xx, "timeout"/"refused"/"reset by peer", stack traces, slow query indicators (>1s), OOM/Killed.
-4. Group findings by pod and by category. Quote the most representative lines verbatim with timestamps.
-5. Return a structured summary:
-   - **<pod-name>** — N error lines, N warning lines
-     - Most common error: "<quoted line>" (×count)
-     - Notable: "<one-line context>"
-
-Limit to the most informative ~10 lines per pod. Do NOT delegate.
-${KUBECTL_CHEATSHEET}`;
-
-const TRACE_CORRELATOR_PROMPT = `You are the TRACE CORRELATOR. Given a correlation id (request id, trace id, customer id, order id, etc.) you find every log line that mentions it across multiple pods and align them on a timeline.
-
-Inputs: correlation id, list of candidate pods (or a label selector), namespace, time window.
-
-Steps:
-1. For each candidate pod, run \`logs <pod> -n <ns> --since=<window> --tail=2000 | grep -i "<correlation-id>"\` using the bash tool.
-2. Aggregate matching lines with their source pod and parse timestamps.
-3. Sort the unified result chronologically — earliest to latest — to reconstruct the request's journey across services.
-4. Highlight gaps (a pod that should have logged but didn't), errors, and anomalous latencies (compute diffs between consecutive lines).
-5. Return:
-   - **Timeline** (markdown table or sequence list): timestamp | pod | log line
-   - **Findings**: where the request started, where it failed (if it did), notable latencies, missing hops.
-
-Use bash tool with grep — never read full unfiltered logs. Do NOT delegate.
-${KUBECTL_CHEATSHEET}`;
-
-const RCA_SYNTHESIZER_PROMPT = `You are the ROOT CAUSE SYNTHESIZER. You DO NOT call kubectl/bash. You receive evidence (topology, log findings, timelines) from other sub-agents and turn it into one structured hypothesis.
-
-Output exactly this structure:
-**Summary** — one sentence describing what's broken.
-**Most likely root cause** — your hypothesis, with confidence (low/medium/high).
-**Evidence** — bulleted list of the specific log lines / metrics / config that point to the cause. Quote them.
-**Why other plausible causes are ruled out** — short, one bullet each.
-**Next actions for the human** — numbered, executable kubectl commands or config changes. Do NOT auto-execute.
-
-If the evidence is insufficient to form a hypothesis, say so explicitly and list the missing pieces.`;
+## Response style
+- Lead with verdict, then evidence. Concise markdown.`;
 
 // ═══════════════════════════════════════════════════
 //  SAFETY CLASSIFIER
@@ -320,9 +203,11 @@ function execCommand(
 }
 
 function truncate(text: string): string {
-  return text.length > MAX_OUTPUT_LENGTH
-    ? text.slice(0, MAX_OUTPUT_LENGTH) + "\n... (truncated)"
-    : text;
+  if (text.length <= MAX_OUTPUT_LENGTH) return text;
+  return (
+    text.slice(0, MAX_OUTPUT_LENGTH) +
+    "\n... (truncated — enough data to proceed; do NOT re-run this command; present_dashboard or answer now)"
+  );
 }
 
 async function executeKubectl(command: string): Promise<string> {
@@ -345,11 +230,9 @@ async function executeBash(command: string): Promise<string> {
 // ═══════════════════════════════════════════════════
 //  LOOP / REPEAT-CALL GUARD
 // ═══════════════════════════════════════════════════
-//
-// Agents sometimes get stuck re-running the same failing command. This
-// guard records the last output for each (thread, tool, command) and
-// short-circuits the 2nd+ identical call that produced an error, returning
-// a hard-stop instruction that tells the model to stop or change tactics.
+// The model (esp. with limited tools permission) often re-runs bash/jsonpath
+// loops after it already has get pods/deploy. Block by exact cmd, coarse
+// intent (get::pods), output fingerprint, and a hard discovery budget.
 
 interface CallRecord {
   count: number;
@@ -357,10 +240,79 @@ interface CallRecord {
   wasError: boolean;
 }
 
-const callHistory = new Map<string, CallRecord>(); // key: thread::tool::cmd
+const callHistory = new Map<string, CallRecord>();
+/** kubectl get/describe/top/events counts as discovery; present_dashboard does not. */
+const threadDiscoveryCounts = new Map<string, number>();
+const MAX_HISTORY = 400;
+/** After this many discovery calls, only present_dashboard / ask_human may run. */
+const MAX_DISCOVERY_PER_TURN = 5;
 
 function callKey(threadId: string, tool: string, command: string): string {
-  return `${threadId}::${tool}::${command.trim()}`;
+  return `${threadId}::exact::${tool}::${command.trim()}`;
+}
+
+/**
+ * Extract kubectl verb+resource so:
+ *   get pods -o wide  ≈  bash: kubectl get pods -o jsonpath=... | grep
+ */
+function discoveryIntent(tool: string, command: string): string | null {
+  let c = command.toLowerCase().replace(/\s+/g, " ").trim();
+  // Use the first kubectl segment (before |, ;, &&)
+  const pipeIdx = c.search(/\s[|;&]/);
+  if (pipeIdx >= 0) c = c.slice(0, pipeIdx).trim();
+
+  // bash may wrap kubectl
+  const kidx = c.indexOf("kubectl ");
+  if (kidx >= 0) c = c.slice(kidx + "kubectl ".length).trim();
+  else if (tool === "bash") return null; // non-kubectl bash — exact key only
+
+  c = c
+    .replace(/--context=\S+/g, "")
+    .replace(/-n\s+\S+/g, " ")
+    .replace(/--namespace[=\s]\S+/g, " ")
+    .replace(/-A\b|--all-namespaces\b/g, " ")
+    .replace(/-o\s+.*/g, "") // strip output flag and everything after (jsonpath, yaml…)
+    .replace(/--output[=\s]\S+.*/g, "")
+    .replace(/--sort-by=\S+/g, "")
+    .replace(/--field-selector=\S+/g, "")
+    .replace(/--no-headers\b/g, "")
+    .replace(/--wide\b/g, "")
+    .replace(/--show-labels\b/g, "")
+    .replace(/-l\s+\S+/g, "")
+    .replace(/--selector=\S+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  // verb + first resource token (pods, deploy, events, …)
+  const parts = c.split(" ").filter(Boolean);
+  if (parts.length === 0) return null;
+  const verb = parts[0];
+  // top pods / top nodes
+  if (verb === "top") {
+    const res = (parts[1] || "nodes").replace(/,.*/, "");
+    return `top::${res}`;
+  }
+  if (verb === "logs" || verb === "log") {
+    return `logs::${parts[1] || "*"}`;
+  }
+  if (verb === "events") return "get::events";
+  if (verb === "get" || verb === "describe") {
+    const res = (parts[1] || "*").replace(/,.*/, "");
+    // aliases
+    const alias: Record<string, string> = {
+      po: "pods",
+      pod: "pods",
+      deploy: "deployments",
+      deployment: "deployments",
+      deploys: "deployments",
+      svc: "services",
+      no: "nodes",
+      ns: "namespaces",
+    };
+    return `${verb}::${alias[res] || res}`;
+  }
+  // other verbs (rollout, auth, …)
+  return `${verb}::${parts[1] || "*"}`;
 }
 
 function looksLikeError(output: string): boolean {
@@ -369,46 +321,98 @@ function looksLikeError(output: string): boolean {
     lower.includes("error from server") ||
     lower.includes("notfound") ||
     lower.startsWith("error:") ||
+    lower.includes("error executing") ||
     lower.includes("failed to") ||
     lower.includes("forbidden") ||
     lower.includes("unable to") ||
     lower.includes("connection refused") ||
-    lower.includes("no such")
+    lower.includes("no such") ||
+    lower.includes("unrecognized identifier")
+  );
+}
+
+function pruneHistory() {
+  if (callHistory.size <= MAX_HISTORY) return;
+  const keys = Array.from(callHistory.keys());
+  for (let i = 0; i < keys.length - MAX_HISTORY / 2; i++) {
+    callHistory.delete(keys[i]);
+  }
+}
+
+function forceDashboardMsg(prior?: string): string {
+  const head = prior
+    ? `${prior}\n\n---\n`
+    : "";
+  return (
+    `${head}` +
+    `STOP_REPEATING: You already have enough cluster data (or this query already ran). ` +
+    `Do NOT call kubectl/bash again. Immediately call present_dashboard with metrics/charts/issues ` +
+    `from the earlier tool outputs (unhealthy pods from STATUS column, incomplete READY deploys, high restarts), ` +
+    `then write a short verdict. CrashLoopBackOff/ImagePullBackOff pods are "Running" phase — do not re-query for them.`
   );
 }
 
 /**
- * Returns a short-circuit response if this exact (tool, command) was just
- * tried on this thread and failed. Otherwise returns null and updates the
- * history with the new result via `recordCall`.
+ * If this command / resource intent was already run, return prior output + hard stop.
+ * Discovery budget: after MAX_DISCOVERY_PER_TURN, refuse all kubectl/bash.
  */
 function checkRepeat(threadId: string, tool: string, command: string): string | null {
-  const key = callKey(threadId, tool, command);
-  const prev = callHistory.get(key);
-  if (!prev || !prev.wasError) return null;
-  const tries = prev.count + 1;
-  // Always stop on the 2nd+ identical failing call.
-  return (
-    `STOP: this exact command was already tried ${prev.count} time(s) on this thread and failed.\n\n` +
-    `Previous failure:\n${prev.lastOutput}\n\n` +
-    `Do NOT retry the same command. Instead:\n` +
-    `  • If the resource doesn't exist, list what does exist first (e.g. 'get pods -n <ns>') and pick a real name.\n` +
-    `  • If access is forbidden, tell the user you don't have permission — do not retry.\n` +
-    `  • If the cluster/network is unreachable, stop and report the error to the user.\n` +
-    `  • Otherwise, change your approach or call ask_human for guidance.\n` +
-    `(Repeat-call guard tripped after ${tries} identical attempts.)`
-  );
+  const discovery = threadDiscoveryCounts.get(threadId) ?? 0;
+  if (discovery >= MAX_DISCOVERY_PER_TURN) {
+    return forceDashboardMsg();
+  }
+
+  const exactKey = callKey(threadId, tool, command);
+  const prevExact = callHistory.get(exactKey);
+  if (prevExact && prevExact.count >= 1) {
+    return forceDashboardMsg(prevExact.lastOutput);
+  }
+
+  const intent = discoveryIntent(tool, command);
+  if (intent) {
+    const intentKey = `${threadId}::intent::${intent}`;
+    const prevIntent = callHistory.get(intentKey);
+    // One successful get pods / get deployments is enough. One failed forbidden is enough.
+    if (prevIntent && prevIntent.count >= 1) {
+      return forceDashboardMsg(prevIntent.lastOutput);
+    }
+  }
+
+  return null;
 }
 
 function recordCall(threadId: string, tool: string, command: string, output: string): void {
-  const key = callKey(threadId, tool, command);
-  const prev = callHistory.get(key);
-  callHistory.set(key, {
-    count: (prev?.count ?? 0) + 1,
-    lastOutput: output,
-    wasError: looksLikeError(output),
-  });
+  const exactKey = callKey(threadId, tool, command);
+  const intent = discoveryIntent(tool, command);
+  const wasError = looksLikeError(output);
+
+  const keys = [exactKey];
+  if (intent) keys.push(`${threadId}::intent::${intent}`);
+
+  for (const key of keys) {
+    const prev = callHistory.get(key);
+    callHistory.set(key, {
+      count: (prev?.count ?? 0) + 1,
+      lastOutput: output,
+      wasError,
+    });
+  }
+
+  threadDiscoveryCounts.set(threadId, (threadDiscoveryCounts.get(threadId) ?? 0) + 1);
+  pruneHistory();
 }
+
+/** Clear per-thread guards so a new user question can re-fetch intentionally. */
+export function resetAgentCallGuards(threadId: string): void {
+  threadDiscoveryCounts.set(threadId, 0);
+  const prefix = `${threadId}::`;
+  for (const key of Array.from(callHistory.keys())) {
+    if (key.startsWith(prefix)) callHistory.delete(key);
+  }
+}
+
+// Back-compat name if anything imported the old helper
+export const resetAgentBurstCounter = resetAgentCallGuards;
 
 // ═══════════════════════════════════════════════════
 //  TOOL FACTORIES (k8s context-bound)
@@ -435,11 +439,11 @@ function buildKubectlTool(currentContext: string, currentNamespace: string, thre
       description:
         "Execute a kubectl command against the Kubernetes cluster. " +
         "Pass the command WITHOUT the 'kubectl' prefix. " +
-        "Examples: 'get pods', 'describe pod my-pod', 'logs my-pod --tail=100', 'top pods'. " +
-        "Context AND the active namespace are auto-injected — do NOT add --context or -n yourself unless you need to target a different one. " +
-        "Use -A to query across all namespaces. " +
+        "Prefer compact tables: 'get deploy -o wide', 'get pods', 'top pods' — avoid huge -o yaml for lists. " +
+        "For health dashboards: one get deploy (+ optional get pods), then present_dashboard. " +
+        "Context AND the active namespace are auto-injected. Use -A for all namespaces. " +
         "Destructive commands (delete, drain, cordon, taint) are blocked. " +
-        "If a command fails, do NOT retry the exact same command — list available resources first or change approach.",
+        "Never re-run the same/similar command for 'fuller' output — truncated is enough.",
       schema: z.object({
         command: z.string().describe("The kubectl command to run (without the 'kubectl' prefix)"),
       }),
@@ -465,12 +469,10 @@ function buildBashTool(currentContext: string, currentNamespace: string, threadI
     {
       name: "bash",
       description:
-        "Execute a shell command. Useful for piping kubectl output through grep, awk, sort, wc, jq. " +
-        "Include the full command including 'kubectl' if needed. " +
-        "The active context and namespace are auto-injected into each `kubectl` invocation — do NOT add --context or -n yourself. " +
-        "Use -A on the kubectl call when you need all namespaces. " +
-        "Only allowed prefixes: kubectl, jq, grep, awk, sed, sort, head, tail, wc, cut, uniq, tr, cat, echo, date, xargs. " +
-        "If a command fails, do NOT retry the exact same command.",
+        "Pipes only when table kubectl is insufficient (e.g. jq count). Prefer the kubectl tool for lists. " +
+        "Do NOT loop on jsonpath — tables already include STATUS and RESTARTS. " +
+        "Context/namespace auto-injected. Allowed: kubectl, jq, grep, awk, sed, sort, head, tail, wc, cut, uniq, tr, cat, echo, date, xargs. " +
+        "Never re-run the same/similar command.",
       schema: z.object({
         command: z.string().describe("The shell command to execute"),
       }),
@@ -562,6 +564,85 @@ function shellQuote(s: string): string {
 }
 
 // ═══════════════════════════════════════════════════
+//  PRESENT DASHBOARD (structured viz for the chat UI)
+// ═══════════════════════════════════════════════════
+
+const presentDashboardTool = tool(
+  async (input) => {
+    // Tool result is the JSON payload the client Tool UI renders.
+    return JSON.stringify(input);
+  },
+  {
+    name: "present_dashboard",
+    description:
+      "Render a visual dashboard card in the chat: KPI metrics, charts (bar/line/area/pie), " +
+      "ranked issues, and optional tables. REQUIRED for deployment/cluster health and dashboard requests " +
+      "after 1–2 kubectl gathers. Use real numbers only. Then stop calling tools and give a short summary.",
+    schema: z.object({
+      title: z.string().describe("Short board title, e.g. 'Namespace health'"),
+      summary: z.string().optional().describe("1–2 sentence executive read"),
+      score: z.number().min(0).max(100).optional().describe("Optional health score 0–100"),
+      metrics: z
+        .array(
+          z.object({
+            label: z.string(),
+            value: z.union([z.string(), z.number()]),
+            unit: z.string().optional(),
+            tone: z.enum(["good", "warn", "bad", "neutral"]).optional(),
+          }),
+        )
+        .max(12)
+        .optional(),
+      charts: z
+        .array(
+          z.object({
+            type: z.enum(["bar", "line", "area", "pie"]),
+            title: z.string().optional(),
+            xKey: z.string().optional().describe("Category/time key for cartesian charts; default 'name'"),
+            series: z
+              .array(
+                z.object({
+                  key: z.string(),
+                  label: z.string().optional(),
+                }),
+              )
+              .min(1)
+              .max(6),
+            data: z
+              .array(z.record(z.string(), z.union([z.string(), z.number(), z.null()])))
+              .min(1)
+              .max(40)
+              .describe("Array of row objects, e.g. [{name:'api', restarts:12}]"),
+          }),
+        )
+        .max(4)
+        .optional(),
+      issues: z
+        .array(
+          z.object({
+            severity: z.enum(["critical", "warning", "info"]),
+            title: z.string(),
+            detail: z.string().optional(),
+            resource: z.string().optional().describe("e.g. pod/foo or deploy/bar"),
+          }),
+        )
+        .max(20)
+        .optional(),
+      tables: z
+        .array(
+          z.object({
+            title: z.string().optional(),
+            columns: z.array(z.string()).min(1).max(8),
+            rows: z.array(z.array(z.string())).max(40),
+          }),
+        )
+        .max(3)
+        .optional(),
+    }),
+  },
+);
+
+// ═══════════════════════════════════════════════════
 //  MEMORY (in-process checkpointer)
 // ═══════════════════════════════════════════════════
 
@@ -571,65 +652,31 @@ const checkpointer = new MemorySaver();
 //  AGENT BUILDER
 // ═══════════════════════════════════════════════════
 
+function truncateSessionContext(sessionContext: string, maxChars = 2500): string {
+  if (!sessionContext || sessionContext.length <= maxChars) return sessionContext;
+  return (
+    sessionContext.slice(0, maxChars) +
+    "\n… (truncated — use kubectl to list resources if you need more names)"
+  );
+}
+
 function buildAgent(currentContext: string, currentNamespace: string, sessionContext: string, threadId: string) {
-  const model = getChatModel({ temperature: 0.3, maxTokens: 4096, streaming: true });
+  const model = getChatModel({ temperature: 0.25, maxTokens: 2048, streaming: true });
 
   const kubectlTool = buildKubectlTool(currentContext, currentNamespace, threadId);
   const bashTool = buildBashTool(currentContext, currentNamespace, threadId);
   const monitorTool = buildMonitorLogsTool(currentContext, threadId);
 
-  const wrap = (prompt: string) =>
-    sessionContext ? `${prompt}\n\nSession context: ${sessionContext}` : prompt;
-
-  const mainSystemPrompt = sessionContext
-    ? `${MAIN_SYSTEM_PROMPT}\n\nCurrent session context:\n${sessionContext}`
+  const sessionSnippet = truncateSessionContext(sessionContext);
+  const mainSystemPrompt = sessionSnippet
+    ? `${MAIN_SYSTEM_PROMPT}\n\nCurrent session:\n${sessionSnippet}`
     : MAIN_SYSTEM_PROMPT;
 
-  // All debug sub-agents get the full toolset minus ask_human (only the main
-  // orchestrator can pause for the user).
-  const debugTools = [kubectlTool, bashTool, monitorTool];
-
-  return createDeepAgent({
+  return createAgent({
     model,
-    tools: [kubectlTool, bashTool, monitorTool, askHumanTool],
+    tools: [kubectlTool, bashTool, monitorTool, askHumanTool, presentDashboardTool],
     systemPrompt: mainSystemPrompt,
-    subagents: [
-      {
-        name: "kubernetes-investigator",
-        description:
-          "General-purpose Kubernetes investigation sub-agent. Use for focused single-topic questions (e.g. 'check all failing pods', 'inspect node pressure', 'audit ingress configuration'). Dispatch multiple in parallel for multi-faceted questions.",
-        systemPrompt: wrap(INVESTIGATOR_SYSTEM_PROMPT),
-        tools: debugTools,
-      },
-      {
-        name: "topology-mapper",
-        description:
-          "Maps the end-to-end call graph for a target service or pod. Discovers entrypoints (ingress), upstream callers, and downstream dependencies by reading env vars, services, ingresses, network policies. Always call this FIRST when starting an API/end-to-end debug.",
-        systemPrompt: wrap(TOPOLOGY_MAPPER_PROMPT),
-        tools: debugTools,
-      },
-      {
-        name: "log-hunter",
-        description:
-          "Pulls and scans logs from one or more pods for errors, exceptions, timeouts, and slow responses within a time window. Dispatch one per service in the call graph (in parallel) to gather evidence fast.",
-        systemPrompt: wrap(LOG_HUNTER_PROMPT),
-        tools: debugTools,
-      },
-      {
-        name: "trace-correlator",
-        description:
-          "Given a correlation id (request id, trace id, customer id, order id, etc.) finds every log line mentioning it across multiple pods and aligns them on a unified timeline. Use to reconstruct the full path of a single request across services.",
-        systemPrompt: wrap(TRACE_CORRELATOR_PROMPT),
-        tools: debugTools,
-      },
-      {
-        name: "root-cause-synthesizer",
-        description:
-          "Takes the evidence gathered by the other debug sub-agents (topology, logs, timeline) and produces a single structured root-cause hypothesis with citations and recommended next steps. Does NOT run kubectl. Call last, once you have evidence.",
-        systemPrompt: wrap(RCA_SYNTHESIZER_PROMPT),
-        tools: [],
-      },
-    ],
+    middleware: [xmlToolCallMiddleware],
     checkpointer,
   });
 }
@@ -638,26 +685,106 @@ function buildAgent(currentContext: string, currentNamespace: string, sessionCon
 //  MESSAGE SERIALIZATION (LangChain → assistant-ui wire format)
 // ═══════════════════════════════════════════════════
 
+/** True streaming chunks only — NOT complete AIMessages that happen to have type "ai". */
+function isStreamingChunk(m: unknown): boolean {
+  if (m instanceof AIMessageChunk) return true;
+  if (!m || typeof m !== "object") return false;
+  const anyM = m as any;
+  // Class name is the reliable signal for true stream chunks
+  if (anyM.constructor?.name === "AIMessageChunk") return true;
+  // Partial stream pieces sometimes only carry tool_call_chunks without being a full AIMessage
+  if (
+    anyM.constructor?.name !== "AIMessage" &&
+    Array.isArray(anyM.tool_call_chunks) &&
+    anyM.tool_call_chunks.length > 0 &&
+    !Array.isArray(anyM.tool_calls)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function getMessageType(m: BaseMessage | BaseMessageChunk): string {
-  // BaseMessage classes have _getType(); chunks too.
   const anyM = m as any;
   if (typeof anyM._getType === "function") return anyM._getType();
   if (anyM.type) return anyM.type;
   return "ai";
 }
 
+function normalizeToolCallArgs(args: unknown): Record<string, unknown> {
+  if (args == null) return {};
+  if (typeof args === "object" && !Array.isArray(args)) {
+    return args as Record<string, unknown>;
+  }
+  if (typeof args === "string") {
+    try {
+      const parsed = JSON.parse(args);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+      return { input: parsed };
+    } catch {
+      return { input: args };
+    }
+  }
+  return { input: args };
+}
+
+function serializeToolCalls(toolCalls: any[] | undefined): unknown[] | undefined {
+  if (!Array.isArray(toolCalls) || toolCalls.length === 0) return undefined;
+  return toolCalls.map((tc: any, i: number) => ({
+    id: typeof tc.id === "string" && tc.id ? tc.id : `call_${i}`,
+    name: tc.name ?? "",
+    args: normalizeToolCallArgs(tc.args ?? tc.arguments),
+    type: "tool_call",
+    ...(typeof tc.index === "number" ? { index: tc.index } : {}),
+  }));
+}
+
+/**
+ * Serialize for assistant-ui langgraph wire format.
+ *
+ * CRITICAL: Do NOT label complete AIMessages as "AIMessageChunk".
+ * useLangGraphMessages coerces type "ai" on the messages-tuple path into
+ * AIMessageChunk and drops `tool_calls` (only keeps tool_call_chunks).
+ * Complete messages must go out as messages/complete or values with type "ai".
+ */
 function serializeMessage(m: BaseMessage | BaseMessageChunk): Record<string, unknown> {
   const type = getMessageType(m);
   const anyM = m as any;
+  const isChunk = isStreamingChunk(m);
   const base: Record<string, unknown> = {
     id: anyM.id,
-    type: type === "AIMessageChunk" ? "AIMessageChunk" : type,
+    type: isChunk ? "AIMessageChunk" : type,
     content: anyM.content ?? "",
   };
 
-  if (type === "ai" || type === "AIMessageChunk") {
-    if (anyM.tool_calls?.length) base.tool_calls = anyM.tool_calls;
-    if (anyM.tool_call_chunks?.length) base.tool_call_chunks = anyM.tool_call_chunks;
+  if (type === "ai" || isChunk) {
+    const toolCalls = serializeToolCalls(anyM.tool_calls);
+    if (toolCalls) base.tool_calls = toolCalls;
+    if (anyM.tool_call_chunks?.length) {
+      base.tool_call_chunks = (anyM.tool_call_chunks as any[]).map((chunk: any, i: number) => ({
+        ...chunk,
+        index: typeof chunk.index === "number" ? chunk.index : i,
+        id: chunk.id ?? "",
+        name: chunk.name ?? "",
+        args:
+          typeof chunk.args === "string"
+            ? chunk.args
+            : chunk.args
+              ? JSON.stringify(chunk.args)
+              : "",
+      }));
+    } else if (isChunk && toolCalls) {
+      // Non-stream models sometimes still arrive as chunks with only tool_calls —
+      // synthesize tool_call_chunks so the UI merge path keeps them.
+      base.tool_call_chunks = (toolCalls as any[]).map((tc: any, i: number) => ({
+        index: i,
+        id: tc.id,
+        name: tc.name,
+        args: JSON.stringify(tc.args ?? {}),
+      }));
+    }
     if (anyM.additional_kwargs && Object.keys(anyM.additional_kwargs).length > 0) {
       base.additional_kwargs = anyM.additional_kwargs;
     }
@@ -673,8 +800,10 @@ function serializeMessage(m: BaseMessage | BaseMessageChunk): Record<string, unk
 function isMessageLike(x: unknown): x is BaseMessage | BaseMessageChunk {
   if (!x || typeof x !== "object") return false;
   const anyX = x as any;
-  return typeof anyX._getType === "function"
-    || ["human", "ai", "system", "tool", "AIMessageChunk"].includes(anyX.type);
+  return (
+    typeof anyX._getType === "function" ||
+    ["human", "ai", "system", "tool", "AIMessageChunk"].includes(anyX.type)
+  );
 }
 
 /**
@@ -748,6 +877,11 @@ export async function runAgent(
   const nsMatch = clientSystemMsg.match(/Namespace:\s*([^\s,\]]+)/i);
   const currentNamespace = nsMatch?.[1] && nsMatch[1] !== "all" ? nsMatch[1] : "";
 
+  // New user turn: reset duplicate/budget guards so intentional re-checks work.
+  if (options.resumeValue === undefined) {
+    resetAgentCallGuards(threadId);
+  }
+
   const agent = buildAgent(currentContext, currentNamespace, clientSystemMsg, threadId);
 
   // Either resume an interrupted run or send the new user message(s).
@@ -759,7 +893,8 @@ export async function runAgent(
     configurable: { thread_id: threadId },
     streamMode: ["messages", "updates", "custom", "values"] as ("messages" | "updates" | "custom" | "values")[],
     signal: abortSignal,
-    recursionLimit: 50,
+    // Discovery cap is enforced in tools; graph limit backstops tool-call loops
+    recursionLimit: 14,
   };
 
   try {
@@ -774,10 +909,22 @@ export async function runAgent(
           if (Array.isArray(payload) && payload.length >= 1) {
             const [msg, metadata] = payload;
             if (isMessageLike(msg)) {
-              emit({
-                event: "messages",
-                data: [serializeMessage(msg), metadata ?? {}],
-              });
+              // Streaming chunks (AIMessageChunk) go on the messages-tuple path.
+              // Complete AI / Tool messages MUST use messages/complete — the
+              // messages tuple normalizer coerces type "ai" → AIMessageChunk and
+              // drops tool_calls (keeps only tool_call_chunks), blanking the UI
+              // for non-streaming OpenAI-compat gateways.
+              if (isStreamingChunk(msg)) {
+                emit({
+                  event: "messages",
+                  data: [serializeMessage(msg), metadata ?? {}],
+                });
+              } else {
+                emit({
+                  event: "messages/complete",
+                  data: [serializeMessage(msg)],
+                });
+              }
             }
           }
         } else if (mode === "updates") {
@@ -793,7 +940,16 @@ export async function runAgent(
         } else if (mode === "custom") {
           emit({ event: "custom", data: payload });
         } else if (mode === "values") {
-          // Values events may also carry an __interrupt__ array
+          // Forward values with serialized messages so the client can reconcile
+          // the final message state (catches ToolMessages from Command-based
+          // state updates that may not appear via the messages stream).
+          const valuesPayload = payload as Record<string, unknown>;
+          if (Array.isArray(valuesPayload?.messages)) {
+            const serialized = (valuesPayload.messages as unknown[])
+              .filter(isMessageLike)
+              .map((msg) => serializeMessage(msg as BaseMessage));
+            emit({ event: "values", data: { messages: serialized } });
+          }
           const interrupts = extractInterrupts(payload);
           if (interrupts.length > 0) {
             emit({ event: "interrupt", data: interrupts });
@@ -805,11 +961,18 @@ export async function runAgent(
       }
     }
 
-    // After the stream ends, check the graph state for a pending interrupt
-    // that wasn't surfaced via updates (some langgraph versions only put it
-    // on the post-run state snapshot).
+    // After the stream ends, push a final values snapshot so the UI can
+    // reconcile tool_calls / ToolMessages (especially for non-streaming models
+    // where intermediate message events alone are easy to drop).
     try {
       const state = await (agent as any).getState({ configurable: { thread_id: threadId } });
+      const finalMessages = state?.values?.messages;
+      if (Array.isArray(finalMessages) && finalMessages.length > 0) {
+        const serialized = (finalMessages as unknown[])
+          .filter(isMessageLike)
+          .map((msg) => serializeMessage(msg as BaseMessage));
+        emit({ event: "values", data: { messages: serialized } });
+      }
       const tasks = state?.tasks ?? [];
       const pending: unknown[] = [];
       for (const t of tasks) {
@@ -823,9 +986,37 @@ export async function runAgent(
       /* ignore — state inspection is best-effort */
     }
   } catch (err: any) {
-    console.error("[agent] error:", err?.message || err);
-    emit({ event: "error", data: { message: err?.message || String(err) } });
+    const raw = err?.message || String(err);
+    const friendly = formatProviderError(raw);
+    emit({ event: "error", data: { message: friendly } });
   }
+}
+
+function formatProviderError(raw: string): string {
+  const lower = raw.toLowerCase();
+  if (lower.includes("maximum context length") || lower.includes("context length") || lower.includes("too many tokens")) {
+    return (
+      `AI model context window exceeded. The model prompt (system + tools) is too large for this gateway. ` +
+      `Try a shorter question, or use a model with a larger context. (${raw.slice(0, 220)})`
+    );
+  }
+  if (lower.includes("503") || lower.includes("ring-balancer") || lower.includes("no healthy upstream")) {
+    return (
+      `AI provider is unavailable (503). Check Settings → AI base URL and model. ` +
+      `Current gateway may be down — try a working endpoint and a model that exists there. ` +
+      `(${raw.slice(0, 180)})`
+    );
+  }
+  if (lower.includes("404") && lower.includes("model")) {
+    return (
+      `AI model not found (404). Update Settings → AI model to one available on your gateway. ` +
+      `(${raw.slice(0, 180)})`
+    );
+  }
+  if (lower.includes("401") || lower.includes("unauthorized") || lower.includes("invalid api key")) {
+    return `AI API key rejected. Update Settings → AI API key. (${raw.slice(0, 180)})`;
+  }
+  return raw;
 }
 
 /**

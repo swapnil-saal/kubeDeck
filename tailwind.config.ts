@@ -6,9 +6,10 @@ export default {
   theme: {
     extend: {
       borderRadius: {
-        lg: ".5625rem", /* 9px */
-        md: ".375rem", /* 6px */
-        sm: ".1875rem", /* 3px */
+        sm: "calc(var(--radius) - 4px)", /* 0.5rem */
+        md: "calc(var(--radius) - 2px)", /* 0.625rem */
+        lg: "var(--radius)",             /* 0.75rem */
+        xl: "calc(var(--radius) + 4px)", /* 1rem */
       },
       colors: {
         // Flat / base colors (regular buttons)
@@ -95,9 +96,9 @@ export default {
         },
       },
       fontFamily: {
-        sans: ["var(--font-sans)"],
+        sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "-apple-system", "sans-serif"],
         serif: ["var(--font-serif)"],
-        mono: ["var(--font-mono)"],
+        mono: ["var(--font-mono)", "ui-monospace", "SFMono-Regular", "monospace"],
       },
       keyframes: {
         "accordion-down": {

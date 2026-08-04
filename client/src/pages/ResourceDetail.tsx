@@ -782,7 +782,7 @@ export default function ResourceDetail() {
   ];
 
   return (
-    <div className="flex flex-col h-full bg-background overflow-hidden text-foreground selection:bg-primary/20">
+    <div className="flex flex-col h-full overflow-hidden text-foreground selection:bg-primary/20">
       <AppHeader
         showSelectors={false}
         breadcrumbs={[
@@ -806,18 +806,18 @@ export default function ResourceDetail() {
 
       {/* ══════ CONTENT ══════ */}
       <div className="flex-1 overflow-hidden flex flex-col">
-        <div className="px-6 pt-4 pb-0">
+        <div className="px-7 pt-4 pb-0">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="bg-muted/50 border border-border p-1 h-auto rounded-xl gap-1">
+            <TabsList className="bg-secondary/50 border border-border/50 p-1 h-auto rounded-xl gap-1">
               {tabs.map(tab => (
                 <TabsTrigger
                   key={tab.id}
                   value={tab.id}
-                  className="text-[11px] font-medium rounded-lg px-4 py-1.5 transition-all gap-1.5
+                  className="text-[11px] font-semibold rounded-lg px-4 py-1.5 transition-colors gap-1.5
                     data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground data-[state=inactive]:hover:bg-background/60
-                    data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none"
+                    data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-none"
                 >
-                  <tab.icon className="w-3.5 h-3.5" />
+                  <tab.icon size={13} />
                   {tab.label}
                 </TabsTrigger>
               ))}
@@ -825,7 +825,7 @@ export default function ResourceDetail() {
           </Tabs>
         </div>
 
-        <div className="flex-1 overflow-hidden p-5 pt-3">
+        <div className="flex-1 overflow-hidden p-7 pt-3">
           <AnimatePresence mode="wait">
             <motion.div key={activeTab} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }} className="h-full">
               {activeTab === "describe" && (

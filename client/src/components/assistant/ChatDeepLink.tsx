@@ -1,17 +1,17 @@
 import { useEffect, useRef } from "react";
-import { useSearch } from "wouter";
+import { useSearch, useLocation } from "wouter";
 import { useThreadRuntime } from "@assistant-ui/react";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
 
 /**
- * Reads `?q=...` from the URL on mount, sets the chat scope from
- * `?context=` / `?namespace=` (if provided), and auto-sends the prompt as
- * a user message. Renders nothing.
+ * Deep-link helper for AI chat.
  *
- * Use INSIDE an <AssistantRuntimeProvider> so it can append messages.
+ * Only seeds from `?prompt=` (not table filter `?q=`). After sending,
+ * clears the prompt from the URL so it cannot re-fire or stick around.
  */
 export function ChatDeepLink() {
   const search = useSearch();
+  const [location, setLocation] = useLocation();
   const runtime = useThreadRuntime();
   const { context, namespace, setContext, setNamespace } = useTerminalStore();
   const seededRef = useRef(false);
@@ -19,24 +19,32 @@ export function ChatDeepLink() {
   useEffect(() => {
     if (seededRef.current) return;
     const params = new URLSearchParams(search);
-    const q = params.get("q") || params.get("prompt");
+    // Prefer `prompt`; accept legacy `q` only when path is /ai and value looks intentional
+    // (still exclusive: never shared with dashboard search because of hash-router fix).
+    const prompt = params.get("prompt") || params.get("q");
     const ctx = params.get("context");
     const ns = params.get("namespace");
 
-    // Apply scope overrides from the URL first
     if (ctx && ctx !== context) setContext(ctx);
     if (ns && ns !== namespace) setNamespace(ns);
 
-    if (!q) return;
+    if (!prompt) return;
     seededRef.current = true;
 
-    // Defer one tick so the runtime is fully ready
     queueMicrotask(() => {
       runtime.append({
         role: "user",
-        content: [{ type: "text", text: q }],
+        content: [{ type: "text", text: prompt }],
       });
     });
+
+    // Strip prompt/q so filters and reloads never re-send
+    const kept = new URLSearchParams(search);
+    kept.delete("prompt");
+    kept.delete("q");
+    const qs = kept.toString();
+    const pathOnly = location.split("?")[0] || "/ai";
+    setLocation(qs ? `${pathOnly}?${qs}` : pathOnly, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 

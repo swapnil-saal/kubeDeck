@@ -2,14 +2,27 @@ import { useEffect, useRef, useState, useSyncExternalStore, type ComponentType }
 import { makeAssistantToolUI } from "@assistant-ui/react";
 import {
   Terminal, Loader2, ChevronRight, ChevronDown, CheckCircle2, XCircle,
-  GitBranch, Activity, Bot, Eye, HelpCircle, Trash2,
+  GitBranch, Activity, Eye, HelpCircle, Trash2, Copy, Check,
 } from "lucide-react";
 import {
   appendOutput, clearStream, getStream, registerCall, subscribeMonitor, targetKey,
   type MonitorTarget,
 } from "@/lib/monitor-store";
+import { cn } from "@/lib/utils";
 
 interface ExecArgs { command: string }
+
+function useCopy(text: string) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* ignore */ }
+  };
+  return { copied, copy };
+}
 
 function ExecBlock({
   label, icon: Icon, command, status, result,
@@ -22,32 +35,85 @@ function ExecBlock({
 }) {
   const [open, setOpen] = useState(true);
   const isRunning = status === "running";
-  const isError = status === "complete" && (result || "").toLowerCase().match(/error|failed|denied|forbidden/);
+  const isError = status === "complete" && !!((result || "").toLowerCase().match(/error|failed|denied|forbidden|notfound|not found/));
+  const display = result ?? (isRunning ? "" : "(no output)");
+  const { copied, copy } = useCopy(display || command);
+  const lineCount = display ? display.split("\n").filter(Boolean).length : 0;
 
   return (
-    <div className="my-2 rounded-md border border-border bg-muted/30 overflow-hidden">
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-muted/50 transition-colors"
-      >
-        {open ? <ChevronDown className="w-3 h-3 shrink-0 text-muted-foreground" /> : <ChevronRight className="w-3 h-3 shrink-0 text-muted-foreground" />}
-        <Icon className="w-3.5 h-3.5 shrink-0 text-primary" />
-        <span className="font-medium text-foreground">{label}</span>
-        <code className="font-mono text-[11px] text-muted-foreground truncate flex-1 text-left">
-          {command}
-        </code>
-        {isRunning && <Loader2 className="w-3 h-3 shrink-0 text-primary animate-spin" />}
-        {!isRunning && (isError
-          ? <XCircle className="w-3 h-3 shrink-0 text-destructive" />
-          : <CheckCircle2 className="w-3 h-3 shrink-0 text-green-500" />)}
-      </button>
+    <div
+      className={cn(
+        "my-2.5 overflow-hidden rounded-xl border shadow-sm",
+        "bg-card/60 backdrop-blur-sm transition-colors",
+        isRunning && "border-primary/30 ring-1 ring-primary/10",
+        isError && "border-destructive/30",
+        !isRunning && !isError && "border-border/60",
+      )}
+    >
+      <div className="flex items-center gap-0 min-w-0">
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2.5 text-xs hover:bg-muted/40 transition-colors"
+        >
+          {open
+            ? <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
+            : <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />}
+          <span
+            className={cn(
+              "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
+              isError ? "bg-destructive/10 text-destructive" : "bg-primary/10 text-primary",
+            )}
+          >
+            <Icon className="h-3.5 w-3.5" />
+          </span>
+          <span className="font-semibold text-foreground shrink-0">{label}</span>
+          <code className="min-w-0 flex-1 truncate text-left font-mono text-[11px] text-muted-foreground">
+            {command || "…"}
+          </code>
+          {!isRunning && lineCount > 0 && (
+            <span className="hidden sm:inline text-[10px] tabular-nums text-muted-foreground/70 shrink-0">
+              {lineCount} line{lineCount === 1 ? "" : "s"}
+            </span>
+          )}
+          {isRunning && <Loader2 className="h-3.5 w-3.5 shrink-0 text-primary animate-spin" />}
+          {!isRunning && (isError
+            ? <XCircle className="h-3.5 w-3.5 shrink-0 text-destructive" />
+            : <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />)}
+        </button>
+        {display && !isRunning && (
+          <button
+            type="button"
+            onClick={() => void copy()}
+            className="shrink-0 px-2.5 py-2.5 text-muted-foreground hover:text-foreground transition-colors"
+            title="Copy output"
+          >
+            {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+          </button>
+        )}
+      </div>
+
       {open && (
-        <div className="border-t border-border bg-background/50">
-          <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border/50">
-            {isRunning ? "Running…" : isError ? "Output (error)" : "Output"}
+        <div className="border-t border-border/50">
+          <div className="flex items-center justify-between px-3 py-1.5 bg-muted/30">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              {isRunning ? "Running" : isError ? "Error output" : "Output"}
+            </span>
+            {isRunning && (
+              <span className="inline-flex items-center gap-1 text-[10px] text-primary">
+                <span className="h-1 w-1 rounded-full bg-primary animate-pulse" />
+                live
+              </span>
+            )}
           </div>
-          <pre className="p-3 text-[11px] leading-relaxed font-mono whitespace-pre-wrap break-all text-foreground/90 max-h-72 overflow-auto">
-            {result ?? (isRunning ? "…" : "(no output)")}
+          <pre
+            className={cn(
+              "p-3 text-[11px] leading-relaxed font-mono whitespace-pre-wrap break-all max-h-80 overflow-auto",
+              "bg-[hsl(var(--background))] text-foreground/90",
+              isRunning && !result && "text-muted-foreground italic",
+            )}
+          >
+            {result ?? (isRunning ? "Waiting for command output…" : "(no output)")}
           </pre>
         </div>
       )}
@@ -95,33 +161,48 @@ export const TaskToolUI = makeAssistantToolUI<TaskArgs, string>({
     const goal = args?.description || args?.prompt || "Investigation";
     const agent = args?.subagent_type || "kubernetes-investigator";
     return (
-      <div className="my-2 rounded-md border border-primary/30 bg-primary/5 overflow-hidden">
+      <div className="my-2.5 overflow-hidden rounded-xl border border-primary/25 bg-primary/[0.04] shadow-sm">
         <button
+          type="button"
           onClick={() => setOpen(!open)}
-          className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-primary/10 transition-colors"
+          className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs hover:bg-primary/[0.06] transition-colors"
         >
-          {open ? <ChevronDown className="w-3 h-3 shrink-0 text-muted-foreground" /> : <ChevronRight className="w-3 h-3 shrink-0 text-muted-foreground" />}
-          <GitBranch className="w-3.5 h-3.5 shrink-0 text-primary" />
-          <span className="font-medium text-foreground">Sub-agent</span>
-          <span className="font-mono text-[11px] text-muted-foreground">{agent}</span>
-          <span className="text-muted-foreground/70 truncate flex-1 text-left">— {goal}</span>
+          {open
+            ? <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
+            : <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />}
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary">
+            <GitBranch className="h-3.5 w-3.5" />
+          </span>
+          <div className="min-w-0 flex-1 text-left">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-foreground">Sub-agent</span>
+              <span className="rounded-md bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] text-primary">
+                {agent}
+              </span>
+            </div>
+            <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{goal}</div>
+          </div>
           {isRunning
-            ? <Loader2 className="w-3 h-3 shrink-0 text-primary animate-spin" />
-            : <CheckCircle2 className="w-3 h-3 shrink-0 text-green-500" />}
+            ? <Loader2 className="h-3.5 w-3.5 shrink-0 text-primary animate-spin" />
+            : <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />}
         </button>
         {open && (
-          <div className="border-t border-primary/20 bg-background/50">
+          <div className="border-t border-primary/15">
             {args?.prompt && (
-              <div className="px-3 py-2 text-[11px] text-muted-foreground border-b border-border/50">
-                <span className="font-medium text-foreground">Goal: </span>
+              <div className="px-3 py-2 text-[11px] text-muted-foreground border-b border-border/40">
+                <span className="font-medium text-foreground">Goal · </span>
                 {args.prompt}
               </div>
             )}
-            <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border/50">
+            <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground bg-muted/20">
               {isRunning ? "Investigating…" : "Findings"}
             </div>
-            <pre className="p-3 text-[11px] leading-relaxed font-mono whitespace-pre-wrap break-words text-foreground/90 max-h-80 overflow-auto">
-              {typeof result === "string" ? result : result ? JSON.stringify(result, null, 2) : (isRunning ? "…" : "(no findings)")}
+            <pre className="p-3 text-[11px] leading-relaxed font-mono whitespace-pre-wrap break-words text-foreground/90 max-h-80 overflow-auto bg-[hsl(var(--background))]">
+              {typeof result === "string"
+                ? result
+                : result
+                  ? JSON.stringify(result, null, 2)
+                  : (isRunning ? "Specialist is working…" : "(no findings)")}
             </pre>
           </div>
         )}
@@ -129,11 +210,6 @@ export const TaskToolUI = makeAssistantToolUI<TaskArgs, string>({
     );
   },
 });
-
-// ── Continuous-monitoring tool (tail logs since last call) ──────────────
-//
-// Every `monitor_logs` tool call appends to a shared per-target stream so
-// the UI shows ONE scrollable container per pod, not one card per call.
 
 interface MonitorArgs {
   pod: string;
@@ -167,7 +243,10 @@ function MonitorPanel({ tgKey }: { tgKey: string }) {
     target.container && `c=${target.container}`,
     target.grep && `~ "${target.grep}"`,
   ].filter(Boolean).join(" · ");
-  const lineCount = chunks.reduce((n, c) => n + (c.text === "(no new lines)" ? 0 : c.text.split("\n").length), 0);
+  const lineCount = chunks.reduce(
+    (n, c) => n + (c.text === "(no new lines)" ? 0 : c.text.split("\n").length),
+    0,
+  );
 
   const fullText = chunks
     .filter((c) => c.text && c.text !== "(no new lines)")
@@ -175,37 +254,41 @@ function MonitorPanel({ tgKey }: { tgKey: string }) {
     .join("\n");
 
   return (
-    <div className="my-2 rounded-md border border-primary/30 bg-muted/30 overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2 text-xs border-b border-border/60">
-        <Eye className="w-3.5 h-3.5 shrink-0 text-primary" />
-        <span className="font-medium text-foreground">Live tail</span>
-        <code className="font-mono text-[11px] text-muted-foreground truncate flex-1">{label}</code>
-        <span className="text-[10px] text-muted-foreground/80 tabular-nums">{lineCount} line{lineCount === 1 ? "" : "s"}</span>
+    <div className="my-2.5 overflow-hidden rounded-xl border border-primary/30 bg-card/60 shadow-sm">
+      <div className="flex items-center gap-2 px-3 py-2.5 text-xs border-b border-border/50">
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+          <Eye className="h-3.5 w-3.5" />
+        </span>
+        <span className="font-semibold text-foreground">Live tail</span>
+        <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">{label}</code>
+        <span className="text-[10px] tabular-nums text-muted-foreground">{lineCount}</span>
         {live
-          ? <Loader2 className="w-3 h-3 shrink-0 text-primary animate-spin" />
-          : <CheckCircle2 className="w-3 h-3 shrink-0 text-green-500" />}
+          ? <Loader2 className="h-3.5 w-3.5 shrink-0 text-primary animate-spin" />
+          : <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />}
         <button
+          type="button"
           onClick={() => setPaused((p) => !p)}
-          className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+          className={cn(
+            "text-[10px] px-1.5 py-0.5 rounded-md border transition-colors",
             paused
               ? "border-amber-500/40 text-amber-600 dark:text-amber-400 bg-amber-500/10"
-              : "border-border text-muted-foreground hover:text-foreground hover:bg-muted/60"
-          }`}
-          title={paused ? "Resume auto-scroll" : "Pause auto-scroll"}
+              : "border-border text-muted-foreground hover:text-foreground",
+          )}
         >
-          {paused ? "Paused" : "Auto-scroll"}
+          {paused ? "Paused" : "Follow"}
         </button>
         <button
+          type="button"
           onClick={() => clearStream(tgKey)}
           className="text-muted-foreground hover:text-destructive transition-colors"
-          title="Clear log buffer"
+          title="Clear buffer"
         >
-          <Trash2 className="w-3 h-3" />
+          <Trash2 className="h-3 w-3" />
         </button>
       </div>
       <pre
         ref={scrollRef}
-        className="bg-background/60 text-[11px] leading-relaxed font-mono whitespace-pre-wrap break-all text-foreground/90 max-h-80 overflow-auto p-3"
+        className="bg-[hsl(var(--background))] text-[11px] leading-relaxed font-mono whitespace-pre-wrap break-all text-foreground/90 max-h-80 overflow-auto p-3"
       >
         {fullText || (live ? "Waiting for log lines…" : "(no output yet)")}
       </pre>
@@ -213,11 +296,6 @@ function MonitorPanel({ tgKey }: { tgKey: string }) {
   );
 }
 
-/**
- * Hook that registers this tool call against the shared stream and reports
- * back whether this call instance is the "owner" that should render the
- * panel (the first call for the target wins; later calls render nothing).
- */
 function useMonitorRegistration(
   callId: string | undefined,
   target: MonitorTarget,
@@ -239,8 +317,6 @@ function useMonitorRegistration(
     if (!callId || !isComplete || recordedRef.current) return;
     recordedRef.current = true;
     appendOutput(target, callId, resultText ?? "");
-    // intentionally exclude `target` from deps — its identity changes per
-    // render but the values are stable for a given tool call
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [callId, isComplete, resultText]);
 
@@ -259,17 +335,10 @@ export const MonitorLogsToolUI = makeAssistantToolUI<MonitorArgs, string>({
     const resultText = typeof result === "string" ? result : result ? JSON.stringify(result) : undefined;
     const isComplete = status.type === "complete";
     const { tgKey, isOwner } = useMonitorRegistration(toolCallId, target, resultText, isComplete);
-
-    // Only the first tool call for this target renders the live panel.
-    // Subsequent calls write into the same stream silently.
     if (!isOwner) return null;
     return <MonitorPanel tgKey={tgKey} />;
   },
 });
-
-// ── Human-in-the-loop tool: pure display, the actual prompt is handled
-// by InterruptPanel via useLangGraphInterruptState. This UI is shown for
-// completeness when the tool call appears in the message stream.
 
 interface AskHumanArgs {
   question: string;
@@ -281,26 +350,37 @@ export const AskHumanToolUI = makeAssistantToolUI<AskHumanArgs, string>({
   render: ({ args, result, status }) => {
     const answered = status.type === "complete";
     return (
-      <div className="my-2 rounded-md border border-amber-500/30 bg-amber-500/5 overflow-hidden">
-        <div className="flex items-start gap-2 px-3 py-2 text-xs">
-          <HelpCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
-          <div className="flex-1 min-w-0">
-            <div className="font-medium text-foreground">{args?.question}</div>
+      <div className="my-2.5 overflow-hidden rounded-xl border border-amber-500/30 bg-amber-500/[0.06] shadow-sm">
+        <div className="flex items-start gap-2.5 px-3 py-2.5 text-xs">
+          <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400">
+            <HelpCircle className="h-3.5 w-3.5" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700 dark:text-amber-400 mb-1">
+              Waiting for you
+            </div>
+            <div className="font-medium text-sm text-foreground leading-snug">{args?.question}</div>
             {args?.options && args.options.length > 0 && (
-              <div className="mt-1 flex flex-wrap gap-1.5">
+              <div className="mt-2 flex flex-wrap gap-1.5">
                 {args.options.map((o) => (
-                  <span key={o} className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300">{o}</span>
+                  <span
+                    key={o}
+                    className="text-[10px] px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-800 dark:text-amber-200 ring-1 ring-amber-500/20"
+                  >
+                    {o}
+                  </span>
                 ))}
               </div>
             )}
             {answered && typeof result === "string" && (
               <div className="mt-2 text-[11px] text-muted-foreground">
-                <span className="font-medium text-foreground">You: </span>{result.replace(/^User answered:\s*/, "")}
+                <span className="font-medium text-foreground">You · </span>
+                {result.replace(/^User answered:\s*/, "")}
               </div>
             )}
           </div>
-          {!answered && <Loader2 className="w-3 h-3 shrink-0 text-amber-500 animate-spin" />}
-          {answered && <CheckCircle2 className="w-3 h-3 shrink-0 text-green-500" />}
+          {!answered && <Loader2 className="h-3.5 w-3.5 shrink-0 text-amber-500 animate-spin" />}
+          {answered && <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />}
         </div>
       </div>
     );
@@ -318,5 +398,3 @@ export function ToolUIRegistry() {
     </>
   );
 }
-
-export { Bot };

@@ -1,109 +1,82 @@
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --font-sans: 'Inter', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
-
-  /* Light theme — background slightly darker than cards so panels "lift". */
-  --background: 220 14% 96%;
-  --foreground: 220 16% 12%;
-
-  --card: 0 0% 100%;
-  --card-foreground: 220 16% 12%;
-
-  --popover: 0 0% 100%;
-  --popover-foreground: 220 16% 12%;
-
-  --primary: 15 85% 53%;
-  --primary-foreground: 0 0% 100%;
-
-  --secondary: 220 12% 90%;
-  --secondary-foreground: 220 14% 18%;
-
-  --muted: 220 12% 91%;
-  --muted-foreground: 220 8% 38%;
-
-  --accent: 15 85% 53%;
-  --accent-foreground: 0 0% 100%;
-
-  --destructive: 0 72% 48%;
-  --destructive-foreground: 0 0% 100%;
-
-  --success: 160 65% 36%;
-  --success-foreground: 0 0% 100%;
-
-  --warning: 38 92% 48%;
-  --warning-foreground: 220 16% 12%;
-
-  /* Stronger border so card outlines are visible against the lifted background. */
-  --border: 220 13% 83%;
-  --input: 220 13% 83%;
-  --ring: 15 85% 53%;
-
-  --radius: 0.625rem;
-
-  --surface: 0 0% 100%;
-  --surface-inset: 220 14% 93%;
-
-  --chart-1: 15 85% 53%;
-  --chart-2: 160 65% 36%;
-  --chart-3: 258 55% 53%;
-  --chart-4: 38 80% 48%;
-  --chart-5: 340 65% 48%;
-}
-
+/*
+ * Single dark scheme — primary cyan matched to the AI mascot (#4FD1D9).
+ * No light mode. No multi-accent themes.
+ */
+:root,
 .dark {
-  --background: 220 6% 5%;
-  --foreground: 220 5% 88%;
+  --font-sans: 'Outfit', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
 
-  --card: 220 5% 8%;
-  --card-foreground: 220 5% 88%;
+  /* Near-black surfaces (logo bg family) */
+  --background: 0 0% 5%;
+  --foreground: 0 0% 96%;
 
-  --popover: 220 5% 9%;
-  --popover-foreground: 220 5% 88%;
+  --card: 0 0% 8%;
+  --card-foreground: 0 0% 96%;
+  --card-border: 0 0% 16%;
 
-  --primary: 15 80% 55%;
-  --primary-foreground: 0 0% 100%;
+  --popover: 0 0% 8%;
+  --popover-foreground: 0 0% 96%;
+  --popover-border: 0 0% 16%;
 
-  --secondary: 220 5% 14%;
-  --secondary-foreground: 220 5% 82%;
+  /* Brand cyan — exact AI icon face tone (#4FD1D9) */
+  --primary: 184 65% 58%;
+  --primary-foreground: 0 0% 6%;
 
-  --muted: 220 5% 13%;
-  --muted-foreground: 220 4% 50%;
+  --secondary: 0 0% 12%;
+  --secondary-foreground: 0 0% 92%;
 
-  --accent: 15 80% 55%;
-  --accent-foreground: 0 0% 100%;
+  --muted: 0 0% 12%;
+  --muted-foreground: 0 0% 68%;
 
-  --destructive: 0 60% 50%;
-  --destructive-foreground: 0 0% 95%;
+  --accent: 184 40% 12%;
+  --accent-foreground: 184 65% 72%;
+
+  --destructive: 0 70% 52%;
+  --destructive-foreground: 0 0% 100%;
 
   --success: 160 55% 42%;
   --success-foreground: 0 0% 100%;
 
-  --warning: 38 80% 50%;
-  --warning-foreground: 220 6% 10%;
+  --warning: 38 90% 52%;
+  --warning-foreground: 0 0% 8%;
 
-  --border: 220 5% 15%;
-  --input: 220 5% 15%;
-  --ring: 15 70% 50%;
+  --border: 0 0% 16%;
+  --input: 0 0% 16%;
+  --ring: 184 65% 58%;
 
-  --surface: 220 5% 7%;
-  --surface-inset: 220 6% 4%;
+  --radius: 0.625rem;
 
-  --chart-1: 15 80% 55%;
-  --chart-2: 160 50% 45%;
-  --chart-3: 258 50% 58%;
-  --chart-4: 38 60% 55%;
-  --chart-5: 340 50% 55%;
+  --surface: 0 0% 8%;
+  --surface-inset: 0 0% 4%;
+
+  --chart-1: 184 65% 58%;
+  --chart-2: 160 50% 48%;
+  --chart-3: 38 80% 54%;
+  --chart-4: 200 50% 55%;
+  --chart-5: 0 0% 55%;
+
+  --sidebar: 0 0% 4%;
+  --sidebar-foreground: 0 0% 96%;
+  --sidebar-border: 0 0% 14%;
+  --sidebar-primary: 184 65% 58%;
+  --sidebar-primary-foreground: 0 0% 6%;
+  --sidebar-accent: 0 0% 11%;
+  --sidebar-accent-foreground: 0 0% 94%;
+  --sidebar-ring: 184 65% 58%;
 }
 
 @layer base {
   * {
     @apply border-border;
+  }
+
+  html {
+    color-scheme: dark;
   }
 
   body {
@@ -119,41 +92,58 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: hsl(var(--muted-foreground) / 0.15);
+    background: hsl(var(--muted-foreground) / 0.28);
     border-radius: 9999px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--muted-foreground) / 0.25);
+    background: hsl(var(--muted-foreground) / 0.42);
   }
 
   * {
     scrollbar-width: thin;
-    scrollbar-color: hsl(var(--muted-foreground) / 0.15) transparent;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.28) transparent;
   }
 
   code, pre, .font-mono {
     font-family: var(--font-mono);
   }
 
+  /* Let xterm keep the Nerd Font stack set via Terminal options (do not force JetBrains) */
+  .xterm {
+    font-variant-ligatures: none;
+  }
+  .xterm .xterm-rows span {
+    font-family: inherit;
+  }
+
   ::selection {
-    @apply bg-primary/20;
+    @apply bg-primary/30 text-foreground;
   }
 }
 
 @layer components {
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
   .glass-panel {
-    @apply bg-card/80 backdrop-blur-md border border-border shadow-lg;
+    @apply bg-card border border-border shadow-sm;
   }
 
   .grid-bg {
-    background-image:
-      linear-gradient(hsl(var(--primary) / 0.03) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(var(--primary) / 0.03) 1px, transparent 1px);
-    background-size: 48px 48px;
+    background-image: none;
   }
 
   .card-elevated {
     @apply bg-card rounded-xl border border-border shadow-sm;
+  }
+
+  .main-gradient {
+    display: none;
   }
 
   .app-header {
@@ -167,125 +157,6 @@
   .app-no-drag {
     -webkit-app-region: no-drag;
   }
-}
-
-/* ── Light-mode tint pumps ────────────────────────────────
- * Many components use `bg-foreground/[0.02..0.08]` for subtle row hovers,
- * table zebra, button surfaces. In dark mode these read as faint white
- * highlights. In light mode the same opacity is faint dark on near-white,
- * which is nearly invisible. Bump the alpha of the most common opacity
- * stops so light mode keeps the same visual hierarchy as dark.
- */
-:root:not(.dark) .bg-foreground\/\[0\.02\]   { background-color: hsl(var(--foreground) / 0.04); }
-:root:not(.dark) .bg-foreground\/\[0\.03\]   { background-color: hsl(var(--foreground) / 0.05); }
-:root:not(.dark) .bg-foreground\/\[0\.04\]   { background-color: hsl(var(--foreground) / 0.06); }
-:root:not(.dark) .bg-foreground\/\[0\.05\]   { background-color: hsl(var(--foreground) / 0.07); }
-:root:not(.dark) .bg-foreground\/5            { background-color: hsl(var(--foreground) / 0.06); }
-:root:not(.dark) .bg-foreground\/8            { background-color: hsl(var(--foreground) / 0.10); }
-:root:not(.dark) .hover\:bg-foreground\/\[0\.02\]:hover { background-color: hsl(var(--foreground) / 0.05); }
-:root:not(.dark) .hover\:bg-foreground\/\[0\.03\]:hover { background-color: hsl(var(--foreground) / 0.06); }
-:root:not(.dark) .hover\:bg-foreground\/\[0\.04\]:hover { background-color: hsl(var(--foreground) / 0.07); }
-:root:not(.dark) .hover\:bg-foreground\/5:hover         { background-color: hsl(var(--foreground) / 0.07); }
-:root:not(.dark) .hover\:bg-foreground\/8:hover         { background-color: hsl(var(--foreground) / 0.10); }
-
-/* Same problem for `bg-muted/30..60` — too washed-out in light mode. */
-:root:not(.dark) .bg-muted\/20 { background-color: hsl(var(--muted) / 0.6); }
-:root:not(.dark) .bg-muted\/30 { background-color: hsl(var(--muted) / 0.7); }
-:root:not(.dark) .bg-muted\/40 { background-color: hsl(var(--muted) / 0.8); }
-:root:not(.dark) .bg-muted\/50 { background-color: hsl(var(--muted) / 0.9); }
-:root:not(.dark) .hover\:bg-muted\/40:hover { background-color: hsl(var(--muted) / 0.85); }
-:root:not(.dark) .hover\:bg-muted\/50:hover { background-color: hsl(var(--muted) / 0.95); }
-:root:not(.dark) .hover\:bg-muted\/60:hover { background-color: hsl(var(--muted) / 1); }
-
-
-/* ── Accent Color Themes ─────────────────────────────────── */
-
-/* Coral (default) — no class needed, it's the base */
-
-/* Ocean Blue */
-.accent-blue {
-  --primary: 210 85% 52%;
-  --accent: 210 85% 52%;
-  --ring: 210 85% 52%;
-  --chart-1: 210 85% 52%;
-}
-.dark.accent-blue, .dark .accent-blue {
-  --primary: 210 80% 58%;
-  --accent: 210 80% 58%;
-  --ring: 210 70% 52%;
-  --chart-1: 210 80% 58%;
-}
-
-/* Violet */
-.accent-violet {
-  --primary: 262 80% 55%;
-  --accent: 262 80% 55%;
-  --ring: 262 80% 55%;
-  --chart-1: 262 80% 55%;
-}
-.dark.accent-violet, .dark .accent-violet {
-  --primary: 262 75% 62%;
-  --accent: 262 75% 62%;
-  --ring: 262 65% 55%;
-  --chart-1: 262 75% 62%;
-}
-
-/* Emerald */
-.accent-emerald {
-  --primary: 160 70% 38%;
-  --accent: 160 70% 38%;
-  --ring: 160 70% 38%;
-  --chart-1: 160 70% 38%;
-}
-.dark.accent-emerald, .dark .accent-emerald {
-  --primary: 160 60% 45%;
-  --accent: 160 60% 45%;
-  --ring: 160 55% 42%;
-  --chart-1: 160 60% 45%;
-}
-
-/* Rose */
-.accent-rose {
-  --primary: 340 75% 52%;
-  --accent: 340 75% 52%;
-  --ring: 340 75% 52%;
-  --chart-1: 340 75% 52%;
-}
-.dark.accent-rose, .dark .accent-rose {
-  --primary: 340 70% 58%;
-  --accent: 340 70% 58%;
-  --ring: 340 65% 52%;
-  --chart-1: 340 70% 58%;
-}
-
-/* Amber */
-.accent-amber {
-  --primary: 38 90% 48%;
-  --accent: 38 90% 48%;
-  --ring: 38 90% 48%;
-  --chart-1: 38 90% 48%;
-  --primary-foreground: 20 15% 10%;
-}
-.dark.accent-amber, .dark .accent-amber {
-  --primary: 38 80% 52%;
-  --accent: 38 80% 52%;
-  --ring: 38 70% 48%;
-  --chart-1: 38 80% 52%;
-  --primary-foreground: 20 15% 10%;
-}
-
-/* Cyan */
-.accent-cyan {
-  --primary: 192 80% 42%;
-  --accent: 192 80% 42%;
-  --ring: 192 80% 42%;
-  --chart-1: 192 80% 42%;
-}
-.dark.accent-cyan, .dark .accent-cyan {
-  --primary: 192 70% 48%;
-  --accent: 192 70% 48%;
-  --ring: 192 60% 45%;
-  --chart-1: 192 70% 48%;
 }
 
 /* xterm.js overrides */
@@ -303,9 +174,9 @@
   background: transparent;
 }
 .xterm-viewport::-webkit-scrollbar-thumb {
-  background: hsl(var(--primary) / 0.15);
+  background: hsl(var(--primary) / 0.25);
   border-radius: 3px;
 }
 .xterm-viewport::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--primary) / 0.3);
+  background: hsl(var(--primary) / 0.4);
 }
