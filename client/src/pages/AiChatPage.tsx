@@ -1,6 +1,7 @@
-import { useMemo } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 import {
-  Bug, Search, Zap, Trash2, Network, Activity, Eye,
+  Bug, Search, Zap, Trash2, Network, Activity, Eye, MessageSquare,
+  ClipboardList, Radar, Wrench,
 } from "lucide-react";
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
 import { useLangGraphRuntime } from "@assistant-ui/react-langgraph";
@@ -14,57 +15,124 @@ import { ChatDeepLink } from "@/components/assistant/ChatDeepLink";
 import { AiAvatarChip } from "@/components/assistant/AiAvatar";
 import { buildKubeChatStream, getThreadId, resetThreadId } from "@/lib/ai-runtime";
 
-const SUGGESTIONS: Suggestion[] = [
-  {
-    category: "Investigate",
-    label: "Pod crash",
-    description: "Diagnose CrashLoopBackOff and find the root cause",
-    prompt: "Why is my pod in CrashLoopBackOff? Inspect the worst offenders in this namespace, then show a dashboard of restarts and issues.",
-    icon: <Bug className="w-3.5 h-3.5" />,
-  },
-  {
-    category: "Cluster",
-    label: "Health board",
-    description: "Visual SRE dashboard for this namespace",
-    prompt: "Build a full health dashboard for the current namespace: pod health, deployment readiness, top restarting pods, recent warning/error events. Use present_dashboard with KPIs, charts, and an issues list.",
-    icon: <Zap className="w-3.5 h-3.5" />,
-  },
-  {
-    category: "Cluster",
-    label: "Performance",
-    description: "CPU/memory tops and noisy neighbors",
-    prompt: "Show performance for this namespace using kubectl top if available: busiest pods/nodes, utilization charts, and flag anything over-pressured. Use present_dashboard.",
-    icon: <Activity className="w-3.5 h-3.5" />,
-  },
-  {
-    category: "Investigate",
-    label: "Restarts",
-    description: "Find high-restart pods and explain what broke",
-    prompt: "Show pods with high restart counts, chart the top 10, and diagnose the worst one.",
-    icon: <Search className="w-3.5 h-3.5" />,
-  },
-  {
-    category: "Investigate",
-    label: "Rollouts",
-    description: "Check deployment readiness across the namespace",
-    prompt: "Check all deployments' rollout status and list any that are not fully ready, as a dashboard plus findings.",
-    icon: <Activity className="w-3.5 h-3.5" />,
-  },
-  {
-    category: "Debug API",
-    label: "End-to-end call",
-    description: "Map the call graph and pull service logs",
-    prompt: "I need to debug an API call end-to-end. Ask me which service is the entrypoint, then map the call graph and pull logs from every service in the path.",
-    icon: <Network className="w-3.5 h-3.5" />,
-  },
-  {
-    category: "Observe",
-    label: "Watch logs",
-    description: "Live-tail a pod for new errors",
-    prompt: "Watch the logs of a pod I'll specify and alert me to any new errors over the next few minutes.",
-    icon: <Eye className="w-3.5 h-3.5" />,
-  },
+export type ChatMode = "chat" | "troubleshoot" | "briefing" | "investigate";
+
+const MODE_KEY = "kubedeck.ai.chatMode";
+
+const MODES: {
+  id: ChatMode;
+  label: string;
+  hint: string;
+  icon: typeof MessageSquare;
+}[] = [
+  { id: "chat", label: "Chat", hint: "General operator Q&A", icon: MessageSquare },
+  { id: "troubleshoot", label: "Troubleshoot", hint: "Root-cause analysis", icon: Wrench },
+  { id: "briefing", label: "Briefing", hint: "Status + dashboard", icon: ClipboardList },
+  { id: "investigate", label: "Investigate", hint: "Deep multi-hop debug", icon: Radar },
 ];
+
+const SUGGESTIONS_BY_MODE: Record<ChatMode, Suggestion[]> = {
+  chat: [
+    {
+      category: "Cluster",
+      label: "Health board",
+      description: "Visual SRE dashboard for this namespace",
+      prompt: "Build a full health dashboard for the current namespace: pod health, deployment readiness, top restarting pods. Use present_dashboard with KPIs, charts, and an issues list.",
+      icon: <Zap className="w-3.5 h-3.5" />,
+    },
+    {
+      category: "Cluster",
+      label: "Performance",
+      description: "CPU/memory tops and noisy neighbors",
+      prompt: "Show performance for this namespace using kubectl top if available: busiest pods, utilization charts. Use present_dashboard.",
+      icon: <Activity className="w-3.5 h-3.5" />,
+    },
+    {
+      category: "Ask",
+      label: "What's running?",
+      description: "Summarize pods and deployments in scope",
+      prompt: "List what's running in this namespace and give a concise summary of health.",
+      icon: <Search className="w-3.5 h-3.5" />,
+    },
+  ],
+  troubleshoot: [
+    {
+      category: "Investigate",
+      label: "Pod crash",
+      description: "Diagnose CrashLoopBackOff",
+      prompt: "Why is my pod in CrashLoopBackOff? Find the worst offenders, describe and pull logs, state the root cause with evidence.",
+      icon: <Bug className="w-3.5 h-3.5" />,
+    },
+    {
+      category: "Investigate",
+      label: "Restarts",
+      description: "High restart pods",
+      prompt: "Show pods with high restart counts, diagnose the worst one with describe + logs, and give a fix recommendation.",
+      icon: <Search className="w-3.5 h-3.5" />,
+    },
+    {
+      category: "Investigate",
+      label: "Image pull",
+      description: "ImagePullBackOff errors",
+      prompt: "Find ImagePullBackOff / ErrImagePull pods and explain the cause from describe events.",
+      icon: <Bug className="w-3.5 h-3.5" />,
+    },
+  ],
+  briefing: [
+    {
+      category: "Cluster",
+      label: "Namespace briefing",
+      description: "Executive health snapshot",
+      prompt: "Give me a briefing on this namespace: readiness, unhealthy deploys/pods, score 0–100. Use present_dashboard and keep it short.",
+      icon: <ClipboardList className="w-3.5 h-3.5" />,
+    },
+    {
+      category: "Cluster",
+      label: "Rollout status",
+      description: "Deploy readiness board",
+      prompt: "Check all deployments' readiness and present a dashboard of ready vs desired plus issues.",
+      icon: <Activity className="w-3.5 h-3.5" />,
+    },
+    {
+      category: "Cluster",
+      label: "Health board",
+      description: "KPIs + issues",
+      prompt: "Build a health dashboard for the current namespace with metrics, charts, and ranked issues.",
+      icon: <Zap className="w-3.5 h-3.5" />,
+    },
+  ],
+  investigate: [
+    {
+      category: "Debug API",
+      label: "End-to-end call",
+      description: "Map call graph + logs",
+      prompt: "I need to debug an API call end-to-end. Ask me which service is the entrypoint if unclear, then map the path and pull logs from services on the path.",
+      icon: <Network className="w-3.5 h-3.5" />,
+    },
+    {
+      category: "Observe",
+      label: "Watch logs",
+      description: "Live-tail for new errors",
+      prompt: "Watch the logs of a pod I'll specify and flag any new errors. Use monitor_logs.",
+      icon: <Eye className="w-3.5 h-3.5" />,
+    },
+    {
+      category: "Investigate",
+      label: "Failing deploy",
+      description: "Full rollout forensics",
+      prompt: "Find deployments not fully ready, inspect related pods/events/logs, and produce a forensics summary with a dashboard of impact.",
+      icon: <Radar className="w-3.5 h-3.5" />,
+    },
+  ],
+};
+
+function loadMode(): ChatMode {
+  try {
+    const v = sessionStorage.getItem(MODE_KEY) as ChatMode | null;
+    if (v && MODES.some((m) => m.id === v)) return v;
+  } catch { /* ignore */ }
+  return "chat";
+}
 
 function ChatHeader({
   provider, model, context, namespace, onClear,
@@ -127,14 +195,24 @@ export default function AiChatPage() {
   const { data: settings } = useSettings();
   const provider = settings?.ai?.provider || "openai";
   const model = settings?.ai?.model || "gpt-4o-mini";
+  const [mode, setMode] = useState<ChatMode>(loadMode);
 
   useK8sPods(context, namespace);
   useK8sDeployments(context, namespace);
   useK8sServices(context, namespace);
   const resourceNames = useResourceNames();
 
-  const buildSystemMessage = () => {
-    const base = `[Context: ${context || "default"}, Namespace: ${namespace || "all"}]`;
+  const handleModeChange = useCallback((m: ChatMode) => {
+    setMode(m);
+    try { sessionStorage.setItem(MODE_KEY, m); } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    try { sessionStorage.setItem(MODE_KEY, mode); } catch { /* ignore */ }
+  }, [mode]);
+
+  const buildSystemMessage = useCallback(() => {
+    const base = `[Context: ${context || "default"}, Namespace: ${namespace || "all"}, Mode: ${mode}]`;
     if (resourceNames.length === 0) return base;
     const byKind: Record<string, string[]> = {};
     for (const r of resourceNames) {
@@ -148,7 +226,7 @@ export default function AiChatPage() {
     }
     if (lines.length === 0) return base;
     return `${base}\n\nAvailable resources in scope (use these EXACT names when the user refers to a resource by a fragment like "course" or "flarum"):\n${lines.join("\n")}`;
-  };
+  }, [context, namespace, mode, resourceNames]);
 
   const stream = useMemo(
     () =>
@@ -156,8 +234,7 @@ export default function AiChatPage() {
         systemMessage: buildSystemMessage,
         threadId: () => getThreadId(),
       }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [context, namespace, resourceNames.length],
+    [buildSystemMessage],
   );
 
   const runtime = useLangGraphRuntime({
@@ -174,6 +251,9 @@ export default function AiChatPage() {
     ? `${context} / ${namespace || "all"}`
     : undefined;
 
+  const modeMeta = MODES.find((m) => m.id === mode) || MODES[0];
+  const suggestions = SUGGESTIONS_BY_MODE[mode];
+
   return (
     <div className="flex flex-col h-full overflow-hidden text-foreground bg-background">
       <AppHeader />
@@ -188,12 +268,23 @@ export default function AiChatPage() {
         <AssistantRuntimeProvider runtime={runtime}>
           <ChatDeepLink />
           <Thread
-            suggestions={SUGGESTIONS}
+            suggestions={suggestions}
             scopeLabel={scopeLabel}
-            welcomeTitle="What should we investigate?"
+            modes={MODES}
+            mode={mode}
+            onModeChange={(id) => handleModeChange(id as ChatMode)}
+            welcomeTitle={
+              mode === "briefing"
+                ? "Ready for a cluster briefing"
+                : mode === "troubleshoot"
+                  ? "What should we diagnose?"
+                  : mode === "investigate"
+                    ? "What path should we investigate?"
+                    : "What should we investigate?"
+            }
             welcomeSubtitle={
               context
-                ? "Cluster-aware SRE assistant with live kubectl. Pick a skill or type a question."
+                ? `${modeMeta.hint}. Live kubectl · structured k8s tools · human approval for mutations.`
                 : "Loading kubectl context… set one in the header if needed."
             }
           />

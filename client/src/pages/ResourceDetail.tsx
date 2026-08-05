@@ -67,21 +67,92 @@ function TerminalPane({ content, isLoading, emptyMsg = "No data" }: {
 
 /* ── YAML Viewer with syntax highlighting ────────── */
 
+function YamlValueSpan({ value }: { value: string }) {
+  if (!value) return null;
+  // trailing inline comments: value # comment
+  const commentIdx = (() => {
+    let inSingle = false;
+    let inDouble = false;
+    for (let i = 0; i < value.length; i++) {
+      const ch = value[i];
+      if (ch === "'" && !inDouble) inSingle = !inSingle;
+      else if (ch === '"' && !inSingle) inDouble = !inDouble;
+      else if (ch === "#" && !inSingle && !inDouble && (i === 0 || /\s/.test(value[i - 1]))) return i;
+    }
+    return -1;
+  })();
+  const main = commentIdx >= 0 ? value.slice(0, commentIdx) : value;
+  const comment = commentIdx >= 0 ? value.slice(commentIdx) : "";
+  const t = main.trim();
+  let cls = "text-foreground/75";
+  if (!t) cls = "text-muted-foreground/40";
+  else if (t === "|" || t === ">" || t === "|-" || t === ">-" || t === "|+" || t === ">+") cls = "text-sky-400";
+  else if (/^(true|false|null|~|True|False|Null|TRUE|FALSE|NULL)$/.test(t)) cls = "text-violet-400";
+  else if (/^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(t)) cls = "text-amber-300";
+  else if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) cls = "text-emerald-400/90";
+  else if (t.startsWith("&") || t.startsWith("*") || t.startsWith("!")) cls = "text-fuchsia-400";
+  else if (t.startsWith("{") || t.startsWith("[")) cls = "text-cyan-300/90";
+  else cls = "text-emerald-400/80";
+
+  return (
+    <>
+      <span className={cls}>{main}</span>
+      {comment && <span className="text-muted-foreground/45 italic">{comment}</span>}
+    </>
+  );
+}
+
+type YamlLine =
+  | { type: "blank"; text: string }
+  | { type: "doc"; indent: string; text: string }
+  | { type: "comment"; indent: string; text: string }
+  | { type: "kv"; indent: string; key: string; sep: string; value: string }
+  | { type: "list-kv"; indent: string; dash: string; key: string; sep: string; value: string }
+  | { type: "list"; indent: string; dash: string; rest: string }
+  | { type: "plain"; text: string };
+
+function parseYamlLine(line: string): YamlLine {
+  if (!line.trim()) return { type: "blank", text: line };
+
+  const docMatch = line.match(/^(\s*)(---|\.\.\.)(.*)$/);
+  if (docMatch) return { type: "doc", indent: docMatch[1], text: docMatch[2] + docMatch[3] };
+
+  const commentMatch = line.match(/^(\s*)(#.*)$/);
+  if (commentMatch) return { type: "comment", indent: commentMatch[1], text: commentMatch[2] };
+
+  const listKv = line.match(/^(\s*)(- )([\w.\-/]+)(\s*:\s*)(.*)$/);
+  if (listKv) {
+    return {
+      type: "list-kv",
+      indent: listKv[1],
+      dash: listKv[2],
+      key: listKv[3],
+      sep: listKv[4],
+      value: listKv[5],
+    };
+  }
+
+  const kvMatch = line.match(/^(\s*)([\w.\-/]+)(\s*:\s*)(.*)$/);
+  if (kvMatch) {
+    return {
+      type: "kv",
+      indent: kvMatch[1],
+      key: kvMatch[2],
+      sep: kvMatch[3],
+      value: kvMatch[4],
+    };
+  }
+
+  const listMatch = line.match(/^(\s*)(- )(.*)$/);
+  if (listMatch) return { type: "list", indent: listMatch[1], dash: listMatch[2], rest: listMatch[3] };
+
+  return { type: "plain", text: line };
+}
+
 function YamlViewer({ content, isLoading }: { content?: string; isLoading: boolean }) {
   const highlighted = useMemo(() => {
-    if (!content) return [];
-    return content.split("\n").map((line) => {
-      const commentMatch = line.match(/^(\s*)(#.*)$/);
-      if (commentMatch) return { indent: commentMatch[1], type: "comment" as const, text: commentMatch[2] };
-
-      const kvMatch = line.match(/^(\s*)([\w.\-/]+)(\s*:\s*)(.*)$/);
-      if (kvMatch) return { indent: kvMatch[1], type: "kv" as const, key: kvMatch[2], sep: kvMatch[3], value: kvMatch[4] };
-
-      const listMatch = line.match(/^(\s*)(- )(.*)$/);
-      if (listMatch) return { indent: listMatch[1], type: "list" as const, dash: listMatch[2], rest: listMatch[3] };
-
-      return { type: "plain" as const, text: line };
-    });
+    if (!content) return [] as YamlLine[];
+    return content.split("\n").map(parseYamlLine);
   }, [content]);
 
   if (isLoading) return <div className="h-full flex items-center justify-center text-muted-foreground font-mono text-[11px] animate-pulse">Loading YAML...</div>;
@@ -90,15 +161,49 @@ function YamlViewer({ content, isLoading }: { content?: string; isLoading: boole
   return (
     <div className="relative h-full">
       <div className="absolute top-2 right-2 z-10"><CopyButton text={content} /></div>
-      <div className="h-full overflow-auto p-4 bg-surface-inset rounded border border-border font-mono text-[11px] leading-relaxed">
+      <div className="h-full overflow-auto p-4 rounded-lg border border-border bg-[hsl(220_18%_8%)] font-mono text-[11.5px] leading-[1.65] shadow-inner">
         {highlighted.map((line, i) => (
-          <div key={i} className="hover:bg-foreground/[0.02] flex">
-            <span className="text-muted-foreground/40 select-none mr-3 inline-block w-10 text-right tabular-nums shrink-0">{i + 1}</span>
-            <span className="whitespace-pre">
-              {line.type === "comment" && <><span>{line.indent}</span><span className="text-muted-foreground/50">{line.text}</span></>}
-              {line.type === "kv" && <><span>{line.indent}</span><span className="text-foreground/80">{line.key}</span><span className="text-muted-foreground">{line.sep}</span><span className="text-foreground/60">{line.value}</span></>}
-              {line.type === "list" && <><span>{line.indent}</span><span className="text-muted-foreground">{line.dash}</span><span className="text-foreground/60">{line.rest}</span></>}
-              {line.type === "plain" && <span className="text-foreground/60">{line.text}</span>}
+          <div key={i} className="hover:bg-white/[0.03] flex min-h-[1.65em] group">
+            <span className="text-muted-foreground/35 select-none mr-3.5 inline-block w-9 text-right tabular-nums shrink-0 group-hover:text-muted-foreground/55 transition-colors">{i + 1}</span>
+            <span className="whitespace-pre min-w-0 flex-1">
+              {line.type === "blank" && <span>{line.text || "\u00a0"}</span>}
+              {line.type === "doc" && (
+                <>
+                  <span>{line.indent}</span>
+                  <span className="text-rose-400/90 font-semibold">{line.text}</span>
+                </>
+              )}
+              {line.type === "comment" && (
+                <>
+                  <span>{line.indent}</span>
+                  <span className="text-muted-foreground/50 italic">{line.text}</span>
+                </>
+              )}
+              {line.type === "kv" && (
+                <>
+                  <span>{line.indent}</span>
+                  <span className="text-sky-300 font-medium">{line.key}</span>
+                  <span className="text-muted-foreground/70">{line.sep}</span>
+                  <YamlValueSpan value={line.value} />
+                </>
+              )}
+              {line.type === "list-kv" && (
+                <>
+                  <span>{line.indent}</span>
+                  <span className="text-amber-400/90">{line.dash}</span>
+                  <span className="text-sky-300 font-medium">{line.key}</span>
+                  <span className="text-muted-foreground/70">{line.sep}</span>
+                  <YamlValueSpan value={line.value} />
+                </>
+              )}
+              {line.type === "list" && (
+                <>
+                  <span>{line.indent}</span>
+                  <span className="text-amber-400/90">{line.dash}</span>
+                  <YamlValueSpan value={line.rest} />
+                </>
+              )}
+              {line.type === "plain" && <span className="text-foreground/65">{line.text}</span>}
             </span>
           </div>
         ))}

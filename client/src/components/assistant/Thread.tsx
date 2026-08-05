@@ -1,4 +1,4 @@
-import { type FC, type ReactNode } from "react";
+import { type FC, type ReactNode, type ComponentType } from "react";
 import {
   ThreadPrimitive,
   MessagePrimitive,
@@ -19,6 +19,7 @@ import {
   RotateCcw,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Loader2,
   AlertCircle,
 } from "lucide-react";
@@ -28,6 +29,12 @@ import { InterruptPanel } from "./InterruptPanel";
 import { PresentDashboardToolUI } from "./DashboardToolUI";
 import { AiAvatarChip } from "./AiAvatar";
 import { cn } from "@/lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export interface Suggestion {
   label: string;
@@ -37,11 +44,22 @@ export interface Suggestion {
   category?: string;
 }
 
+export interface ChatModeOption {
+  id: string;
+  label: string;
+  hint: string;
+  icon: ComponentType<{ className?: string }>;
+}
+
 interface ThreadProps {
   suggestions?: Suggestion[];
   welcomeTitle?: string;
   welcomeSubtitle?: string;
   scopeLabel?: string;
+  /** Mode control rendered under the composer (ChatGPT-style). */
+  modes?: ChatModeOption[];
+  mode?: string;
+  onModeChange?: (mode: string) => void;
 }
 
 const MAX_W = "max-w-[48rem]";
@@ -51,6 +69,9 @@ export const Thread: FC<ThreadProps> = ({
   welcomeTitle = "How can I help with your cluster?",
   welcomeSubtitle = "Ask anything — I have live kubectl access.",
   scopeLabel,
+  modes,
+  mode,
+  onModeChange,
 }) => {
   return (
     <ThreadPrimitive.Root
@@ -90,7 +111,7 @@ export const Thread: FC<ThreadProps> = ({
       <div className="relative z-20">
         <ScrollToBottom />
         <InterruptPanel />
-        <Composer />
+        <Composer modes={modes} mode={mode} onModeChange={onModeChange} />
       </div>
     </ThreadPrimitive.Root>
   );
@@ -435,9 +456,16 @@ const BranchPicker: FC<{ className?: string }> = ({ className }) => {
 
 // ─── Composer ─────────────────────────────────────────────
 
-const Composer: FC = () => {
+const Composer: FC<{
+  modes?: ChatModeOption[];
+  mode?: string;
+  onModeChange?: (mode: string) => void;
+}> = ({ modes, mode, onModeChange }) => {
+  const active = modes?.find((m) => m.id === mode) || modes?.[0];
+  const ActiveIcon = active?.icon;
+
   return (
-    <div className={cn("mx-auto w-full px-4 sm:px-6 pb-5 pt-2", MAX_W)}>
+    <div className={cn("mx-auto w-full px-4 sm:px-6 pb-4 pt-2", MAX_W)}>
       <div className="relative">
         <ComposerPrimitive.Root
           className={cn(
@@ -459,15 +487,82 @@ const Composer: FC = () => {
           <ComposerAction />
         </ComposerPrimitive.Root>
       </div>
-      <div className="mt-2.5 flex items-center justify-center gap-3 text-[10px] text-muted-foreground/80">
-        <span>
-          <kbd className="rounded border border-border/60 bg-muted/40 px-1 py-0.5 font-mono text-[9px]">↵</kbd>
-          {" "}send
-        </span>
-        <span className="text-border">·</span>
-        <span>Destructive cmds blocked</span>
-        <span className="text-border">·</span>
-        <span>Verify cluster changes</span>
+
+      {/* Mode + hints sit under the input (ChatGPT / Gemini style) */}
+      <div className="mt-2 flex items-center justify-between gap-3 min-h-8">
+        <div className="flex items-center gap-2 min-w-0">
+          {modes && modes.length > 0 && onModeChange && active && ActiveIcon && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className={cn(
+                    "inline-flex items-center gap-1.5 h-8 max-w-full rounded-full px-2.5",
+                    "border border-border/70 bg-secondary/40 text-[11px] font-medium",
+                    "text-foreground hover:bg-secondary/70 hover:border-border",
+                    "transition-colors outline-none",
+                    "focus-visible:ring-2 focus-visible:ring-primary/25",
+                  )}
+                  title={active.hint}
+                >
+                  <ActiveIcon className="w-3.5 h-3.5 text-primary shrink-0" />
+                  <span className="truncate">{active.label}</span>
+                  <ChevronDown className="w-3 h-3 text-muted-foreground shrink-0 opacity-80" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                side="top"
+                sideOffset={8}
+                className="w-64 p-1.5"
+              >
+                {modes.map((m) => {
+                  const Icon = m.icon;
+                  const selected = m.id === active.id;
+                  return (
+                    <DropdownMenuItem
+                      key={m.id}
+                      onClick={() => onModeChange(m.id)}
+                      className={cn(
+                        "flex items-start gap-2.5 rounded-lg px-2.5 py-2 cursor-pointer",
+                        selected && "bg-primary/10",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
+                          selected ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground",
+                        )}
+                      >
+                        <Icon className="w-3.5 h-3.5" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-1.5">
+                          <span className="text-xs font-semibold text-foreground">{m.label}</span>
+                          {selected && (
+                            <Check className="w-3 h-3 text-primary shrink-0" />
+                          )}
+                        </span>
+                        <span className="block text-[10px] text-muted-foreground leading-snug mt-0.5">
+                          {m.hint}
+                        </span>
+                      </span>
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2.5 text-[10px] text-muted-foreground/80 shrink-0">
+          <span className="hidden sm:inline">
+            <kbd className="rounded border border-border/60 bg-muted/40 px-1 py-0.5 font-mono text-[9px]">↵</kbd>
+            {" "}send
+          </span>
+          <span className="hidden sm:inline text-border">·</span>
+          <span>Destructive cmds blocked</span>
+        </div>
       </div>
     </div>
   );

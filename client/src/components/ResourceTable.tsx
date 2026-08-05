@@ -1,17 +1,32 @@
 import { StatusBadge } from "./StatusBadge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Search, AlertTriangle, ShieldOff } from "lucide-react";
-import { useState, useMemo } from "react";
+import { Search, AlertTriangle, ShieldOff, Columns3, RotateCcw } from "lucide-react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import { formatDistanceToNow } from "date-fns";
 import { K8sError } from "@/hooks/use-k8s";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
-interface Column<T> {
+export interface Column<T> {
+  /** Stable id for visibility persistence (defaults to header). */
+  id?: string;
   header: string;
   accessorKey?: keyof T;
   cell?: (item: T) => React.ReactNode;
   minWidth?: string;
   nowrap?: boolean;
+  /** When true, column cannot be hidden (e.g. resource name). */
+  required?: boolean;
+  /** Start hidden until the user enables it (default false). */
+  defaultHidden?: boolean;
 }
 
 interface ResourceTableProps<T> {
@@ -24,6 +39,11 @@ interface ResourceTableProps<T> {
   accentColor?: string;
   search?: string;
   onSearchChange?: (value: string) => void;
+  /**
+   * Persist column visibility under this key (localStorage).
+   * Prefer one id per resource kind (e.g. "pods", "deployments").
+   */
+  tableId?: string;
 }
 
 function formatAge(timestamp: string): string {
@@ -45,48 +65,195 @@ function formatAge(timestamp: string): string {
   }
 }
 
-export function ResourceTable<T extends { name: string; status?: string }>({ 
-  data, 
-  columns, 
+function resolveColId<T>(col: Column<T>, index: number): string {
+  if (col.id) return col.id;
+  if (col.accessorKey) return String(col.accessorKey);
+  return col.header.toLowerCase().replace(/\s+/g, "-") || `col-${index}`;
+}
+
+function storageKey(tableId: string): string {
+  return `kubedeck.tableColumns.${tableId}`;
+}
+
+function loadHidden(tableId: string | undefined, defaults: string[]): Set<string> {
+  const base = new Set(defaults);
+  if (!tableId) return base;
+  try {
+    const raw = localStorage.getItem(storageKey(tableId));
+    if (!raw) return base;
+    const parsed = JSON.parse(raw) as { hidden?: string[] };
+    if (Array.isArray(parsed.hidden)) return new Set(parsed.hidden);
+  } catch { /* ignore */ }
+  return base;
+}
+
+function saveHidden(tableId: string | undefined, hidden: Set<string>) {
+  if (!tableId) return;
+  try {
+    localStorage.setItem(storageKey(tableId), JSON.stringify({ hidden: Array.from(hidden) }));
+  } catch { /* ignore */ }
+}
+
+export function ResourceTable<T extends { name: string; status?: string }>({
+  data,
+  columns,
   isLoading,
   isError,
   error,
   searchKey = "name",
   search: controlledSearch,
   onSearchChange,
+  tableId,
 }: ResourceTableProps<T>) {
   const [internalSearch, setInternalSearch] = useState("");
   const search = controlledSearch ?? internalSearch;
   const setSearch = onSearchChange ?? setInternalSearch;
   const isForbidden = error instanceof K8sError && error.isForbidden;
 
-  const filteredData = useMemo(() => data?.filter(item => 
-    String(item[searchKey]).toLowerCase().includes(search.toLowerCase())
-  ), [data, searchKey, search]);
+  const columnMeta = useMemo(
+    () =>
+      columns.map((col, i) => ({
+        col,
+        id: resolveColId(col, i),
+        required: col.required === true || i === 0 || col.accessorKey === "name",
+      })),
+    [columns],
+  );
 
-  const colCount = columns.length;
+  const defaultHiddenIds = useMemo(
+    () => columnMeta.filter((c) => c.col.defaultHidden && !c.required).map((c) => c.id),
+    [columnMeta],
+  );
+
+  const [hidden, setHidden] = useState<Set<string>>(() => loadHidden(tableId, defaultHiddenIds));
+
+  // Reload prefs when switching resource tabs
+  useEffect(() => {
+    setHidden(loadHidden(tableId, defaultHiddenIds));
+    // only when table identity changes; defaultHiddenIds is stable per tableId
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tableId]);
+
+  const toggleColumn = useCallback(
+    (id: string, required: boolean) => {
+      if (required) return;
+      setHidden((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        saveHidden(tableId, next);
+        return next;
+      });
+    },
+    [tableId],
+  );
+
+  const resetColumns = useCallback(() => {
+    const next = new Set(defaultHiddenIds);
+    setHidden(next);
+    saveHidden(tableId, next);
+  }, [defaultHiddenIds, tableId]);
+
+  const visibleCols = useMemo(
+    () => columnMeta.filter((c) => c.required || !hidden.has(c.id)),
+    [columnMeta, hidden],
+  );
+
+  const filteredData = useMemo(
+    () =>
+      data?.filter((item) =>
+        String(item[searchKey]).toLowerCase().includes(search.toLowerCase()),
+      ),
+    [data, searchKey, search],
+  );
+
+  const colCount = visibleCols.length;
+  const hiddenCount = columnMeta.length - visibleCols.length;
 
   return (
     <div className="card-elevated overflow-hidden">
       {/* Search bar */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-border/50">
-        <div className="relative w-80">
+        <div className="relative w-80 max-w-[50%]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-          <input 
-            placeholder="Filter resources..." 
+          <input
+            placeholder="Filter resources..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full h-8 pl-9 pr-3 bg-secondary/50 border border-border/50 rounded-lg text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-colors"
           />
         </div>
-        <div className="text-xs text-muted-foreground ml-auto tabular-nums">
-          {isForbidden ? (
-            <span className="text-amber-600 dark:text-amber-400 flex items-center gap-1.5 font-semibold text-[10px]"><ShieldOff size={13} /> Access denied</span>
-          ) : isError ? (
-            <span className="text-red-600 dark:text-red-400 flex items-center gap-1.5 font-semibold text-[10px]"><AlertTriangle size={13} /> Fetch error</span>
-          ) : (
-            <span className="bg-primary/10 text-primary border border-primary/20 px-2.5 py-1 rounded-full text-[10px] font-semibold">{filteredData?.length ?? 0} resources</span>
+
+        <div className="flex items-center gap-2 ml-auto shrink-0">
+          {columnMeta.length > 1 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-border/60 bg-secondary/40 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/70 transition-colors"
+                  title="Show or hide columns"
+                >
+                  <Columns3 className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Columns</span>
+                  {hiddenCount > 0 && (
+                    <span className="tabular-nums text-[10px] text-primary font-semibold">
+                      −{hiddenCount}
+                    </span>
+                  )}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuLabel className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">
+                  Visible fields
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {columnMeta
+                  .filter(({ col }) => col.header.trim().length > 0)
+                  .map(({ col, id, required }) => {
+                  const checked = required || !hidden.has(id);
+                  return (
+                    <DropdownMenuCheckboxItem
+                      key={id}
+                      checked={checked}
+                      disabled={required}
+                      onCheckedChange={() => toggleColumn(id, required)}
+                      onSelect={(e) => e.preventDefault()}
+                      className="text-xs"
+                    >
+                      {col.header}
+                      {required && (
+                        <span className="ml-auto pl-2 text-[9px] text-muted-foreground/70">locked</span>
+                      )}
+                    </DropdownMenuCheckboxItem>
+                  );
+                })}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-xs text-muted-foreground gap-1.5"
+                  onClick={resetColumns}
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  Reset columns
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
+
+          <div className="text-xs text-muted-foreground tabular-nums">
+            {isForbidden ? (
+              <span className="text-amber-600 dark:text-amber-400 flex items-center gap-1.5 font-semibold text-[10px]">
+                <ShieldOff size={13} /> Access denied
+              </span>
+            ) : isError ? (
+              <span className="text-red-600 dark:text-red-400 flex items-center gap-1.5 font-semibold text-[10px]">
+                <AlertTriangle size={13} /> Fetch error
+              </span>
+            ) : (
+              <span className="bg-primary/10 text-primary border border-primary/20 px-2.5 py-1 rounded-full text-[10px] font-semibold">
+                {filteredData?.length ?? 0} resources
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -119,9 +286,9 @@ export function ResourceTable<T extends { name: string; status?: string }>({
           <table className="w-full border-collapse text-sm table-auto">
             <thead>
               <tr className="bg-secondary/40 border-b border-border/50">
-                {columns.map((col, i) => (
+                {visibleCols.map(({ col, id }) => (
                   <th
-                    key={i}
+                    key={id}
                     className="px-4 py-2.5 text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-widest whitespace-nowrap"
                   >
                     {col.header}
@@ -133,16 +300,16 @@ export function ResourceTable<T extends { name: string; status?: string }>({
               {isLoading ? (
                 Array.from({ length: 8 }).map((_, i) => (
                   <tr key={i} className="border-b border-border/50">
-                    {columns.map((_, j) => (
-                      <td key={j} className="px-4 py-3">
-                        <Skeleton className="h-3.5 bg-muted rounded" style={{ width: `${40 + Math.random() * 40}%` }} />
+                    {visibleCols.map(({ id }) => (
+                      <td key={id} className="px-4 py-3">
+                        <Skeleton className="h-3.5 bg-muted rounded" style={{ width: `${40 + ((i * 17 + id.length * 3) % 40)}%` }} />
                       </td>
                     ))}
                   </tr>
                 ))
               ) : filteredData?.length === 0 ? (
                 <tr>
-                  <td colSpan={colCount} className="px-4 py-12 text-center">
+                  <td colSpan={Math.max(colCount, 1)} className="px-4 py-12 text-center">
                     <p className="text-sm text-muted-foreground">No resources found</p>
                   </td>
                 </tr>
@@ -155,20 +322,19 @@ export function ResourceTable<T extends { name: string; status?: string }>({
                     transition={{ delay: Math.min(i * 0.01, 0.3), duration: 0.15 }}
                     className="group border-b border-border/50 hover:bg-primary/[0.03] transition-colors cursor-default"
                   >
-                    {columns.map((col, j) => (
+                    {visibleCols.map(({ col, id }) => (
                       <td
-                        key={j}
+                        key={id}
                         className="px-4 py-2.5 text-muted-foreground whitespace-nowrap max-w-[350px]"
                       >
                         <div className="flex items-center">
-                          {col.cell 
-                            ? col.cell(item) 
-                            : col.accessorKey === 'status' 
+                          {col.cell
+                            ? col.cell(item)
+                            : col.accessorKey === "status"
                               ? <StatusBadge status={String(item[col.accessorKey!])} resourceName={item.name} />
-                              : col.accessorKey === 'age'
+                              : col.accessorKey === "age"
                                 ? <span className="text-muted-foreground text-xs">{formatAge(String(item[col.accessorKey!]))}</span>
-                                : <span className="truncate">{String(item[col.accessorKey!] ?? "-")}</span>
-                          }
+                                : <span className="truncate">{String(item[col.accessorKey!] ?? "-")}</span>}
                         </div>
                       </td>
                     ))}

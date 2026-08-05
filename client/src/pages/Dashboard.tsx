@@ -273,8 +273,6 @@ export default function Dashboard() {
     });
   }, [pods, deployments, nodes, jobs, pvcs]);
 
-  const [healthExpanded, setHealthExpanded] = useState(true);
-
   const { isFastModel } = useAiConfig();
   const aiSuggestionsCache = useRef<Map<string, string>>(new Map());
   const [aiSuggestions, setAiSuggestions] = useState<Record<string, string>>({});
@@ -462,6 +460,7 @@ export default function Dashboard() {
                 <TabsContent value="pods" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                     <ResourceTable
+                      tableId="pods"
                       search={searchFilter}
                       onSearchChange={setSearchFilter}
                       data={pods}
@@ -470,7 +469,7 @@ export default function Dashboard() {
                     error={podsErrorObj}
                     accentColor="cyan"
                       columns={[
-                      { header: "Pod", accessorKey: "name", cell: (item) => (
+                      { header: "Pod", accessorKey: "name", required: true, cell: (item) => (
                         <button onClick={() => goToDetail("pod", item.name, item.namespace)} className="text-foreground/80 font-medium hover:text-foreground hover:underline underline-offset-2 transition-colors text-left">
                           {item.name}
                         </button>
@@ -485,7 +484,7 @@ export default function Dashboard() {
                         return <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-sm border ${ok ? 'bg-foreground/5 text-foreground/70 border-foreground/10' : 'bg-foreground/[0.03] text-muted-foreground border-border'}`}>{ready}</span>;
                       }},
                         { header: "Status", accessorKey: "status" },
-                      { header: "Image", accessorKey: "images" as any, cell: (item: any) => {
+                      { header: "Image", accessorKey: "images" as any, defaultHidden: true, cell: (item: any) => {
                         const imgs: string[] = item.images || [];
                         if (imgs.length === 0) return <span className="text-muted-foreground/60">-</span>;
                         return (
@@ -498,17 +497,17 @@ export default function Dashboard() {
                           </div>
                         );
                       }},
-                      { header: "IP", accessorKey: "ip" as any, cell: (item: any) => (
+                      { header: "IP", accessorKey: "ip" as any, defaultHidden: true, cell: (item: any) => (
                         <span className="text-muted-foreground tabular-nums text-[10px]">{item.ip || "-"}</span>
                       )},
                       { header: "Restarts", accessorKey: "restarts", cell: (item) => (
                         <span className={item.restarts > 0 ? 'text-foreground font-bold' : 'text-muted-foreground'}>{item.restarts}</span>
                       )},
-                      { header: "Node", accessorKey: "node", cell: (item) => (
+                      { header: "Node", accessorKey: "node", defaultHidden: true, cell: (item) => (
                         <span className="text-muted-foreground text-[10px]">{item.node}</span>
                       )},
                         { header: "Age", accessorKey: "age" },
-                      { header: "", cell: (item) => (
+                      { header: "", id: "actions", required: true, cell: (item) => (
                         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button className="p-1 rounded hover:bg-foreground/8 text-muted-foreground hover:text-foreground transition-colors" onClick={() => setSelectedPod({ name: item.name, type: 'logs' })} title="Logs">
                             <Terminal className="h-3 w-3" />
@@ -545,6 +544,7 @@ export default function Dashboard() {
                 <TabsContent value="deployments" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                   <ResourceTable
+                    tableId="deployments"
                     search={searchFilter}
                     onSearchChange={setSearchFilter}
                     data={deployments}
@@ -602,6 +602,7 @@ export default function Dashboard() {
                 <TabsContent value="services" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                   <ResourceTable
+                    tableId="services"
                     search={searchFilter}
                     onSearchChange={setSearchFilter}
                     data={services}
@@ -627,6 +628,7 @@ export default function Dashboard() {
               <TabsContent value="statefulsets" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                   <ResourceTable
+                    tableId="statefulsets"
                     search={searchFilter}
                     onSearchChange={setSearchFilter}
                     data={statefulsets}
@@ -668,6 +670,7 @@ export default function Dashboard() {
               <TabsContent value="daemonsets" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                   <ResourceTable
+                    tableId="daemonsets"
                     search={searchFilter}
                     onSearchChange={setSearchFilter}
                     data={daemonsets}
@@ -694,6 +697,7 @@ export default function Dashboard() {
               <TabsContent value="jobs" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                   <ResourceTable
+                    tableId="jobs"
                     search={searchFilter}
                     onSearchChange={setSearchFilter}
                     data={jobs}
@@ -719,6 +723,7 @@ export default function Dashboard() {
               <TabsContent value="cronjobs" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                   <ResourceTable
+                    tableId="cronjobs"
                     search={searchFilter}
                     onSearchChange={setSearchFilter}
                     data={cronjobs}
@@ -747,6 +752,7 @@ export default function Dashboard() {
               <TabsContent value="configmaps" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                   <ResourceTable
+                    tableId="configmaps"
                     search={searchFilter}
                     onSearchChange={setSearchFilter}
                     data={configmaps}
@@ -770,6 +776,7 @@ export default function Dashboard() {
               <TabsContent value="secrets" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                   <ResourceTable
+                    tableId="secrets"
                     search={searchFilter}
                     onSearchChange={setSearchFilter}
                     data={secrets}
@@ -794,6 +801,7 @@ export default function Dashboard() {
               <TabsContent value="ingresses" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                   <ResourceTable
+                    tableId="ingresses"
                     search={searchFilter}
                     onSearchChange={setSearchFilter}
                     data={ingresses}
@@ -819,6 +827,7 @@ export default function Dashboard() {
               <TabsContent value="nodes" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                   <ResourceTable
+                    tableId="nodes"
                     search={searchFilter}
                     onSearchChange={setSearchFilter}
                     data={nodes}
@@ -846,6 +855,7 @@ export default function Dashboard() {
               <TabsContent value="hpa" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                   <ResourceTable
+                    tableId="hpa"
                     search={searchFilter}
                     onSearchChange={setSearchFilter}
                     data={hpa}
@@ -873,6 +883,7 @@ export default function Dashboard() {
               <TabsContent value="pvcs" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                   <ResourceTable
+                    tableId="pvcs"
                     search={searchFilter}
                     onSearchChange={setSearchFilter}
                     data={pvcs}

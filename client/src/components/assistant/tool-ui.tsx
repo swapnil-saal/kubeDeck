@@ -33,8 +33,20 @@ function ExecBlock({
   status: "running" | "complete" | "incomplete";
   result?: string;
 }) {
-  const [open, setOpen] = useState(true);
+  // Closed by default; open while running so live output is visible, then collapse when done.
   const isRunning = status === "running";
+  const [open, setOpen] = useState(false);
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    if (isRunning) {
+      setOpen(true);
+      wasRunning.current = true;
+    } else if (wasRunning.current) {
+      setOpen(false);
+      wasRunning.current = false;
+    }
+  }, [isRunning]);
+
   const isError = status === "complete" && !!((result || "").toLowerCase().match(/error|failed|denied|forbidden|notfound|not found/));
   const display = result ?? (isRunning ? "" : "(no output)");
   const { copied, copy } = useCopy(display || command);
@@ -145,6 +157,83 @@ export const BashToolUI = makeAssistantToolUI<ExecArgs, string>({
       result={typeof result === "string" ? result : result ? JSON.stringify(result) : undefined}
     />
   ),
+});
+
+interface K8sListArgs {
+  resource?: string;
+  name?: string;
+  allNamespaces?: boolean;
+  labelSelector?: string;
+  fieldSelector?: string;
+  wide?: boolean;
+}
+
+function formatListCommand(a: K8sListArgs): string {
+  const parts = [`get ${a.resource || "?"}`];
+  if (a.name) parts.push(a.name);
+  if (a.allNamespaces) parts.push("-A");
+  if (a.wide) parts.push("-o wide");
+  if (a.labelSelector) parts.push(`-l ${a.labelSelector}`);
+  if (a.fieldSelector) parts.push(`--field-selector=${a.fieldSelector}`);
+  return parts.join(" ");
+}
+
+export const K8sListToolUI = makeAssistantToolUI<K8sListArgs, string>({
+  toolName: "k8s_list",
+  render: ({ args, result, status }) => (
+    <ExecBlock
+      label="list"
+      icon={GitBranch}
+      command={formatListCommand(args || {})}
+      status={status.type === "running" ? "running" : status.type === "complete" ? "complete" : "incomplete"}
+      result={typeof result === "string" ? result : result ? JSON.stringify(result) : undefined}
+    />
+  ),
+});
+
+interface K8sDescribeArgs { resource?: string; name?: string; namespace?: string }
+
+export const K8sDescribeToolUI = makeAssistantToolUI<K8sDescribeArgs, string>({
+  toolName: "k8s_describe",
+  render: ({ args, result, status }) => (
+    <ExecBlock
+      label="describe"
+      icon={Eye}
+      command={`describe ${args?.resource || "?"} ${args?.name || ""}${args?.namespace ? ` -n ${args.namespace}` : ""}`.trim()}
+      status={status.type === "running" ? "running" : status.type === "complete" ? "complete" : "incomplete"}
+      result={typeof result === "string" ? result : result ? JSON.stringify(result) : undefined}
+    />
+  ),
+});
+
+interface K8sLogsArgs {
+  name?: string;
+  namespace?: string;
+  container?: string;
+  tail?: number;
+  previous?: boolean;
+  since?: string;
+}
+
+export const K8sLogsToolUI = makeAssistantToolUI<K8sLogsArgs, string>({
+  toolName: "k8s_logs",
+  render: ({ args, result, status }) => {
+    const a = args || {};
+    const bits = [`logs ${a.name || "?"}`, `--tail=${a.tail ?? 100}`];
+    if (a.namespace) bits.push(`-n ${a.namespace}`);
+    if (a.container) bits.push(`-c ${a.container}`);
+    if (a.previous) bits.push("--previous");
+    if (a.since) bits.push(`--since=${a.since}`);
+    return (
+      <ExecBlock
+        label="logs"
+        icon={Activity}
+        command={bits.join(" ")}
+        status={status.type === "running" ? "running" : status.type === "complete" ? "complete" : "incomplete"}
+        result={typeof result === "string" ? result : result ? JSON.stringify(result) : undefined}
+      />
+    );
+  },
 });
 
 interface TaskArgs {
@@ -390,6 +479,9 @@ export const AskHumanToolUI = makeAssistantToolUI<AskHumanArgs, string>({
 export function ToolUIRegistry() {
   return (
     <>
+      <K8sListToolUI />
+      <K8sDescribeToolUI />
+      <K8sLogsToolUI />
       <KubectlToolUI />
       <BashToolUI />
       <TaskToolUI />

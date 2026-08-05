@@ -36,12 +36,15 @@ const MAIN_SYSTEM_PROMPT = `You are KubeDeck AI — a senior SRE / platform engi
 
 Prefer table output. Avoid \`-o yaml\`, \`-o json\`, and complex jsonpath for list inventory.
 
-## Tools
-- kubectl: args WITHOUT the "kubectl" prefix. Context and active namespace are auto-injected.
+## Tools (prefer structured tools first)
+- k8s_list: list pods/deployments/etc compactly (preferred for inventory / health).
+- k8s_describe: describe one resource.
+- k8s_logs: fetch pod/deployment logs (tail).
+- kubectl: free-form escape hatch only when structured tools cannot do it.
 - bash: pipes only when needed.
 - monitor_logs: live tail for intermittent issues.
-- ask_human: only for genuine ambiguity.
-- present_dashboard: visual board after you have numbers. Required for health/dashboard/performance questions.
+- ask_human: only for genuine ambiguity (entrypoint, target name you cannot infer).
+- present_dashboard: visual board after you have numbers. Required for health/dashboard/performance.
 
 ## present_dashboard rules
 - Use only tool-collected numbers (never fabricate).
@@ -50,10 +53,11 @@ Prefer table output. Avoid \`-o yaml\`, \`-o json\`, and complex jsonpath for li
 
 ## Safety
 - BLOCKED: delete, drain, cordon, taint.
-- Mutating ops: describe only unless user clearly requested.
+- Mutating commands (scale, apply, rollout restart, patch, …) require human approval in the UI — never bypass.
 
 ## Response style
-- Lead with verdict, then evidence. Concise markdown.`;
+- Lead with verdict, then evidence. Concise markdown.
+- Cite concrete resource names from tool output.`;
 
 // ═══════════════════════════════════════════════════
 //  SAFETY CLASSIFIER
@@ -85,7 +89,88 @@ function classifyKubectlCommand(command: string): SafetyLevel {
     if (sub === "view" || sub === "get-contexts" || sub === "current-context") return "allow";
     return "warn";
   }
+  // rollout status is read-only; other rollout subcommands mutate
+  if (verb === "rollout") {
+    const sub = parts[1]?.toLowerCase();
+    if (sub === "status" || sub === "history") return "allow";
+    return "warn";
+  }
+  if (verb === "auth" || verb === "api-resources" || verb === "api-versions") return "allow";
   return "warn";
+}
+
+function userApprovedMutation(answer: string): boolean {
+  const a = answer.trim().toLowerCase();
+  return (
+    a === "allow once" ||
+    a === "allow" ||
+    a === "approve" ||
+    a === "yes" ||
+    a === "y" ||
+    a.startsWith("allow ")
+  );
+}
+
+/** Pause for human confirmation before running mutable kubectl. */
+function confirmMutation(command: string, toolLabel: string): string | null {
+  const answer = interrupt<{
+    kind: "confirm";
+    question: string;
+    command: string;
+    options: string[];
+  }, string>({
+    kind: "confirm",
+    question: `Allow this mutating ${toolLabel} command?`,
+    command,
+    options: ["Allow once", "Deny"],
+  });
+  if (!userApprovedMutation(String(answer))) {
+    return `Denied by user — did not run: ${command}`;
+  }
+  return null; // proceed
+}
+
+// ═══════════════════════════════════════════════════
+//  AGENT MODES
+// ═══════════════════════════════════════════════════
+
+export type AgentMode = "chat" | "troubleshoot" | "briefing" | "investigate";
+
+const AGENT_MODES = new Set<AgentMode>(["chat", "troubleshoot", "briefing", "investigate"]);
+
+const MODE_PROMPTS: Record<AgentMode, string> = {
+  chat: `## Mode: Chat
+General Kubernetes operator assistant. Answer clearly; use tools whenever cluster facts are needed.
+Prefer k8s_list / k8s_describe for inventory before free-form kubectl.`,
+
+  troubleshoot: `## Mode: Troubleshoot
+Systematic root-cause analysis:
+1. Confirm symptoms (k8s_list unhealthy pods/deploys)
+2. Zoom in (k8s_describe + k8s_logs on the worst resource)
+3. State root cause with evidence
+4. Optional present_dashboard for impact
+Do not stop at "it is CrashLooping" without a cause hypothesis from logs/events.`,
+
+  briefing: `## Mode: Briefing
+Executive status only. Read-only. Max 2 discovery tools, then present_dashboard + short summary.
+No deep log dives unless something is critical. No mutations. No loops.`,
+
+  investigate: `## Mode: Investigate
+Deep multi-hop investigation. Map related resources, pull logs, use monitor_logs for intermittent issues.
+If the entrypoint is unknown, ask_human once with clear options, then proceed end-to-end.`,
+};
+
+function parseAgentMode(sessionContext: string): AgentMode {
+  const m = sessionContext.match(/Mode:\s*([a-z]+)/i);
+  const raw = (m?.[1] || "chat").toLowerCase() as AgentMode;
+  return AGENT_MODES.has(raw) ? raw : "chat";
+}
+
+function buildSystemPrompt(sessionContext: string, mode: AgentMode): string {
+  const sessionSnippet = truncateSessionContext(sessionContext);
+  const parts = [MAIN_SYSTEM_PROMPT, MODE_PROMPTS[mode]];
+  if (sessionSnippet) parts.push(`Current session:\n${sessionSnippet}`);
+  return parts.join("\n\n");
 }
 
 function classifyBashCommand(command: string): SafetyLevel {
@@ -418,32 +503,41 @@ export const resetAgentBurstCounter = resetAgentCallGuards;
 //  TOOL FACTORIES (k8s context-bound)
 // ═══════════════════════════════════════════════════
 
+async function runKubectlGuarded(
+  threadId: string,
+  currentContext: string,
+  currentNamespace: string,
+  command: string,
+  toolLabel = "kubectl",
+): Promise<string> {
+  const sanitized = sanitizeKubectlCommand(command);
+  const safety = classifyKubectlCommand(sanitized);
+  if (safety === "block") {
+    return `Blocked: '${command}' is a destructive operation. Use the KubeDeck UI or run it manually.`;
+  }
+  if (safety === "warn") {
+    const denied = confirmMutation(sanitized, toolLabel);
+    if (denied) return denied;
+  }
+  const withCtx = injectContextFlag(sanitized, currentContext);
+  const withNs = injectNamespaceFlag(withCtx, currentNamespace);
+  const repeatStop = checkRepeat(threadId, "kubectl", withNs);
+  if (repeatStop) return repeatStop;
+  const output = await executeKubectl(withNs);
+  recordCall(threadId, "kubectl", withNs, output);
+  return output;
+}
+
 function buildKubectlTool(currentContext: string, currentNamespace: string, threadId: string) {
   return tool(
-    async ({ command }) => {
-      const sanitized = sanitizeKubectlCommand(command);
-      const safety = classifyKubectlCommand(sanitized);
-      if (safety === "block") {
-        return `Blocked: '${command}' is a destructive operation. Use the KubeDeck UI or run it manually.`;
-      }
-      const withCtx = injectContextFlag(sanitized, currentContext);
-      const withNs = injectNamespaceFlag(withCtx, currentNamespace);
-      const repeatStop = checkRepeat(threadId, "kubectl", withNs);
-      if (repeatStop) return repeatStop;
-      const output = await executeKubectl(withNs);
-      recordCall(threadId, "kubectl", withNs, output);
-      return output;
-    },
+    async ({ command }) =>
+      runKubectlGuarded(threadId, currentContext, currentNamespace, command, "kubectl"),
     {
       name: "kubectl",
       description:
-        "Execute a kubectl command against the Kubernetes cluster. " +
-        "Pass the command WITHOUT the 'kubectl' prefix. " +
-        "Prefer compact tables: 'get deploy -o wide', 'get pods', 'top pods' — avoid huge -o yaml for lists. " +
-        "For health dashboards: one get deploy (+ optional get pods), then present_dashboard. " +
-        "Context AND the active namespace are auto-injected. Use -A for all namespaces. " +
-        "Destructive commands (delete, drain, cordon, taint) are blocked. " +
-        "Never re-run the same/similar command for 'fuller' output — truncated is enough.",
+        "Free-form kubectl (WITHOUT the 'kubectl' prefix). Prefer k8s_list / k8s_describe / k8s_logs first. " +
+        "Context and namespace are auto-injected. Use -A for all namespaces. " +
+        "Deletes/drains are blocked. Mutating commands require human approval.",
       schema: z.object({
         command: z.string().describe("The kubectl command to run (without the 'kubectl' prefix)"),
       }),
@@ -458,6 +552,10 @@ function buildBashTool(currentContext: string, currentNamespace: string, threadI
       if (safety === "block") {
         return `Blocked: this command is not allowed for safety reasons.`;
       }
+      if (safety === "warn") {
+        const denied = confirmMutation(command, "bash");
+        if (denied) return denied;
+      }
       const withCtx = injectContextIntoBash(command, currentContext);
       const withNs = injectNamespaceIntoBash(withCtx, currentNamespace);
       const repeatStop = checkRepeat(threadId, "bash", withNs);
@@ -469,12 +567,91 @@ function buildBashTool(currentContext: string, currentNamespace: string, threadI
     {
       name: "bash",
       description:
-        "Pipes only when table kubectl is insufficient (e.g. jq count). Prefer the kubectl tool for lists. " +
-        "Do NOT loop on jsonpath — tables already include STATUS and RESTARTS. " +
-        "Context/namespace auto-injected. Allowed: kubectl, jq, grep, awk, sed, sort, head, tail, wc, cut, uniq, tr, cat, echo, date, xargs. " +
-        "Never re-run the same/similar command.",
+        "Pipes only when table kubectl is insufficient (e.g. jq count). Prefer k8s_list for inventory. " +
+        "Do NOT loop on jsonpath. Context/namespace auto-injected. " +
+        "Mutating kubectl inside bash requires human approval.",
       schema: z.object({
         command: z.string().describe("The shell command to execute"),
+      }),
+    },
+  );
+}
+
+/** Preferred list tool — models pick resource kind instead of free-form strings. */
+function buildK8sListTool(currentContext: string, currentNamespace: string, threadId: string) {
+  return tool(
+    async ({ resource, allNamespaces, labelSelector, fieldSelector, wide, name }) => {
+      let cmd = `get ${resource.trim()}`;
+      if (name?.trim()) cmd += ` ${name.trim()}`;
+      if (allNamespaces) cmd += " -A";
+      if (wide) cmd += " -o wide";
+      else cmd += " --no-headers";
+      if (labelSelector) cmd += ` -l ${labelSelector}`;
+      if (fieldSelector) cmd += ` --field-selector=${fieldSelector}`;
+      return runKubectlGuarded(threadId, currentContext, currentNamespace, cmd, "k8s_list");
+    },
+    {
+      name: "k8s_list",
+      description:
+        "List Kubernetes resources (preferred for inventory / health). " +
+        "resource e.g. pods, deployments, services, nodes, events. " +
+        "Use fieldSelector like status.phase!=Running for non-ready pods when needed. " +
+        "Namespace auto-scoped unless allNamespaces=true.",
+      schema: z.object({
+        resource: z
+          .string()
+          .describe("Resource type: pods, deployments, services, nodes, jobs, events, …"),
+        name: z.string().optional().describe("Optional specific name filter"),
+        allNamespaces: z.boolean().optional().describe("List across all namespaces (-A)"),
+        labelSelector: z.string().optional().describe("Label selector, e.g. app=api"),
+        fieldSelector: z.string().optional().describe("Field selector, e.g. status.phase=Failed"),
+        wide: z.boolean().optional().describe("Use -o wide (more columns)"),
+      }),
+    },
+  );
+}
+
+function buildK8sDescribeTool(currentContext: string, currentNamespace: string, threadId: string) {
+  return tool(
+    async ({ resource, name, namespace }) => {
+      let cmd = `describe ${resource.trim()} ${name.trim()}`;
+      if (namespace) cmd += ` -n ${namespace}`;
+      return runKubectlGuarded(threadId, currentContext, currentNamespace, cmd, "k8s_describe");
+    },
+    {
+      name: "k8s_describe",
+      description:
+        "Describe a single resource (status, events summary, conditions). Prefer over huge -o yaml for diagnosis.",
+      schema: z.object({
+        resource: z.string().describe("Resource type, e.g. pod, deployment"),
+        name: z.string().describe("Resource name"),
+        namespace: z.string().optional().describe("Namespace override if not the session default"),
+      }),
+    },
+  );
+}
+
+function buildK8sLogsTool(currentContext: string, currentNamespace: string, threadId: string) {
+  return tool(
+    async ({ name, namespace, container, tail, previous, since }) => {
+      let cmd = `logs ${name.trim()} --tail=${tail ?? 100}`;
+      if (namespace) cmd += ` -n ${namespace}`;
+      if (container) cmd += ` -c ${container}`;
+      if (previous) cmd += " --previous";
+      if (since) cmd += ` --since=${since}`;
+      return runKubectlGuarded(threadId, currentContext, currentNamespace, cmd, "k8s_logs");
+    },
+    {
+      name: "k8s_logs",
+      description:
+        "Fetch recent logs from a pod (or deploy/NAME, svc/NAME). Use --previous for last crashed container.",
+      schema: z.object({
+        name: z.string().describe("Pod name or deploy/x / svc/x"),
+        namespace: z.string().optional(),
+        container: z.string().optional(),
+        tail: z.number().int().positive().max(500).optional().describe("Lines to fetch (default 100)"),
+        previous: z.boolean().optional().describe("Logs from previous crashed container"),
+        since: z.string().optional().describe("Relative duration e.g. 15m, 1h"),
       }),
     },
   );
@@ -662,20 +839,23 @@ function truncateSessionContext(sessionContext: string, maxChars = 2500): string
 
 function buildAgent(currentContext: string, currentNamespace: string, sessionContext: string, threadId: string) {
   const model = getChatModel({ temperature: 0.25, maxTokens: 2048, streaming: true });
+  const mode = parseAgentMode(sessionContext);
 
-  const kubectlTool = buildKubectlTool(currentContext, currentNamespace, threadId);
-  const bashTool = buildBashTool(currentContext, currentNamespace, threadId);
-  const monitorTool = buildMonitorLogsTool(currentContext, threadId);
-
-  const sessionSnippet = truncateSessionContext(sessionContext);
-  const mainSystemPrompt = sessionSnippet
-    ? `${MAIN_SYSTEM_PROMPT}\n\nCurrent session:\n${sessionSnippet}`
-    : MAIN_SYSTEM_PROMPT;
+  const tools = [
+    buildK8sListTool(currentContext, currentNamespace, threadId),
+    buildK8sDescribeTool(currentContext, currentNamespace, threadId),
+    buildK8sLogsTool(currentContext, currentNamespace, threadId),
+    buildKubectlTool(currentContext, currentNamespace, threadId),
+    buildBashTool(currentContext, currentNamespace, threadId),
+    buildMonitorLogsTool(currentContext, threadId),
+    askHumanTool,
+    presentDashboardTool,
+  ];
 
   return createAgent({
     model,
-    tools: [kubectlTool, bashTool, monitorTool, askHumanTool, presentDashboardTool],
-    systemPrompt: mainSystemPrompt,
+    tools,
+    systemPrompt: buildSystemPrompt(sessionContext, mode),
     middleware: [xmlToolCallMiddleware],
     checkpointer,
   });

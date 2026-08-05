@@ -60,7 +60,7 @@ function shortAge(iso: string | null | undefined): string {
 
 export function ClusterHealthPanel({ context, namespace, issues, loading, onJumpToTab }: Props) {
   const [, navigate] = useLocation();
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const [activeFilter, setActiveFilter] = useState<"issues" | "events">("issues");
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const score = computeScore(issues);
