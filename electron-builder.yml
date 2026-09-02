@@ -14,6 +14,9 @@ files:
 asar: true
 asarUnpack:
   - dist/**/*
+# No required native addons. Skip node-gyp so Windows CI does not need Visual Studio
+# (optional bufferutil is a ws speedup only; the JS fallback is used instead).
+npmRebuild: false
 afterPack: build/afterPack.cjs
 
 mac:
