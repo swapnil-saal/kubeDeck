@@ -20,7 +20,7 @@
     "electron:dev": "electron .",
     "package": "CSC_IDENTITY_AUTO_DISCOVERY=false npm run build && electron-builder --mac --publish never",
     "package:dir": "CSC_IDENTITY_AUTO_DISCOVERY=false npm run build && electron-builder --mac --dir --publish never",
-    "package:win": "CSC_IDENTITY_AUTO_DISCOVERY=false npm run build && electron-builder --win --publish never"
+    "package:win": "npm run build && electron-builder --win --publish never"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.69",
