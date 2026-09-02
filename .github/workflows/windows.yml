@@ -53,15 +53,28 @@ jobs:
           if-no-files-found: error
 
       - name: Attach to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          tag="${GITHUB_REF_NAME}"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            tag="${GITHUB_REF_NAME}"
+          else
+            version="$(node -p "require('./package.json').version")"
+            tag="v${version}"
+          fi
+
+          shopt -s nullglob
           files=(release/*.exe release/*.exe.blockmap)
+          if (( ${#files[@]} == 0 )); then
+            echo "No Windows artifacts found in release/"
+            exit 1
+          fi
+
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" "${files[@]}" --clobber
           else
-            gh release create "$tag" "${files[@]}" --generate-notes
+            gh release create "$tag" "${files[@]}" --generate-notes --title "KubeDeck ${tag}"
           fi
+
+          echo "Attached Windows build to https://github.com/${GITHUB_REPOSITORY}/releases/tag/${tag}"
