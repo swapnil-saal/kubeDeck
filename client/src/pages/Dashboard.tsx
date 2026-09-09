@@ -46,7 +46,25 @@ export default function Dashboard() {
     navigate(`/resource/${type}/${encodeURIComponent(name)}?context=${encodeURIComponent(currentContext)}&namespace=${encodeURIComponent(namespace)}`);
   };
 
-  const { data: contexts } = useK8sContexts();
+  const {
+    data: contexts,
+    isFetched: contextsFetched,
+    fetchStatus: contextsFetchStatus,
+    error: contextsErrorObj,
+    refetch: refetchContexts,
+  } = useK8sContexts();
+
+  // React Query clears `error` and flips `status` back to "pending" every time a
+  // query that holds no data refetches. Keep the last failure so the error
+  // screen below stays put instead of bouncing back to the spinner.
+  const [contextsFailure, setContextsFailure] = useState<string | null>(null);
+  useEffect(() => {
+    if (contextsErrorObj) {
+      setContextsFailure(contextsErrorObj instanceof Error ? contextsErrorObj.message : String(contextsErrorObj));
+    } else if (contexts) {
+      setContextsFailure(null);
+    }
+  }, [contextsErrorObj, contexts]);
   
   useEffect(() => {
     if (contexts && contexts.length > 0 && !currentContext) {
@@ -304,7 +322,10 @@ export default function Dashboard() {
     return () => controller.abort();
   }, [isFastModel, healthIssues]);
 
-  if (!currentContext && !contexts) {
+  // Gate the spinner on whether the request has ever settled, never on the live
+  // status: a refetch resets that to "pending" and would hang the screen again.
+  // "paused" means React Query shelved the request and will not settle it.
+  if (!currentContext && !contextsFetched && contextsFetchStatus !== "paused") {
     return (
       <div className="h-full w-full flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
@@ -312,6 +333,49 @@ export default function Dashboard() {
             <div className="w-12 h-12 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
           </div>
           <p className="text-muted-foreground text-sm font-medium">Connecting to cluster...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // The contexts request has settled but produced nothing usable. Never keep the
+  // spinner up here — show what went wrong and how to recover.
+  if (!currentContext) {
+    const detail = contextsFailure
+      ?? (contextsFetchStatus === "paused"
+        ? "The request was shelved before it could complete, usually because the machine looked offline. Retry once you are back online."
+        : "kubectl returned no contexts. Check that your kubeconfig contains at least one cluster.");
+    return (
+      <div className="flex flex-col h-full overflow-hidden text-foreground">
+        <AppHeader breadcrumbs={[{ label: "Dashboard" }]} />
+        <div className="flex-1 flex items-center justify-center p-7">
+          <div className="max-w-xl w-full rounded-xl border border-destructive/20 bg-destructive/5 p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-destructive/10 text-destructive flex items-center justify-center shrink-0">
+                <AlertTriangle size={18} />
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold text-foreground">Could not load cluster contexts</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  KubeDeck could not read your kubeconfig, so no cluster could be selected.
+                </p>
+              </div>
+            </div>
+
+            <pre className="text-[11px] leading-relaxed font-mono whitespace-pre-wrap break-words text-destructive/90 bg-background/60 border border-border/50 rounded-lg p-3 max-h-48 overflow-y-auto">
+              {detail}
+            </pre>
+
+            <div className="flex items-center gap-2">
+              <Button size="sm" onClick={() => refetchContexts()} data-testid="button-retry-contexts">
+                <RefreshCw size={14} className="mr-1.5" />
+                Retry
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => navigate("/settings")}>
+                Open Settings
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
     );

@@ -137,12 +137,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           { name: "docker-desktop", cluster: "docker-desktop", user: "docker-desktop", isCurrent: false }
         ]);
       const ctxResult = await runKubectlRaw("config get-contexts -o name");
-      if (ctxResult.code !== 0) return res.status(500).json({ message: ctxResult.stderr || "Failed to get contexts" });
+      if (ctxResult.code !== 0) {
+        return res.status(500).json({ message: ctxResult.stderr.trim() || "Failed to get contexts" });
+      }
       const contexts = ctxResult.stdout.trim().split("\n").filter(Boolean);
       const curResult = await runKubectlRaw("config current-context");
       const currentContext = curResult.stdout.trim();
       res.json(contexts.map(name => ({ name, cluster: name, user: name, isCurrent: name === currentContext })));
-    } catch (err) { res.status(500).json({ message: String(err) }); }
+    } catch (err) {
+      res.status(500).json({ message: err instanceof Error ? err.message : String(err) });
+    }
   });
 
   // ── Namespaces ────────────────────────────────────

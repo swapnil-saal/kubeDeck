@@ -30,6 +30,14 @@ function defaults(): KubeDeckSettings {
   };
 }
 
+function isFilePath(p: string): boolean {
+  try {
+    return fs.existsSync(p) && fs.statSync(p).isFile();
+  } catch {
+    return false;
+  }
+}
+
 export function loadSettings(): KubeDeckSettings {
   try {
     if (!fs.existsSync(SETTINGS_FILE)) return defaults();
@@ -55,11 +63,22 @@ export function saveSettings(settings: KubeDeckSettings): void {
 }
 
 export function getKubeconfigEnv(): Record<string, string> {
-  const settings = loadSettings();
-  const existing = settings.kubeconfigPaths.filter((p) => fs.existsSync(p));
-  if (existing.length === 0) return {};
   const separator = process.platform === "win32" ? ";" : ":";
-  return { KUBECONFIG: existing.join(separator) };
+  const settings = loadSettings();
+  const existing = settings.kubeconfigPaths.filter(isFilePath);
+  if (existing.length > 0) return { KUBECONFIG: existing.join(separator) };
+
+  // Nothing configured is usable. Fall back to the ambient KUBECONFIG, but drop
+  // entries that are missing or are directories — kubectl aborts the whole
+  // command on those ("is a directory") rather than skipping them.
+  const ambient = process.env.KUBECONFIG;
+  if (!ambient) return {};
+  const usable = ambient.split(separator).map((p) => p.trim()).filter(isFilePath);
+  if (usable.length > 0) return { KUBECONFIG: usable.join(separator) };
+
+  // Every ambient entry is unusable. Blank it out so kubectl falls back to its
+  // own default (~/.kube/config) instead of erroring on the bad path.
+  return { KUBECONFIG: "" };
 }
 
 export interface KubeconfigFileInfo {
@@ -81,8 +100,9 @@ export function scanKubeconfigs(): KubeconfigFileInfo[] {
     try {
       for (const entry of fs.readdirSync(kubeDir)) {
         const ext = path.extname(entry).toLowerCase();
-        if ([".yaml", ".yml", ".conf"].includes(ext)) {
-          found.add(path.join(kubeDir, entry));
+        const fullPath = path.join(kubeDir, entry);
+        if ([".yaml", ".yml", ".conf"].includes(ext) && isFilePath(fullPath)) {
+          found.add(fullPath);
         }
       }
     } catch {}
@@ -93,12 +113,13 @@ export function scanKubeconfigs(): KubeconfigFileInfo[] {
   if (envKubeconfig) {
     const separator = process.platform === "win32" ? ";" : ":";
     for (const p of envKubeconfig.split(separator)) {
-      if (p.trim()) found.add(p.trim());
+      const trimmed = p.trim();
+      if (trimmed && isFilePath(trimmed)) found.add(trimmed);
     }
   }
 
   for (const filePath of found) {
-    const exists = fs.existsSync(filePath);
+    const exists = isFilePath(filePath);
     let contexts: string[] = [];
     if (exists) {
       try {
