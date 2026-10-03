@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import { navigateHash as hashNavigate } from "@/lib/hash-router";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
-import { useAiConfig } from "@/hooks/use-ai-config";
+import { useAiConfig, translateToKubectl } from "@/ai";
 import { useResourceNames, searchResourceNames } from "@/hooks/use-resource-names";
 import { useSmartSuggestions, type SmartSuggestion } from "@/hooks/use-smart-suggestions";
 import {
@@ -316,19 +316,12 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
         if (!byKind[k].includes(r.name)) byKind[k].push(r.name);
       }
 
-      const res = await fetch("/api/ai/translate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: q,
-          context: context || undefined,
-          namespace: namespace && namespace !== "all" ? namespace : undefined,
-          resources: byKind,
-        }),
+      const cmd = await translateToKubectl({
+        prompt: q,
+        context: context || undefined,
+        namespace: namespace && namespace !== "all" ? namespace : undefined,
+        resources: byKind,
       });
-      if (!res.ok) throw new Error("Translation failed");
-      const data = await res.json();
-      const cmd = (data.command || "").trim();
       if (cmd) {
         setAiTranslated({ description: q, command: cmd, confidence: 0.95 });
       }

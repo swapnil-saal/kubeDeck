@@ -1,21 +1,26 @@
 import { useEffect, useState } from "react";
 import { Bot, X, Loader2, Copy, Check, AlertCircle, RefreshCcw } from "lucide-react";
-import { Markdown } from "./assistant/Markdown";
-import { useStreamingAi } from "@/hooks/use-streaming-ai";
+import { Markdown } from "@/ai/chat/Markdown";
+import { useStreamingAi } from "@/ai/hooks/use-streaming-ai";
 
-interface Props {
-  yaml: string;
+interface TroubleshootProps {
   resourceType: string;
+  name: string;
+  namespace: string;
+  context: string;
+  describe?: string;
+  events?: string;
+  logs?: string;
 }
 
-export function AiExplainButton({ yaml, resourceType }: Props) {
+export function AiTroubleshootButton(props: TroubleshootProps) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const { content, loading, error, run, reset } = useStreamingAi();
 
   useEffect(() => {
     if (!open) return;
-    void run("/api/ai/explain-yaml", { yaml, resourceType });
+    void run("/api/ai/troubleshoot", props);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -25,7 +30,7 @@ export function AiExplainButton({ yaml, resourceType }: Props) {
   };
 
   const handleRegenerate = () => {
-    void run("/api/ai/explain-yaml", { yaml, resourceType });
+    void run("/api/ai/troubleshoot", props);
   };
 
   const handleCopy = () => {
@@ -38,12 +43,11 @@ export function AiExplainButton({ yaml, resourceType }: Props) {
     <>
       <button
         onClick={() => setOpen(true)}
-        disabled={!yaml}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-primary/20 text-[11px] font-medium text-primary bg-primary/5 hover:bg-primary/10 transition-colors disabled:opacity-30"
-        title="AI Explain this YAML"
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-primary/20 text-[11px] font-medium text-primary bg-primary/5 hover:bg-primary/10 transition-colors"
+        title="AI Troubleshoot"
       >
         <Bot className="w-3.5 h-3.5" />
-        Explain
+        <span>AI Diagnose</span>
       </button>
 
       {open && (
@@ -58,7 +62,7 @@ export function AiExplainButton({ yaml, resourceType }: Props) {
                 <Bot className="w-3.5 h-3.5 text-primary" />
               </div>
               <span className="text-sm font-semibold text-foreground flex-1 truncate">
-                AI YAML Explanation
+                AI Diagnosis — {props.resourceType}/{props.name}
               </span>
               {!loading && content && (
                 <button
@@ -91,7 +95,7 @@ export function AiExplainButton({ yaml, resourceType }: Props) {
               {loading && !content && (
                 <div className="flex items-center gap-3 text-muted-foreground py-8 justify-center">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span className="text-xs">Analyzing YAML...</span>
+                  <span className="text-xs">Analyzing resource...</span>
                 </div>
               )}
 

@@ -6,6 +6,7 @@ import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line, AreaChart, Area,
   PieChart, Pie, Cell, XAxis, YAxis, Tooltip, CartesianGrid,
 } from "recharts";
+import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 
 export interface DashboardMetric {
@@ -58,14 +59,33 @@ const CHART_COLORS = [
   "#2DD4BF", // teal
 ];
 
-const AXIS = {
+const AXIS_DARK = {
   tick: "#B8C0CC",
   grid: "rgba(184, 192, 204, 0.18)",
   tooltipBg: "#1a1f28",
   tooltipBorder: "rgba(184, 192, 204, 0.25)",
   tooltipText: "#F2F4F7",
+  tooltipShadow: "0 8px 24px rgba(0,0,0,0.45)",
   cursor: "rgba(79, 209, 217, 0.12)",
+  sliceStroke: "rgba(0,0,0,0.35)",
 };
+
+const AXIS_LIGHT: typeof AXIS_DARK = {
+  tick: "#52525B",
+  grid: "rgba(82, 82, 91, 0.16)",
+  tooltipBg: "#FFFFFF",
+  tooltipBorder: "rgba(24, 24, 27, 0.12)",
+  tooltipText: "#18181B",
+  tooltipShadow: "0 8px 24px rgba(24,24,27,0.12)",
+  cursor: "rgba(17, 130, 140, 0.10)",
+  sliceStroke: "rgba(255,255,255,0.9)",
+};
+
+/** Axis/tooltip colors for the active theme (SVG attributes need literal colors). */
+function useChartAxis() {
+  const { resolvedTheme } = useTheme();
+  return resolvedTheme === "light" ? AXIS_LIGHT : AXIS_DARK;
+}
 
 /**
  * Coerce chart values so bars render even when the model sends "507Mi" / "45m".
@@ -178,6 +198,7 @@ function ChartTooltip({
   payload?: Array<{ name?: string; value?: number; color?: string; dataKey?: string | number }>;
   label?: string | number;
 }) {
+  const AXIS = useChartAxis();
   if (!active || !payload?.length) return null;
   return (
     <div
@@ -188,12 +209,12 @@ function ChartTooltip({
         padding: "8px 10px",
         fontSize: 11,
         color: AXIS.tooltipText,
-        boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
+        boxShadow: AXIS.tooltipShadow,
         maxWidth: 280,
       }}
     >
       {label != null && label !== "" && (
-        <div style={{ fontWeight: 600, marginBottom: 4, color: "#fff", wordBreak: "break-all" }}>
+        <div style={{ fontWeight: 600, marginBottom: 4, color: AXIS.tooltipText, wordBreak: "break-all" }}>
           {String(label)}
         </div>
       )}
@@ -219,6 +240,7 @@ function ChartTooltip({
 }
 
 function MiniChart({ chart }: { chart: DashboardChart }) {
+  const AXIS = useChartAxis();
   const xKey = chart.xKey || "name";
   const { data, seriesKeys } = normalizeChartRows(chart, xKey);
   const seriesMeta = seriesKeys.map((key) => {
@@ -257,7 +279,7 @@ function MiniChart({ chart }: { chart: DashboardChart }) {
               innerRadius={40}
               outerRadius={68}
               paddingAngle={2}
-              stroke="rgba(0,0,0,0.35)"
+              stroke={AXIS.sliceStroke}
               strokeWidth={1}
             >
               {pieData.map((_, i) => (

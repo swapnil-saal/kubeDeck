@@ -24,7 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
-import { useAiConfig, fetchAiSuggestion } from "@/hooks/use-ai-config";
+import { useAiConfig, fetchAiSuggestion } from "@/ai";
 import { ClusterHealthPanel, type HealthIssue } from "@/components/ClusterHealthPanel";
 
 export default function Dashboard() {

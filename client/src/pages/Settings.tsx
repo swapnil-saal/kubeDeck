@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { AppHeader } from "@/components/AppHeader";
 import { useSettings, useUpdateSettings, useKubeconfigScan } from "@/hooks/use-settings";
 import { KubeDeckLogo, KubeDeckMark } from "@/components/KubeDeckLogo";
+import { testAiConnection } from "@/ai";
 
 export default function Settings() {
   const { toast } = useToast();
@@ -78,8 +79,7 @@ export default function Settings() {
     setTesting(true);
     setTestResult(null);
     try {
-      const res = await fetch("/api/ai/test", { method: "POST", headers: { "Content-Type": "application/json" } });
-      const data = await res.json();
+      const data = await testAiConnection();
       if (data.ok) {
         setTestResult({ ok: true, message: `Connected! Model: ${data.model}` });
       } else {

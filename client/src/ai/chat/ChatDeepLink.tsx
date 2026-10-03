@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useSearch, useLocation } from "wouter";
-import { useThreadRuntime } from "@assistant-ui/react";
+import { useAui } from "@assistant-ui/react";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
 
 /**
@@ -12,7 +12,7 @@ import { useTerminalStore } from "@/hooks/use-terminal-store";
 export function ChatDeepLink() {
   const search = useSearch();
   const [location, setLocation] = useLocation();
-  const runtime = useThreadRuntime();
+  const aui = useAui();
   const { context, namespace, setContext, setNamespace } = useTerminalStore();
   const seededRef = useRef(false);
 
@@ -32,7 +32,7 @@ export function ChatDeepLink() {
     seededRef.current = true;
 
     queueMicrotask(() => {
-      runtime.append({
+      aui.thread().append({
         role: "user",
         content: [{ type: "text", text: prompt }],
       });

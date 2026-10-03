@@ -92,8 +92,3 @@ export function appendOutput(target: MonitorTarget, callId: string, text: string
 export function clearStream(key: string): void {
   if (streams.delete(key)) emit();
 }
-
-export function clearAll(): void {
-  streams.clear();
-  emit();
-}

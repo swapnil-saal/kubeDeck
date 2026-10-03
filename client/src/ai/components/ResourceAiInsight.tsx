@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { Sparkles, RefreshCw, Loader2, MessageSquare, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
-import { Markdown } from "@/components/assistant/Markdown";
+import { Markdown } from "@/ai/chat/Markdown";
 
 interface Props {
   resourceType: string;

@@ -19,10 +19,13 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { AppHeader } from "@/components/AppHeader";
 import { CommandBar, buildDetailCommands } from "@/components/CommandBar";
-import { AiTroubleshootButton } from "@/components/AiTroubleshoot";
-import { AiExplainButton } from "@/components/AiExplainYaml";
-import { ResourceAiInsight } from "@/components/ResourceAiInsight";
-import { useAiConfig, fetchAiSuggestion } from "@/hooks/use-ai-config";
+import {
+  AiTroubleshootButton,
+  AiExplainButton,
+  ResourceAiInsight,
+  useAiConfig,
+  fetchAiSuggestion,
+} from "@/ai";
 
 const TYPE_META: Record<string, { label: string }> = {
   pod: { label: "POD" }, deployment: { label: "DEPLOYMENT" }, service: { label: "SERVICE" },
@@ -163,7 +166,7 @@ function YamlViewer({ content, isLoading }: { content?: string; isLoading: boole
       <div className="absolute top-2 right-2 z-10"><CopyButton text={content} /></div>
       <div className="h-full overflow-auto p-4 rounded-lg border border-border bg-[hsl(220_18%_8%)] font-mono text-[11.5px] leading-[1.65] shadow-inner">
         {highlighted.map((line, i) => (
-          <div key={i} className="hover:bg-white/[0.03] flex min-h-[1.65em] group">
+          <div key={i} className="hover:bg-foreground/[0.03] flex min-h-[1.65em] group">
             <span className="text-muted-foreground/35 select-none mr-3.5 inline-block w-9 text-right tabular-nums shrink-0 group-hover:text-muted-foreground/55 transition-colors">{i + 1}</span>
             <span className="whitespace-pre min-w-0 flex-1">
               {line.type === "blank" && <span>{line.text || "\u00a0"}</span>}

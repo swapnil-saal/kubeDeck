@@ -8,7 +8,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Dashboard from "@/pages/Dashboard";
 import ResourceDetail from "@/pages/ResourceDetail";
 import Settings from "@/pages/Settings";
-import AiChatPage from "@/pages/AiChatPage";
+import { AiChatPage } from "@/ai";
 import NotFound from "@/pages/not-found";
 import { TerminalPanel } from "@/components/TerminalPanel";
 import { KubectlPalette } from "@/components/KubectlPalette";
@@ -76,8 +76,8 @@ function App() {
     <ThemeProvider
       attribute="class"
       defaultTheme="dark"
-      forcedTheme="dark"
       enableSystem={false}
+      disableTransitionOnChange
       storageKey="kubedeck-theme"
     >
       <QueryClientProvider client={queryClient}>

@@ -6,8 +6,8 @@ import {
   ActionBarPrimitive,
   BranchPickerPrimitive,
   ErrorPrimitive,
-  useMessage,
-  useThreadRuntime,
+  useAui,
+  useAuiState,
   type EmptyMessagePartProps,
 } from "@assistant-ui/react";
 import {
@@ -25,7 +25,6 @@ import {
 } from "lucide-react";
 import { MarkdownText } from "./MarkdownText";
 import { ToolUIRegistry } from "./tool-ui";
-import { InterruptPanel } from "./InterruptPanel";
 import { PresentDashboardToolUI } from "./DashboardToolUI";
 import { AiAvatarChip } from "./AiAvatar";
 import { cn } from "@/lib/utils";
@@ -62,7 +61,7 @@ interface ThreadProps {
   onModeChange?: (mode: string) => void;
 }
 
-const MAX_W = "max-w-[48rem]";
+const MAX_W = "max-w-[48rem] 2xl:max-w-[56rem]";
 
 export const Thread: FC<ThreadProps> = ({
   suggestions = [],
@@ -110,7 +109,6 @@ export const Thread: FC<ThreadProps> = ({
 
       <div className="relative z-20">
         <ScrollToBottom />
-        <InterruptPanel />
         <Composer modes={modes} mode={mode} onModeChange={onModeChange} />
       </div>
     </ThreadPrimitive.Root>
@@ -184,12 +182,12 @@ function groupSuggestions(suggestions: Suggestion[]) {
 }
 
 const SuggestionCard: FC<{ suggestion: Suggestion }> = ({ suggestion }) => {
-  const runtime = useThreadRuntime();
+  const aui = useAui();
   return (
     <button
       type="button"
       onClick={() => {
-        runtime.append({
+        aui.thread().append({
           role: "user",
           content: [{ type: "text", text: suggestion.prompt }],
         });
@@ -333,6 +331,12 @@ const UserEditComposer: FC = () => {
 
 // ─── Assistant message ────────────────────────────────────
 
+/** The mascot animates its "working" state only while this message is streaming. */
+const MessageAvatar: FC = () => {
+  const isRunning = useAuiState((s) => s.message.status?.type === "running");
+  return <AiAvatarChip size="sm" thinking={isRunning} />;
+};
+
 const AssistantMessage: FC = () => {
   return (
     <MessagePrimitive.Root
@@ -342,7 +346,7 @@ const AssistantMessage: FC = () => {
       )}
     >
       <div className="shrink-0 mt-0.5">
-        <AiAvatarChip size="sm" />
+        <MessageAvatar />
       </div>
 
       <div className="min-w-0 col-start-2 space-y-1">
@@ -369,7 +373,7 @@ const AssistantMessage: FC = () => {
 };
 
 const WorkingBadge: FC = () => {
-  const isRunning = useMessage((m) => m.status?.type === "running");
+  const isRunning = useAuiState((s) => s.message.status?.type === "running");
   if (!isRunning) return null;
   return (
     <span className="inline-flex items-center gap-1 text-[10px] text-primary font-medium">

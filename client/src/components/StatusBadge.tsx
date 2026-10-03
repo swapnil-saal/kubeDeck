@@ -1,7 +1,6 @@
 import { Sparkles, Loader2 } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
-import { useAiTooltip } from "@/hooks/use-ai-tooltip";
-import { useAiConfig } from "@/hooks/use-ai-config";
+import { useAiTooltip, useAiConfig } from "@/ai";
 
 const UNHEALTHY_STATUSES = new Set([
   "error", "crashloopbackoff", "failed", "imagepullbackoff",

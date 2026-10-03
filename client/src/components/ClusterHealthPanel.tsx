@@ -5,7 +5,7 @@ import {
   CheckCircle2, Sparkles, Loader2, ChevronRight, Activity, RefreshCw, Clock,
   ExternalLink,
 } from "lucide-react";
-import { Markdown } from "@/components/assistant/Markdown";
+import { Markdown, fetchClusterBriefing } from "@/ai";
 import { useClusterEvents, type ClusterEvent } from "@/hooks/use-k8s";
 
 export type HealthSeverity = "critical" | "warning" | "info";
@@ -472,31 +472,22 @@ function AlertAiPanel({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/ai/cluster-briefing", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          context,
-          namespace,
-          signals: {
-            issues: [{
-              severity: issue.severity,
-              category: issue.category,
-              reason: issue.reason,
-              title: issue.title,
-              count: issue.items.length,
-              samples: issue.items.slice(0, 5).map((i) => ({ name: i.name, detail: i.detail })),
-            }],
-            recentWarningEvents: [],
-          },
-        }),
+      const briefing = await fetchClusterBriefing({
+        context,
+        namespace,
+        signals: {
+          issues: [{
+            severity: issue.severity,
+            category: issue.category,
+            reason: issue.reason,
+            title: issue.title,
+            count: issue.items.length,
+            samples: issue.items.slice(0, 5).map((i) => ({ name: i.name, detail: i.detail })),
+          }],
+          recentWarningEvents: [],
+        },
       });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({ message: "Failed" }));
-        throw new Error(body.message || `HTTP ${res.status}`);
-      }
-      const body = await res.json();
-      setContent(body.briefing || "");
+      setContent(briefing);
     } catch (err: any) {
       setError(err?.message || "Failed");
     } finally {

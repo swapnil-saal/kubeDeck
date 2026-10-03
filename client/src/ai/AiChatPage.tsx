@@ -1,19 +1,20 @@
-import { useMemo, useState, useCallback, useEffect } from "react";
+import { useMemo, useRef, useState, useCallback, useEffect } from "react";
 import {
   Bug, Search, Zap, Trash2, Network, Activity, Eye, MessageSquare,
   ClipboardList, Radar, Wrench,
 } from "lucide-react";
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
-import { useLangGraphRuntime } from "@assistant-ui/react-langgraph";
+import { useChatRuntime } from "@assistant-ui/react-ai-sdk";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
 import { useSettings } from "@/hooks/use-settings";
 import { useK8sPods, useK8sDeployments, useK8sServices } from "@/hooks/use-k8s";
 import { useResourceNames } from "@/hooks/use-resource-names";
 import { AppHeader } from "@/components/AppHeader";
-import { Thread, type Suggestion } from "@/components/assistant/Thread";
-import { ChatDeepLink } from "@/components/assistant/ChatDeepLink";
-import { AiAvatarChip } from "@/components/assistant/AiAvatar";
-import { buildKubeChatStream, getThreadId, resetThreadId } from "@/lib/ai-runtime";
+import { Thread, type Suggestion } from "@/ai/chat/Thread";
+import { ChatDeepLink } from "@/ai/chat/ChatDeepLink";
+import { AiAvatarChip } from "@/ai/chat/AiAvatar";
+import { ClusterRail } from "@/ai/chat/ClusterRail";
+import { buildAgentTransport, resetThreadId, shouldResumeAgentTurn } from "@/ai/chat/runtime";
 
 export type ChatMode = "chat" | "troubleshoot" | "briefing" | "investigate";
 
@@ -228,18 +229,13 @@ export default function AiChatPage() {
     return `${base}\n\nAvailable resources in scope (use these EXACT names when the user refers to a resource by a fragment like "course" or "flarum"):\n${lines.join("\n")}`;
   }, [context, namespace, mode, resourceNames]);
 
-  const stream = useMemo(
-    () =>
-      buildKubeChatStream({
-        systemMessage: buildSystemMessage,
-        threadId: () => getThreadId(),
-      }),
-    [buildSystemMessage],
-  );
+  const scopeRef = useRef({ context: "", namespace: "", mode, sessionContext: "" });
+  scopeRef.current = { context, namespace, mode, sessionContext: buildSystemMessage() };
+  const transport = useMemo(() => buildAgentTransport(() => scopeRef.current), []);
 
-  const runtime = useLangGraphRuntime({
-    stream,
-    unstable_allowCancellation: true,
+  const runtime = useChatRuntime({
+    transport,
+    sendAutomaticallyWhen: shouldResumeAgentTurn,
   });
 
   const handleClear = () => {
@@ -267,6 +263,8 @@ export default function AiChatPage() {
       <div className="flex-1 min-h-0">
         <AssistantRuntimeProvider runtime={runtime}>
           <ChatDeepLink />
+          <div className="flex h-full min-h-0">
+          <div className="min-w-0 flex-1">
           <Thread
             suggestions={suggestions}
             scopeLabel={scopeLabel}
@@ -288,6 +286,9 @@ export default function AiChatPage() {
                 : "Loading kubectl context… set one in the header if needed."
             }
           />
+          </div>
+          <ClusterRail context={context} namespace={namespace} />
+          </div>
         </AssistantRuntimeProvider>
       </div>
     </div>

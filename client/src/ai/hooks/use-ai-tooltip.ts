@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from "react";
-import { fetchAiSuggestion } from "./use-ai-config";
+import { fetchAiSuggestion } from "../api";
 
 const globalCache = new Map<string, string>();
 

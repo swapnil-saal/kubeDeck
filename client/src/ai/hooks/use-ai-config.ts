@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useSettings } from "./use-settings";
+import { useSettings } from "@/hooks/use-settings";
 
 const FAST_MODELS = new Set([
   "qwen3.5:0.8b",
@@ -36,20 +36,4 @@ export function useAiConfig() {
 
     return { provider, model, fastModel, isFastModel: isFast, hasFastModel, isConfigured };
   }, [settings?.ai]);
-}
-
-export async function fetchAiSuggestion(
-  prompt: string,
-  maxTokens = 200,
-  signal?: AbortSignal,
-): Promise<string> {
-  const res = await fetch("/api/ai/suggest", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt, maxTokens }),
-    signal,
-  });
-  if (!res.ok) throw new Error(`AI suggest failed: ${res.status}`);
-  const data = await res.json();
-  return data.suggestion || "";
 }
