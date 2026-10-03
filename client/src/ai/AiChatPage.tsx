@@ -136,16 +136,14 @@ function loadMode(): ChatMode {
 }
 
 function ChatHeader({
-  provider, model, context, namespace, onClear,
+  provider, model, onClear,
 }: {
   provider: string;
   model: string;
-  context: string;
-  namespace: string;
   onClear: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 px-5 h-14 border-b border-border bg-card shrink-0">
+    <div className="flex items-center justify-between gap-3 px-4 sm:px-5 h-12 border-b border-border bg-card/60 shrink-0">
       <div className="flex items-center gap-3 min-w-0">
         <AiAvatarChip size="md" />
         <div className="flex flex-col min-w-0">
@@ -162,20 +160,6 @@ function ChatHeader({
           </span>
         </div>
 
-        <div className="hidden md:flex items-center gap-1.5 ml-1 pl-3 border-l border-border/50 min-w-0">
-          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.14em] shrink-0">
-            Scope
-          </span>
-          <span
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-mono bg-secondary/80 text-secondary-foreground border border-border/50 truncate max-w-[16rem]"
-            title="Default kubectl context and namespace for this session"
-          >
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
-            {context || "current-context"}
-            <span className="text-muted-foreground/50">/</span>
-            {namespace || "all"}
-          </span>
-        </div>
       </div>
 
       <button
@@ -253,13 +237,7 @@ export default function AiChatPage() {
   return (
     <div className="flex flex-col h-full overflow-hidden text-foreground bg-background">
       <AppHeader />
-      <ChatHeader
-        provider={provider}
-        model={model}
-        context={context}
-        namespace={namespace}
-        onClear={handleClear}
-      />
+      <ChatHeader provider={provider} model={model} onClear={handleClear} />
       <div className="flex-1 min-h-0">
         <AssistantRuntimeProvider runtime={runtime}>
           <ChatDeepLink />

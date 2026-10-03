@@ -420,4 +420,4 @@ export function useStreamingLogs(name: string, context: string, namespace: strin
   return { logs, isConnected, clear };
 }
 
-export { K8sError };
+export { K8sError, k8sFetchJson, LIST_REFETCH_MS };

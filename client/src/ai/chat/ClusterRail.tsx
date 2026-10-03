@@ -6,11 +6,13 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useK8sPods, useK8sDeployments, useK8sNodes, useClusterEvents } from "@/hooks/use-k8s";
+import { usePodMetrics } from "@/hooks/use-cluster-extras";
 import { AgentActivity } from "./ActivityRail";
+import { ScoreRing, scoreTone } from "@/components/health/ScoreRing";
 import {
-  analyzePulse, diagnoseAllPrompt,
+  analyzeHealth, diagnoseAllPrompt,
   type DeployLike, type EventLike, type Issue, type NodeLike, type PodLike, type Severity,
-} from "./pulse";
+} from "@/lib/cluster-health";
 
 const SEVERITY_UI: Record<Severity, { icon: ReactNode; dot: string; pill: string }> = {
   critical: {
@@ -28,34 +30,6 @@ const SEVERITY_UI: Record<Severity, { icon: ReactNode; dot: string; pill: string
     dot: "bg-muted-foreground/60",
     pill: "bg-muted text-muted-foreground ring-border",
   },
-};
-
-function scoreTone(score: number) {
-  if (score >= 90) return { stroke: "stroke-emerald-500", text: "text-emerald-500", label: "Healthy" };
-  if (score >= 70) return { stroke: "stroke-amber-500", text: "text-amber-500", label: "Degraded" };
-  return { stroke: "stroke-destructive", text: "text-destructive", label: "Unhealthy" };
-}
-
-const ScoreRing: FC<{ score: number }> = ({ score }) => {
-  const tone = scoreTone(score);
-  const r = 24;
-  const c = 2 * Math.PI * r;
-  return (
-    <div className="relative h-16 w-16 shrink-0" role="img" aria-label={`Health score ${score} of 100`}>
-      <svg viewBox="0 0 60 60" className="h-full w-full -rotate-90">
-        <circle cx="30" cy="30" r={r} fill="none" strokeWidth="5" className="stroke-muted" />
-        <circle
-          cx="30" cy="30" r={r} fill="none" strokeWidth="5" strokeLinecap="round"
-          className={cn("transition-all duration-700", tone.stroke)}
-          strokeDasharray={c}
-          strokeDashoffset={c * (1 - score / 100)}
-        />
-      </svg>
-      <span className={cn("absolute inset-0 flex items-center justify-center text-lg font-bold tabular-nums", tone.text)}>
-        {score}
-      </span>
-    </div>
-  );
 };
 
 const SectionTitle: FC<{ children: ReactNode; right?: ReactNode }> = ({ children, right }) => (
@@ -170,16 +144,18 @@ export const ClusterRail: FC<ClusterRailProps> = ({ context, namespace }) => {
   const deployQ = useK8sDeployments(context, namespace);
   const nodesQ = useK8sNodes(context);
   const eventsQ = useClusterEvents(context, namespace, { warningsOnly: true, maxAgeMinutes: 60 });
+  const metricsQ = usePodMetrics(context, namespace);
 
   const pulse = useMemo(
     () =>
-      analyzePulse({
+      analyzeHealth({
         pods: podsQ.data as unknown as PodLike[] | undefined,
         deployments: deployQ.data as unknown as DeployLike[] | undefined,
         nodes: nodesQ.data as unknown as NodeLike[] | undefined,
         events: eventsQ.data as unknown as EventLike[] | undefined,
+        usage: metricsQ.data?.available ? metricsQ.data.items : undefined,
       }),
-    [podsQ.data, deployQ.data, nodesQ.data, eventsQ.data],
+    [podsQ.data, deployQ.data, nodesQ.data, eventsQ.data, metricsQ.data],
   );
 
   const ask = (prompt: string) => {
@@ -189,7 +165,7 @@ export const ClusterRail: FC<ClusterRailProps> = ({ context, namespace }) => {
 
   const loading = !podsQ.data && podsQ.isLoading;
   const blind = podsQ.isError && !podsQ.data;
-  const tone = scoreTone(pulse.score);
+  const tone = scoreTone(pulse.score ?? 0);
   const refreshing = podsQ.isFetching || deployQ.isFetching;
   const maxCpu = Math.max(1, ...pulse.hot.map((h) => h.cpuMilli));
 
@@ -200,12 +176,12 @@ export const ClusterRail: FC<ClusterRailProps> = ({ context, namespace }) => {
     >
       {/* Header: score + counts */}
       <div className="flex items-center gap-3.5 px-4 pb-1 pt-4">
-        {loading || blind ? (
+        {loading || blind || pulse.score === null ? (
           <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border border-dashed border-border text-muted-foreground">
             {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <ServerCrash className="h-5 w-5" />}
           </div>
         ) : (
-          <ScoreRing score={pulse.score} />
+          <ScoreRing score={pulse.score ?? 0} />
         )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -295,10 +271,17 @@ export const ClusterRail: FC<ClusterRailProps> = ({ context, namespace }) => {
             </>
           )}
 
-          {/* Hot pods */}
+          {/* Busiest pods: live usage when metrics are readable, otherwise requests (and say so) */}
           {pulse.hot.length > 0 && (
             <>
-              <SectionTitle right={<Cpu className="h-3 w-3 text-muted-foreground" />}>Busiest pods · CPU</SectionTitle>
+              <SectionTitle right={<Cpu className="h-3 w-3 text-muted-foreground" />}>
+                {pulse.hotSource === "usage" ? "Busiest pods · live CPU" : "Largest CPU requests"}
+              </SectionTitle>
+              {pulse.hotSource === "requests" && (
+                <p className="px-4 pb-1 text-[10px] leading-snug text-muted-foreground">
+                  Live usage isn't available to your user (metrics-server), so this is what pods asked for, not what they use.
+                </p>
+              )}
               <ul className="px-2 pb-1">
                 {pulse.hot.map((h) => (
                   <li key={`${h.namespace}/${h.name}`}>
@@ -307,8 +290,11 @@ export const ClusterRail: FC<ClusterRailProps> = ({ context, namespace }) => {
                       disabled={busy}
                       onClick={() =>
                         ask(
-                          `Pod ${h.name}${h.namespace ? ` in namespace ${h.namespace}` : ""} is using ${h.cpuMilli}m CPU and ${Math.round(h.memMi)}Mi memory, ` +
-                          `among the highest here. Compare that with its requests/limits, check for throttling or a hot loop in its logs, and tell me if it needs tuning.`,
+                          pulse.hotSource === "usage"
+                            ? `Pod ${h.name}${h.namespace ? ` in namespace ${h.namespace}` : ""} is currently using ${Math.round(h.cpuMilli)}m CPU and ${Math.round(h.memMi)}Mi memory, among the highest here. ` +
+                              `Compare that with its requests/limits, check for throttling or a hot loop in its logs, and tell me if it needs tuning.`
+                            : `Pod ${h.name}${h.namespace ? ` in namespace ${h.namespace}` : ""} requests ${Math.round(h.cpuMilli)}m CPU and ${Math.round(h.memMi)}Mi memory, among the largest here. ` +
+                              `Check whether those requests and its limits look right for what it actually does, and tell me if it is over- or under-provisioned.`,
                         )
                       }
                       title="Ask the agent about this pod's resource use"
@@ -317,7 +303,7 @@ export const ClusterRail: FC<ClusterRailProps> = ({ context, namespace }) => {
                       <div className="flex items-center justify-between gap-2 text-[11px]">
                         <code className="truncate font-mono text-foreground">{h.name}</code>
                         <span className="shrink-0 tabular-nums text-muted-foreground">
-                          {h.cpuMilli}m · {Math.round(h.memMi)}Mi
+                          {Math.round(h.cpuMilli)}m · {Math.round(h.memMi)}Mi
                         </span>
                       </div>
                       <div className="mt-1 h-1 overflow-hidden rounded-full bg-muted">

@@ -285,3 +285,10 @@
 :root:not(.dark) .hover\:bg-muted\/30:hover { background-color: hsl(var(--muted) / 0.8); }
 :root:not(.dark) .hover\:bg-muted\/40:hover { background-color: hsl(var(--muted) / 0.85); }
 :root:not(.dark) .hover\:bg-muted\/60:hover { background-color: hsl(var(--muted) / 1); }
+
+/* Keyboard focus: a clear 2px ring for anything reachable with Tab (mouse clicks do not trigger it). */
+:where(a, button, [role="button"], [role="option"], [role="tab"], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+}
