@@ -38,28 +38,55 @@ function isFilePath(p: string): boolean {
   }
 }
 
-export function loadSettings(): KubeDeckSettings {
+let warnedUnreadable = false;
+
+/** Keep a copy of a settings file we cannot parse, so the next save does not destroy the only record of the user's AI key / kubeconfig paths. */
+function backupUnreadableSettings(raw: string, reason: string): void {
+  if (warnedUnreadable) return;
+  warnedUnreadable = true;
+  const backup = `${SETTINGS_FILE}.corrupt-${Date.now()}`;
   try {
-    if (!fs.existsSync(SETTINGS_FILE)) return defaults();
-    const raw = fs.readFileSync(SETTINGS_FILE, "utf-8");
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed.kubeconfigPaths) || parsed.kubeconfigPaths.length === 0) {
-      return defaults();
-    }
-    return {
-      kubeconfigPaths: parsed.kubeconfigPaths,
-      ai: parsed.ai || defaults().ai,
-    };
+    fs.writeFileSync(backup, raw, { encoding: "utf-8", mode: 0o600 });
+    console.warn(`[kubedeck] ${SETTINGS_FILE} could not be read (${reason}); using defaults. A copy was saved to ${backup}`);
   } catch {
+    console.warn(`[kubedeck] ${SETTINGS_FILE} could not be read (${reason}); using defaults.`);
+  }
+}
+
+export function loadSettings(): KubeDeckSettings {
+  if (!fs.existsSync(SETTINGS_FILE)) return defaults();
+  let raw: string;
+  try {
+    raw = fs.readFileSync(SETTINGS_FILE, "utf-8");
+  } catch (err: any) {
+    console.warn(`[kubedeck] cannot read ${SETTINGS_FILE}: ${err?.message ?? err}; using defaults.`);
     return defaults();
   }
+  let parsed: any;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err: any) {
+    backupUnreadableSettings(raw, err?.message ?? "invalid JSON");
+    return defaults();
+  }
+  const base = defaults();
+  return {
+    // An empty kubeconfig list falls back to the default paths, but must not discard the AI settings.
+    kubeconfigPaths:
+      Array.isArray(parsed?.kubeconfigPaths) && parsed.kubeconfigPaths.length > 0
+        ? parsed.kubeconfigPaths
+        : base.kubeconfigPaths,
+    ai: parsed?.ai || base.ai,
+  };
 }
 
 export function saveSettings(settings: KubeDeckSettings): void {
   if (!fs.existsSync(SETTINGS_DIR)) {
     fs.mkdirSync(SETTINGS_DIR, { recursive: true });
   }
-  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), "utf-8");
+  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), { encoding: "utf-8", mode: 0o600 });
+  // `mode` only applies to new files; tighten an existing (previously world-readable) one too. No-op on Windows.
+  try { fs.chmodSync(SETTINGS_FILE, 0o600); } catch { /* best effort */ }
 }
 
 export function getKubeconfigEnv(): Record<string, string> {

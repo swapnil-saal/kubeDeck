@@ -3,7 +3,7 @@
 </p>
 
 <h1 align="center">KubeDeck</h1>
-<p align="center">A native macOS Kubernetes navigator — browse clusters, namespaces, and resources with a built-in terminal.</p>
+<p align="center">A desktop Kubernetes navigator — browse clusters and resources, run kubectl, and investigate problems with a built-in AI operator.</p>
 
 <p align="center">
   <a href="https://github.com/swapnil-saal/kube-navigator/releases/latest">
@@ -18,13 +18,12 @@
 
 ## Download
 
-> **macOS Apple Silicon (arm64) — requires macOS 13+**
+> **macOS Apple Silicon (arm64, macOS 13+)** and **Windows** (installer or portable)
 
-👉 **[Download the latest .dmg from Releases](https://github.com/swapnil-saal/kube-navigator/releases/latest)**
+👉 **[Download the latest release](https://github.com/swapnil-saal/kube-navigator/releases/latest)**
 
-1. Download `KubeDeck-1.0.0-arm64.dmg`
-2. Open the DMG and drag **KubeDeck** to your Applications folder
-3. Right-click → **Open** on first launch (bypasses Gatekeeper for unsigned builds)
+**macOS:** download the `.dmg`, drag **KubeDeck** to Applications, then right-click → **Open** on first launch (unsigned build).
+**Windows:** run the NSIS installer, or use the portable `.exe`.
 
 ---
 
@@ -33,9 +32,14 @@
 | Feature | Description |
 |---|---|
 | 🌐 **Multi-cluster** | Switch between all contexts in your `~/.kube/config` |
-| 📦 **All resource types** | Pods, Deployments, Services, ConfigMaps, Secrets, Ingresses, StatefulSets, DaemonSets, Jobs, CronJobs, ReplicaSets, PersistentVolumeClaims, and Nodes |
+| 📦 **Resource types** | Pods, Deployments, Services, ConfigMaps, Secrets, Ingresses, StatefulSets, DaemonSets, Jobs, CronJobs, HPAs, PersistentVolumeClaims, and Nodes |
 | 🔍 **Resource detail** | Full YAML view, metadata, labels, annotations, and status |
 | 📋 **Pod logs** | Stream live logs directly from any pod container |
+| 🤖 **AI operator** | Chat with an agent that has live, read-mostly kubectl access: it inspects the cluster, shows dashboards, and asks for your approval before any mutating command. Works with OpenAI, Anthropic, Ollama, or any OpenAI-compatible gateway |
+| 🩺 **Cluster pulse** | Live health score and a list of what is broken right now (crashing pods, image-pull errors, degraded deployments, NotReady nodes), each one click from an AI diagnosis |
+| 🔌 **Port forwarding** | Start, test, and stop `kubectl port-forward` sessions from the UI |
+| ⌘K **kubectl palette** | Run kubectl or describe what you want in plain English |
+| 🗂️ **Multiple kubeconfigs** | Point KubeDeck at several kubeconfig files in Settings |
 | 💻 **Built-in terminal** | Full xterm.js terminal running your default shell |
 | 🌙 **Dark / Light theme** | System-aware theme with manual toggle |
 | ⚡ **Fast** | Electron + Vite + React, no cloud dependency — everything runs locally |
@@ -62,6 +66,7 @@ KubeDeck reads your full shell environment (including `KUBECONFIG` set in `.zshr
 
 - **Electron 40** — native desktop shell
 - **React 18 + Vite** — frontend
+- **Vercel AI SDK + assistant-ui** — the AI chat and agent
 - **Express 5** — local API server (bundled inside the app)
 - **xterm.js** — terminal emulator
 - **Tailwind CSS + shadcn/ui** — UI components
@@ -93,11 +98,11 @@ npm run electron:dev
 
 This builds the Vite frontend + Express server bundle and launches Electron.
 
-### Build DMG (macOS)
+### Build installers
 
 ```bash
-npm run electron:build:mac
-# Output: release/KubeDeck-1.0.0-arm64.dmg
+npm run package              # macOS: release/KubeDeck-<version>-arm64.dmg
+npm run package:win          # Windows NSIS installer + portable (also built by CI on windows-latest)
 ```
 
 > The build runs a deep ad-hoc re-sign (`codesign --deep --force --sign -`) after packaging to satisfy macOS 26.x Team ID enforcement.
@@ -109,10 +114,13 @@ npm run electron:build:mac
 ```
 ├── client/          # React frontend (Vite)
 │   └── src/
-│       ├── pages/   # Dashboard, ResourceDetail
-│       └── components/
+│       ├── pages/   # Dashboard, ResourceDetail, Settings
+│       ├── components/
+│       └── ai/      # AI chat, cluster pulse and inline AI actions (import via "@/ai")
 ├── server/          # Express API server
-│   └── routes.ts    # kubectl-backed REST routes
+│   ├── routes.ts    # kubectl-backed REST routes
+│   ├── security.ts  # loopback / same-origin guard for the API and terminal
+│   └── ai/          # providers, one-shot endpoints and the streaming agent (entry: registerAiRoutes)
 ├── electron/
 │   └── main.cjs     # Electron main process
 ├── build/
