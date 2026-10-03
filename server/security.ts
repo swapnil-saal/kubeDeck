@@ -32,6 +32,11 @@ export function isTrustedRequest(req: IncomingMessage): boolean {
   const name = hostnameOf(host);
   if (!LOOPBACK.has(name) && !extraAllowedHosts().has(name)) return false;
 
+  // Browsers label every request with where it came from. A cross-site <img>/<script>/navigation
+  // carries no Origin on GET, but is still "cross-site" here. "none" = the user typed the URL.
+  const site = req.headers["sec-fetch-site"];
+  if (typeof site === "string" && site !== "same-origin" && site !== "none") return false;
+
   // Browsers always send Origin on WebSocket upgrades and cross-origin fetches.
   // Same-origin page loads from the app itself send an Origin equal to Host (or none).
   const origin = req.headers.origin;
@@ -48,4 +53,56 @@ export function isTrustedRequest(req: IncomingMessage): boolean {
 export function requireTrustedRequest(req: Request, res: Response, next: NextFunction): void {
   if (isTrustedRequest(req)) return next();
   res.status(403).json({ message: "Forbidden: KubeDeck only accepts requests from its own window." });
+}
+
+// ── kubectl-bound parameters ────────────────────────────────────────────────
+// Route handlers paste these straight into a kubectl command line, and some paths run it through
+// `sh -c`. Only characters that can appear in real Kubernetes names are accepted, and a value may
+// not start with "-" (it would be read as a kubectl flag).
+
+const NAME = /^(?!-)[\w.:@/+=-]{1,253}$/;
+
+export const K8S_PARAM_RULES: Record<string, RegExp> = {
+  context: NAME,
+  namespace: /^(all|(?!-)[a-z0-9.-]{1,253})$/,
+  name: /^(?!-)[\w.:-]{1,253}$/,
+  type: /^(?!-)[a-zA-Z][\w.-]{0,62}$/,
+  container: /^(?!-)[\w.-]{1,63}$/,
+  tail: /^\d{1,5}$/,
+  warningsOnly: /^(true|false)$/,
+  maxAgeMinutes: /^\d{1,5}$/,
+  id: /^[\w-]{1,64}$/,
+};
+
+/** Returns the first invalid key, or null when every present value is acceptable. */
+export function findInvalidParam(values: Record<string, unknown>): string | null {
+  for (const [key, rule] of Object.entries(K8S_PARAM_RULES)) {
+    const v = values[key];
+    if (v === undefined || v === "") continue;
+    if (typeof v !== "string" || !rule.test(v)) return key;
+  }
+  return null;
+}
+
+/** Rejects a request whose query string holds a value that is not a plausible Kubernetes name. */
+export function validateK8sQuery(req: Request, res: Response, next: NextFunction): void {
+  const bad = findInvalidParam(req.query as Record<string, unknown>);
+  if (bad) {
+    res.status(400).json({ message: `Invalid "${bad}" parameter.` });
+    return;
+  }
+  next();
+}
+
+/** Same check for `:name`, `:type` and `:id` route parameters. */
+export function registerParamValidators(app: { param: (name: string, fn: (req: Request, res: Response, next: NextFunction, value: string) => void) => unknown }): void {
+  for (const key of ["name", "type", "id"]) {
+    app.param(key, (_req, res, next, value) => {
+      if (findInvalidParam({ [key]: value })) {
+        res.status(400).json({ message: `Invalid "${key}" parameter.` });
+        return;
+      }
+      next();
+    });
+  }
 }

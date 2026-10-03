@@ -2,7 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
-import { requireTrustedRequest } from "./security";
+import { registerParamValidators, requireTrustedRequest, validateK8sQuery } from "./security";
 
 const app = express();
 const httpServer = createServer(app);
@@ -15,6 +15,8 @@ declare module "http" {
 
 // Every API call (kubectl exec, terminal, AI, settings…) must come from this app's own origin.
 app.use("/api", requireTrustedRequest);
+app.use("/api/k8s", validateK8sQuery);
+registerParamValidators(app);
 
 app.use(
   express.json({
