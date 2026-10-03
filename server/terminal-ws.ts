@@ -13,6 +13,7 @@
 import type { Server } from "http";
 import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from "child_process";
 import { WebSocketServer, WebSocket } from "ws";
+import { isTrustedRequest } from "./security";
 import { writeFileSync, mkdirSync, rmSync, existsSync } from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -248,6 +249,12 @@ export function registerTerminalWebSocket(httpServer: Server): void {
   httpServer.on("upgrade", (req, socket, head) => {
     const url = new URL(req.url || "/", `http://${req.headers.host}`);
     if (url.pathname !== api.k8s.terminal.path) return;
+    // This hands out a login shell: refuse WebSockets opened by other web pages.
+    if (!isTrustedRequest(req)) {
+      socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+      socket.destroy();
+      return;
+    }
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit("connection", ws, req);
     });

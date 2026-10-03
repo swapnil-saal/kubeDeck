@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { requireTrustedRequest } from "./security";
 
 const app = express();
 const httpServer = createServer(app);
@@ -11,6 +12,9 @@ declare module "http" {
     rawBody: unknown;
   }
 }
+
+// Every API call (kubectl exec, terminal, AI, settings…) must come from this app's own origin.
+app.use("/api", requireTrustedRequest);
 
 app.use(
   express.json({
@@ -82,7 +86,7 @@ app.use((req, res, next) => {
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
   const port = parseInt(process.env.PORT || "5000", 10);
-  const host = process.env.REPL_ID ? "0.0.0.0" : "127.0.0.1";
+  const host = "127.0.0.1"; // loopback only — this server can run kubectl and open a shell
   httpServer.listen(
     { port, host },
     () => {
