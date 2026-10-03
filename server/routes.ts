@@ -9,6 +9,8 @@ import { randomUUID } from "crypto";
 import * as os from "os";
 import { loadSettings, saveSettings, getKubeconfigEnv, scanKubeconfigs } from "./settings";
 import { registerAiRoutes } from "./ai";
+import { registerHomeRoutes } from "./home-routes";
+import { ownerWorkload } from "./k8s-parse";
 import { registerTerminalWebSocket } from "./terminal-ws";
 
 /** Quick TCP connect test — resolves true if something is listening on host:port */
@@ -206,6 +208,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           ready: `${readyCount}/${totalCount}`, ip: item.status?.podIP || "-",
           images, cpu: cpuReq || "-", memory: memReq || "-",
           containerPorts: containerPorts.length > 0 ? containerPorts : undefined,
+          workload: ownerWorkload(item.metadata?.ownerReferences),
         };
       });
       res.json(result);
@@ -1017,6 +1020,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  registerHomeRoutes(app, { runKubectlRaw });
   registerAiRoutes(app);
 
   return httpServer;

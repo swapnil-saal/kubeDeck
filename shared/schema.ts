@@ -24,6 +24,7 @@ export const k8sPodSchema = z.object({
   ready: z.string().optional(),        // "1/1"
   ip: z.string().optional(),           // Pod IP
   images: z.array(z.string()).optional(),
+  workload: z.object({ kind: z.string(), name: z.string() }).optional(), // owning Deployment / StatefulSet / DaemonSet / Job
   cpu: z.string().optional(),           // requests
   memory: z.string().optional(),        // requests
   containerPorts: z.array(z.object({
