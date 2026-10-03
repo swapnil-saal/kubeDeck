@@ -3,35 +3,95 @@
 @tailwind utilities;
 
 /*
- * Single dark scheme — primary cyan matched to the AI mascot (#4FD1D9).
- * No light mode. No multi-accent themes.
+ * Two themes, toggled by next-themes via the `.dark` class on <html>
+ * (default dark, storage key `kubedeck-theme`). Brand is the logo cyan
+ * (#4FD1D9); light mode uses a deeper teal of the same hue so text and
+ * buttons keep contrast on white. Neutrals are blue-tinted (hue 240) per
+ * DESIGN_GUIDELINES.md.
  */
-:root,
-.dark {
+:root {
   --font-sans: 'Outfit', ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
 
-  /* Near-black surfaces (logo bg family) */
-  --background: 0 0% 5%;
-  --foreground: 0 0% 96%;
+  --background: 240 10% 98%;
+  --foreground: 240 10% 10%;
 
-  --card: 0 0% 8%;
-  --card-foreground: 0 0% 96%;
-  --card-border: 0 0% 16%;
+  --card: 0 0% 100%;
+  --card-foreground: 240 10% 10%;
+  --card-border: 240 5.9% 90%;
 
-  --popover: 0 0% 8%;
-  --popover-foreground: 0 0% 96%;
-  --popover-border: 0 0% 16%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 10% 10%;
+  --popover-border: 240 5.9% 88%;
 
-  /* Brand cyan — exact AI icon face tone (#4FD1D9) */
+  --primary: 186 78% 30%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 240 4.8% 95.9%;
+  --secondary-foreground: 240 5.9% 10%;
+
+  --muted: 240 4.8% 95.9%;
+  --muted-foreground: 240 3.8% 42%;
+
+  --accent: 184 60% 93%;
+  --accent-foreground: 186 78% 24%;
+
+  --destructive: 0 72% 50%;
+  --destructive-foreground: 0 0% 100%;
+
+  --success: 160 75% 28%;
+  --success-foreground: 0 0% 100%;
+
+  --warning: 32 95% 42%;
+  --warning-foreground: 0 0% 100%;
+
+  --border: 240 5.9% 89%;
+  --input: 240 5.9% 85%;
+  --ring: 186 78% 34%;
+
+  --radius: 0.625rem;
+
+  --surface: 0 0% 100%;
+  --surface-inset: 240 5% 96%;
+
+  --chart-1: 186 78% 36%;
+  --chart-2: 160 65% 36%;
+  --chart-3: 32 92% 48%;
+  --chart-4: 212 72% 48%;
+  --chart-5: 240 4% 55%;
+
+  --sidebar: 240 5.9% 98%;
+  --sidebar-foreground: 240 10% 10%;
+  --sidebar-border: 240 5.9% 90%;
+  --sidebar-primary: 186 78% 30%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 240 4.8% 94%;
+  --sidebar-accent-foreground: 240 5.9% 10%;
+  --sidebar-ring: 186 78% 34%;
+}
+
+.dark {
+  /* Near-black, blue-tinted surfaces */
+  --background: 240 10% 4%;
+  --foreground: 0 0% 95%;
+
+  --card: 240 10% 6%;
+  --card-foreground: 0 0% 95%;
+  --card-border: 240 8% 13%;
+
+  --popover: 240 10% 7%;
+  --popover-foreground: 0 0% 95%;
+  --popover-border: 240 8% 15%;
+
+  /* Brand cyan — exact logo / AI mascot tone (#4FD1D9) */
   --primary: 184 65% 58%;
-  --primary-foreground: 0 0% 6%;
+  --primary-foreground: 240 10% 6%;
 
-  --secondary: 0 0% 12%;
+  --secondary: 240 8% 11%;
   --secondary-foreground: 0 0% 92%;
 
-  --muted: 0 0% 12%;
-  --muted-foreground: 0 0% 68%;
+  --muted: 240 8% 11%;
+  --muted-foreground: 240 5% 65%;
 
   --accent: 184 40% 12%;
   --accent-foreground: 184 65% 72%;
@@ -45,27 +105,25 @@
   --warning: 38 90% 52%;
   --warning-foreground: 0 0% 8%;
 
-  --border: 0 0% 16%;
-  --input: 0 0% 16%;
+  --border: 240 8% 14%;
+  --input: 240 8% 16%;
   --ring: 184 65% 58%;
 
-  --radius: 0.625rem;
-
-  --surface: 0 0% 8%;
-  --surface-inset: 0 0% 4%;
+  --surface: 240 10% 6%;
+  --surface-inset: 240 10% 3%;
 
   --chart-1: 184 65% 58%;
   --chart-2: 160 50% 48%;
   --chart-3: 38 80% 54%;
   --chart-4: 200 50% 55%;
-  --chart-5: 0 0% 55%;
+  --chart-5: 240 4% 55%;
 
-  --sidebar: 0 0% 4%;
-  --sidebar-foreground: 0 0% 96%;
-  --sidebar-border: 0 0% 14%;
+  --sidebar: 240 10% 5%;
+  --sidebar-foreground: 0 0% 95%;
+  --sidebar-border: 240 10% 12%;
   --sidebar-primary: 184 65% 58%;
-  --sidebar-primary-foreground: 0 0% 6%;
-  --sidebar-accent: 0 0% 11%;
+  --sidebar-primary-foreground: 240 10% 6%;
+  --sidebar-accent: 240 10% 12%;
   --sidebar-accent-foreground: 0 0% 94%;
   --sidebar-ring: 184 65% 58%;
 }
@@ -76,6 +134,9 @@
   }
 
   html {
+    color-scheme: light;
+  }
+  html.dark {
     color-scheme: dark;
   }
 
@@ -180,3 +241,47 @@
 .xterm-viewport::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--primary) / 0.4);
 }
+
+/*
+ * Light-mode contrast fixes. Status text written for dark backgrounds
+ * (`text-emerald-400` etc.) is too faint on white, and the 2–5% foreground
+ * overlays used for hover/zebra fills disappear. Remap them here so
+ * components stay single-class.
+ */
+:root:not(.dark) .text-emerald-400,
+:root:not(.dark) .text-emerald-500 { color: rgb(4 120 87); }
+:root:not(.dark) .text-amber-300,
+:root:not(.dark) .text-amber-400,
+:root:not(.dark) .text-amber-500 { color: rgb(180 83 9); }
+:root:not(.dark) .text-red-400,
+:root:not(.dark) .text-red-500 { color: rgb(185 28 28); }
+:root:not(.dark) .text-rose-400 { color: rgb(190 18 60); }
+:root:not(.dark) .text-sky-300,
+:root:not(.dark) .text-sky-400 { color: rgb(3 105 161); }
+:root:not(.dark) .text-violet-400 { color: rgb(109 40 217); }
+:root:not(.dark) .text-orange-400 { color: rgb(194 65 12); }
+:root:not(.dark) .text-emerald-400\/90 { color: rgb(4 120 87 / 0.9); }
+:root:not(.dark) .text-emerald-400\/80 { color: rgb(4 120 87 / 0.8); }
+:root:not(.dark) .text-emerald-400\/50 { color: rgb(4 120 87 / 0.6); }
+:root:not(.dark) .text-amber-400\/90 { color: rgb(180 83 9 / 0.9); }
+:root:not(.dark) .text-red-400\/60 { color: rgb(185 28 28 / 0.7); }
+:root:not(.dark) .text-rose-400\/90 { color: rgb(190 18 60 / 0.9); }
+:root:not(.dark) .text-cyan-300\/90 { color: rgb(14 116 144 / 0.9); }
+
+:root:not(.dark) .bg-foreground\/\[0\.01\] { background-color: hsl(var(--foreground) / 0.03); }
+:root:not(.dark) .bg-foreground\/\[0\.02\] { background-color: hsl(var(--foreground) / 0.04); }
+:root:not(.dark) .bg-foreground\/\[0\.03\] { background-color: hsl(var(--foreground) / 0.05); }
+:root:not(.dark) .bg-foreground\/\[0\.04\] { background-color: hsl(var(--foreground) / 0.06); }
+:root:not(.dark) .bg-foreground\/5 { background-color: hsl(var(--foreground) / 0.06); }
+:root:not(.dark) .hover\:bg-foreground\/\[0\.02\]:hover { background-color: hsl(var(--foreground) / 0.05); }
+:root:not(.dark) .hover\:bg-foreground\/\[0\.03\]:hover { background-color: hsl(var(--foreground) / 0.06); }
+:root:not(.dark) .hover\:bg-foreground\/\[0\.04\]:hover { background-color: hsl(var(--foreground) / 0.07); }
+:root:not(.dark) .hover\:bg-foreground\/5:hover { background-color: hsl(var(--foreground) / 0.07); }
+:root:not(.dark) .bg-muted\/10 { background-color: hsl(var(--muted) / 0.5); }
+:root:not(.dark) .bg-muted\/20 { background-color: hsl(var(--muted) / 0.6); }
+:root:not(.dark) .bg-muted\/30 { background-color: hsl(var(--muted) / 0.7); }
+:root:not(.dark) .bg-muted\/40 { background-color: hsl(var(--muted) / 0.8); }
+:root:not(.dark) .bg-muted\/50 { background-color: hsl(var(--muted) / 0.9); }
+:root:not(.dark) .hover\:bg-muted\/30:hover { background-color: hsl(var(--muted) / 0.8); }
+:root:not(.dark) .hover\:bg-muted\/40:hover { background-color: hsl(var(--muted) / 0.85); }
+:root:not(.dark) .hover\:bg-muted\/60:hover { background-color: hsl(var(--muted) / 1); }

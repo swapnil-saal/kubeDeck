@@ -3,9 +3,6 @@ import App from "./App";
 import "./index.css";
 import { migrateSearchIntoHash } from "./lib/hash-router";
 
-// Single dark scheme only — set before paint
-document.documentElement.classList.add("dark");
-
 // Hash-router SPA: real path `/ai?prompt=…` → `/#/ai?prompt=…`
 // Also fold any leftover browser `?search` into the hash so it cannot leak.
 (function migratePathToHash() {

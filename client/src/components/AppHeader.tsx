@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useTerminalStore } from "@/hooks/use-terminal-store";
 import { useK8sContexts, useK8sNamespaces } from "@/hooks/use-k8s";
 import { KubeDeckLogo } from "@/components/KubeDeckLogo";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 interface Breadcrumb {
   label: string;
@@ -58,6 +59,8 @@ export function AppHeader({ breadcrumbs, rightSlot, showSelectors = true }: AppH
                 : "text-muted-foreground hover:text-foreground hover:bg-secondary"
             }`}
             title="Dashboard"
+            aria-label="Dashboard"
+            aria-current={isActive("/") ? "page" : undefined}
           >
             <LayoutDashboard size={16} />
           </button>
@@ -69,6 +72,8 @@ export function AppHeader({ breadcrumbs, rightSlot, showSelectors = true }: AppH
                 : "text-muted-foreground hover:text-foreground hover:bg-secondary"
             }`}
             title="Settings"
+            aria-label="Settings"
+            aria-current={isActive("/settings") ? "page" : undefined}
           >
             <Settings size={16} />
           </button>
@@ -143,6 +148,7 @@ export function AppHeader({ breadcrumbs, rightSlot, showSelectors = true }: AppH
 
         {/* Right side */}
         <div className="ml-auto flex items-center gap-2">
+          <ThemeToggle />
           <button
             onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }))}
             className="flex items-center gap-1.5 h-8 px-3 rounded-full border border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/10 transition-colors text-xs font-semibold"
@@ -154,6 +160,7 @@ export function AppHeader({ breadcrumbs, rightSlot, showSelectors = true }: AppH
           </button>
           <button
             onClick={() => navigate("/ai")}
+            aria-current={isActive("/ai") ? "page" : undefined}
             className={`flex items-center gap-1.5 h-8 px-3 rounded-full border transition-colors text-xs font-semibold ${
               isActive("/ai")
                 ? "bg-primary text-primary-foreground border-primary"
