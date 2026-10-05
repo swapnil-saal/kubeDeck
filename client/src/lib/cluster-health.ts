@@ -77,8 +77,10 @@ export interface ClusterHealth {
   restarts: number;
   /** Broken right now (critical / warning). */
   issues: Issue[];
-  /** Running but restart-heavy, worst first. Informational — restarts may be historical. */
+  /** Running but restart-heavy, worst first (capped list). Informational — restarts may be historical. */
   flaky: Issue[];
+  /** how many pods are restart-heavy in total (the list above is capped) */
+  flakyTotal: number;
   events: Issue[];
   /** busiest pods by CPU */
   hot: HotPod[];
@@ -346,8 +348,8 @@ export function analyzeHealth(input: {
     .slice(0, MAX_ISSUES);
 
   const restartsOf = (i: Issue) => Number(i.reason.match(/^(\d+) restarts/)?.[1] ?? 0);
-  const flaky = found
-    .filter((i) => i.severity === "info")
+  const flakyAll = found.filter((i) => i.severity === "info");
+  const flaky = flakyAll
     .sort((a, b) => restartsOf(b) - restartsOf(a))
     .slice(0, 6);
 
@@ -380,6 +382,7 @@ export function analyzeHealth(input: {
     restarts,
     issues,
     flaky,
+    flakyTotal: flakyAll.length,
     events: eventIssues(input.events ?? [], now).slice(0, 12),
     hot,
     hotSource,

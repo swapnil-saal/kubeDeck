@@ -14,6 +14,7 @@ const relatedResourceSchema = z.object({
   pods: z.array(z.object({ name: z.string(), namespace: z.string(), status: z.string(), restarts: z.number() })),
   deployments: z.array(z.object({ name: z.string(), namespace: z.string(), ready: z.string() })),
   services: z.array(z.object({ name: z.string(), namespace: z.string(), type: z.string(), ports: z.string() })),
+  ingresses: z.array(z.object({ name: z.string(), namespace: z.string(), hosts: z.string() })).default([]),
 });
 
 const portForwardEntrySchema = z.object({

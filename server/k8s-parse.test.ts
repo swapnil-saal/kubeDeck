@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  countDeployments, countNodes, countPods, metricsUnavailable, ownerWorkload, parseNamespaceNames,
+  countDeployments, countNodes, countPods, ingressBackends, ingressHosts, metricsUnavailable, ownerWorkload, parseNamespaceNames,
   parseTopNodes, parseTopPods,
 } from "./k8s-parse";
 
@@ -77,5 +77,28 @@ describe("summary counters", () => {
   });
   it("reads namespace names", () => {
     expect(parseNamespaceNames("namespace/e2\nnamespace/kube-system\n")).toEqual(["e2", "kube-system"]);
+  });
+});
+
+describe("ingress helpers", () => {
+  const ing = {
+    spec: {
+      defaultBackend: { service: { name: "fallback" } },
+      rules: [
+        { host: "app.example.com", http: { paths: [{ backend: { service: { name: "web" } } }, { backend: { service: { name: "api" } } }] } },
+        { http: { paths: [{ backend: { service: { name: "web" } } }] } },
+      ],
+    },
+  };
+  it("collects every backend service once", () => {
+    expect(Array.from(ingressBackends(ing)).sort()).toEqual(["api", "fallback", "web"]);
+  });
+  it("lists hosts, using * for a host-less rule", () => {
+    expect(ingressHosts(ing)).toBe("app.example.com, *");
+  });
+  it("copes with a missing spec or legacy (non-service) backends", () => {
+    expect(ingressBackends({}).size).toBe(0);
+    expect(ingressBackends({ spec: { rules: [{ http: { paths: [{ backend: { resource: { name: "x" } } }] } }] } }).size).toBe(0);
+    expect(ingressHosts(undefined)).toBe("");
   });
 });

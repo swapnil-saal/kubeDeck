@@ -55,8 +55,17 @@ describe("analyzeHealth", () => {
     });
     expect(p.issues).toHaveLength(0);
     expect(p.flaky.map((f) => f.title)).toEqual(["flaky", "meh"]); // worst first, calm excluded
+    expect(p.flakyTotal).toBe(2);
     expect(p.restarts).toBe(59);
     expect(p.score).toBe(100);
+  });
+
+  it("reports the true flaky total even though the list is capped", () => {
+    const pods = Array.from({ length: 14 }, (_, i) => pod(`f${i}`, "Running", { restarts: 5 + i }));
+    const p = analyzeHealth({ pods });
+    expect(p.flaky).toHaveLength(6);
+    expect(p.flakyTotal).toBe(14);
+    expect(p.flaky[0].title).toBe("f13");
   });
 
   it("flags degraded deployments and NotReady nodes", () => {

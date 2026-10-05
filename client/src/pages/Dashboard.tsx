@@ -6,16 +6,31 @@ import {
   useK8sConfigMaps, useK8sSecrets, useK8sIngresses, useK8sStatefulSets, useK8sDaemonSets,
   useK8sJobs, useK8sCronJobs, useK8sNodes, useK8sHpa, useK8sPvcs,
   useDeletePod, usePodLogs, usePodEnv, usePortForward, usePortForwards, useStopPortForward,
-  useScaleDeployment, useRestartDeployment,
+  useScaleDeployment, useRestartDeployment, useClusterEvents,
   K8sError,
 } from "@/hooks/use-k8s";
+import { useNamespaceAccess, usePodMetrics, useNodeMetrics } from "@/hooks/use-cluster-extras";
+import { usePins } from "@/hooks/use-pins";
+import { addRecent, type ResourceRef } from "@/lib/pins";
+import {
+  analyzeHealth, parseCpuMilli, parseMemMi, recentChanges,
+  type DeployLike, type EventLike, type JobLike, type NodeLike, type PodLike, type PvcLike,
+} from "@/lib/cluster-health";
+import { AccessGate } from "@/pages/dashboard/AccessGate";
+import { StatTiles, type Tile, type TileState } from "@/pages/dashboard/StatTiles";
+import { PinnedRecent } from "@/pages/dashboard/PinnedRecent";
+import { HomeOverview } from "@/pages/dashboard/HomeOverview";
+import { ConnectionGate } from "@/pages/dashboard/ConnectionGate";
+import { SimpleResourceTabs } from "@/pages/dashboard/SimpleResourceTabs";
+import { FleetOverview } from "@/pages/dashboard/FleetOverview";
+import { WorkloadView, restartTone, type WorkloadPod } from "@/pages/dashboard/WorkloadView";
 import { ResourceTable } from "@/components/ResourceTable";
 import { AppHeader } from "@/components/AppHeader";
 import { CommandBar, buildListCommands } from "@/components/CommandBar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Box, Layers, Network, RefreshCw, Terminal, List, Share2, Trash2, Activity,
-  Zap, Square, FileText, Lock, Globe, Database, Clock, Server,
+  Zap, Square, FileText, Lock, Globe, Database, Clock, Server, Pin, X, ListTree, Rows3,
   Gauge, HardDrive, RotateCw, Scaling, HeartPulse, AlertTriangle, ChevronDown, ChevronUp, Sparkles, Loader2,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -25,16 +40,15 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
 import { useAiConfig, fetchAiSuggestion } from "@/ai";
-import { ClusterHealthPanel, type HealthIssue } from "@/components/ClusterHealthPanel";
 
 export default function Dashboard() {
-  const { context: currentContext, namespace: currentNamespace, setContext: handleSetContext } = useTerminalStore();
+  const { context: currentContext, namespace: currentNamespace, setContext: handleSetContext, setNamespace, setScope } = useTerminalStore();
   const [selectedPod, setSelectedPod] = useState<{ name: string; type: 'logs' | 'env' | 'forward' | null }>({ name: '', type: null });
   const [forwardPort, setForwardPort] = useState<string>("8080");
   const [remotePort, setRemotePort] = useState<string>("80");
   const [, navigate] = useLocation();
   const { toast } = useToast();
-  const { get: getParam, set: setParam } = useHashParams();
+  const { get: getParam, set: setParam, setMany } = useHashParams();
 
   const activeTab = getParam("tab") || "pods";
   const setActiveTab = useCallback((tab: string) => setParam("tab", tab === "pods" ? null : tab), [setParam]);
@@ -43,6 +57,7 @@ export default function Dashboard() {
 
   const goToDetail = (type: string, name: string, ns?: string) => {
     const namespace = ns || currentNamespace;
+    if (currentContext) addRecent({ context: currentContext, namespace, type, name });
     navigate(`/resource/${type}/${encodeURIComponent(name)}?context=${encodeURIComponent(currentContext)}&namespace=${encodeURIComponent(namespace)}`);
   };
 
@@ -74,7 +89,7 @@ export default function Dashboard() {
     }
   }, [contexts, currentContext, handleSetContext]);
 
-  const { data: pods, isLoading: podsLoading, isError: podsError, error: podsErrorObj, refetch: refetchPods } = useK8sPods(currentContext, currentNamespace);
+  const { data: pods, isLoading: podsLoading, isFetching: podsFetching, isError: podsError, error: podsErrorObj, refetch: refetchPods } = useK8sPods(currentContext, currentNamespace);
   const { data: deployments, isLoading: deployLoading, isError: deployError, error: deployErrorObj, refetch: refetchDeploy } = useK8sDeployments(currentContext, currentNamespace);
   const { data: services, isLoading: servicesLoading, isError: servicesError, error: servicesErrorObj, refetch: refetchServices } = useK8sServices(currentContext, currentNamespace);
   const { data: configmaps, isLoading: cmLoading, isError: cmError, error: cmErrorObj, refetch: refetchCM } = useK8sConfigMaps(currentContext, currentNamespace);
@@ -165,162 +180,110 @@ export default function Dashboard() {
     }
   };
 
-  const getStatValue = (data: any[] | undefined, isLoading: boolean, isError: boolean, error: Error | null) => {
-    if (isLoading) return "···";
-    if (isError) {
-      if (error instanceof K8sError && error.isForbidden) return "🔒";
-      return "ERR";
-    }
-    return data?.length ?? 0;
+  // ── Scope, access and live data (hooks must stay above the early returns below) ──
+  const access = useNamespaceAccess(currentContext);
+  const podMetrics = usePodMetrics(currentContext, currentNamespace);
+  const nodeMetrics = useNodeMetrics(currentContext);
+  const eventsQ = useClusterEvents(currentContext, currentNamespace, { warningsOnly: false, maxAgeMinutes: 60 });
+  const pinState = usePins(currentContext);
+  const nsScoped = currentNamespace !== "all";
+  const podsForbidden = podsError && podsErrorObj instanceof K8sError && podsErrorObj.isForbidden;
+  const podsUnreachable = podsError && podsErrorObj instanceof K8sError && podsErrorObj.isUnreachable;
+
+  // A link like `#/?context=e2dev&namespace=e2` sets the scope, then tidies the URL.
+  const urlContext = getParam("context");
+  const urlNamespace = getParam("namespace");
+  useEffect(() => {
+    if (!urlContext && !urlNamespace) return;
+    setScope(urlContext || currentContext, urlNamespace || currentNamespace);
+    setMany({ context: null, namespace: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlContext, urlNamespace]);
+
+  // If the saved scope isn't readable (e.g. "all namespaces" for a namespace-scoped user), move to
+  // one that is — once per cluster, so a deliberate later choice is never overridden.
+  const autoSwitched = useRef<Set<string>>(new Set());
+  const [switchedNote, setSwitchedNote] = useState<{ from: string; to: string } | null>(null);
+  useEffect(() => {
+    const a = access.data;
+    if (!a || !currentContext || autoSwitched.current.has(currentContext)) return;
+    const denied = currentNamespace === "all" ? !a.all : a.namespaces.find((n) => n.name === currentNamespace)?.canListPods === false;
+    if (!denied) return;
+    const readable = a.namespaces.filter((n) => n.canListPods);
+    if (readable.length === 0) return;
+    autoSwitched.current.add(currentContext);
+    const pick = readable.find((n) => n.name === "default") ?? readable[0];
+    setNamespace(pick.name);
+    setSwitchedNote({ from: currentNamespace, to: pick.name });
+  }, [access.data, currentContext, currentNamespace, setNamespace]);
+  useEffect(() => setSwitchedNote(null), [currentContext]);
+
+  // One health engine for the whole app. A pod list that could not be read is `undefined`
+  // (no score), never an empty list that would look healthy.
+  const usageItems = podMetrics.data?.available ? podMetrics.data.items : undefined;
+  const health = useMemo(
+    () => analyzeHealth({
+      pods: pods as unknown as PodLike[] | undefined,
+      deployments: deployments as unknown as DeployLike[] | undefined,
+      nodes: nodes as unknown as NodeLike[] | undefined,
+      jobs: jobs as unknown as JobLike[] | undefined,
+      pvcs: pvcs as unknown as PvcLike[] | undefined,
+      events: eventsQ.data as unknown as EventLike[] | undefined,
+      usage: usageItems,
+    }),
+    [pods, deployments, nodes, jobs, pvcs, eventsQ.data, usageItems],
+  );
+  const changes = useMemo(
+    () => recentChanges({ pods: pods as unknown as PodLike[] | undefined, events: eventsQ.data as unknown as EventLike[] | undefined }),
+    [pods, eventsQ.data],
+  );
+  const requests = useMemo(() => {
+    let cpuMilli = 0, memMi = 0;
+    for (const p of pods ?? []) { cpuMilli += parseCpuMilli(p.cpu); memMi += parseMemMi(p.memory); }
+    return { cpuMilli, memMi };
+  }, [pods]);
+  const usageTotals = useMemo(
+    () => (usageItems ? { cpuMilli: usageItems.reduce((t, u) => t + u.cpuMilli, 0), memMi: usageItems.reduce((t, u) => t + u.memMi, 0) } : null),
+    [usageItems],
+  );
+  const usageByPod = useMemo(() => new Map((usageItems ?? []).map((u) => [u.namespace ? `${u.namespace}/${u.name}` : u.name, u])), [usageItems]);
+
+  // Quick filters set by the status tiles (`?f=bad` / `?f=restarts`) and the pod view (`?view=grouped`).
+  const quickFilter = getParam("f");
+  const podView = getParam("view") === "grouped" ? "grouped" : "list";
+  const podIsOk = (p: { status: string; ready?: string }) => {
+    if (p.status === "Completed" || p.status === "Succeeded") return true;
+    if (p.status !== "Running") return false;
+    const m = p.ready?.match(/^(\d+)\/(\d+)$/);
+    return !m || Number(m[1]) >= Number(m[2]);
   };
+  const shownPods = useMemo(() => {
+    if (!pods) return pods;
+    if (quickFilter === "bad") return pods.filter((p) => !podIsOk(p as any));
+    if (quickFilter === "restarts") return pods.filter((p) => p.restarts >= 5).sort((a, b) => b.restarts - a.restarts);
+    return pods;
+  }, [pods, quickFilter]);
+  const shownDeployments = useMemo(() => {
+    if (!deployments || quickFilter !== "bad") return deployments;
+    return deployments.filter((d) => { const [c, t] = d.ready.split("/"); return Number(c) < Number(t); });
+  }, [deployments, quickFilter]);
 
-  // ── Health Summary (hook must be before any early return) ──
-  const healthIssues = useMemo<HealthIssue[]>(() => {
-    const out: HealthIssue[] = [];
+  const askAi = useCallback((prompt: string) => {
+    navigate(`/ai?context=${encodeURIComponent(currentContext)}&namespace=${encodeURIComponent(currentNamespace)}&prompt=${encodeURIComponent(prompt)}`);
+  }, [navigate, currentContext, currentNamespace]);
 
-    if (pods) {
-      const errorReasons = ["CrashLoopBackOff", "Error", "ImagePullBackOff", "ErrImagePull", "OOMKilled", "CreateContainerConfigError", "InvalidImageName"];
-      // Group error pods by their specific failure reason
-      const byReason = new Map<string, typeof pods>();
-      for (const p of pods) {
-        if (errorReasons.includes(p.status)) {
-          if (!byReason.has(p.status)) byReason.set(p.status, []);
-          byReason.get(p.status)!.push(p);
-        }
-      }
-      for (const [reason, ps] of Array.from(byReason.entries())) {
-        out.push({
-          severity: "critical",
-          category: "Pods",
-          reason,
-          title: `Pods in ${reason}`,
-          items: ps.map((p) => ({ name: p.name, detail: `restarts=${p.restarts}, age=${p.age}`, namespace: (p as any).namespace, kind: "Pod" })),
-          tab: "pods",
-        });
-      }
+  const jumpToList = useCallback((tab: string, filter: "bad" | "restarts" | null) => {
+    setMany({ tab: tab === "pods" ? null : tab, f: filter, view: null });
+    requestAnimationFrame(() => document.getElementById("resources")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }, [setMany]);
 
-      const pending = pods.filter((p) => ["Pending", "ContainerCreating", "PodInitializing"].includes(p.status));
-      if (pending.length > 0) {
-        out.push({
-          severity: "warning",
-          category: "Pods",
-          reason: "Pending",
-          title: "Pods stuck pending",
-          items: pending.map((p) => ({ name: p.name, detail: p.status, namespace: (p as any).namespace, kind: "Pod" })),
-          tab: "pods",
-        });
-      }
-
-      const highRestarts = pods.filter((p) => p.restarts > 5 && !errorReasons.includes(p.status));
-      if (highRestarts.length > 0) {
-        out.push({
-          severity: "warning",
-          category: "Pods",
-          reason: "HighRestartCount",
-          title: "Pods with elevated restart count",
-          items: highRestarts.map((p) => ({ name: p.name, detail: `${p.restarts} restarts`, namespace: (p as any).namespace, kind: "Pod" })),
-          tab: "pods",
-        });
-      }
-    }
-
-    if (deployments) {
-      const unhealthy = deployments.filter((d) => {
-        const [cur, tot] = d.ready.split("/");
-        return Number(cur) < Number(tot) || Number(tot) === 0;
-      });
-      if (unhealthy.length > 0) {
-        out.push({
-          severity: "critical",
-          category: "Deployments",
-          reason: "NotReady",
-          title: "Deployments not fully ready",
-          items: unhealthy.map((d) => ({ name: d.name, detail: `${d.ready} ready`, namespace: (d as any).namespace, kind: "Deployment" })),
-          tab: "deployments",
-        });
-      }
-    }
-
-    if (nodes) {
-      const notReady = nodes.filter((n) => n.status !== "Ready");
-      if (notReady.length > 0) {
-        out.push({
-          severity: "critical",
-          category: "Nodes",
-          reason: "NotReady",
-          title: "Nodes not Ready",
-          items: notReady.map((n) => ({ name: n.name, detail: n.status, kind: "Node" })),
-          tab: "nodes",
-        });
-      }
-    }
-
-    if (jobs) {
-      const failed = jobs.filter((j) => j.status === "Failed");
-      if (failed.length > 0) {
-        out.push({
-          severity: "warning",
-          category: "Jobs",
-          reason: "Failed",
-          title: "Failed jobs",
-          items: failed.map((j) => ({ name: j.name, detail: j.status, namespace: (j as any).namespace, kind: "Job" })),
-          tab: "jobs",
-        });
-      }
-    }
-
-    if (pvcs) {
-      const unbound = pvcs.filter((p) => p.status !== "Bound");
-      if (unbound.length > 0) {
-        out.push({
-          severity: "warning",
-          category: "PVCs",
-          reason: "NotBound",
-          title: "PVCs not bound",
-          items: unbound.map((p) => ({ name: p.name, detail: p.status, namespace: (p as any).namespace, kind: "PersistentVolumeClaim" })),
-          tab: "pvcs",
-        });
-      }
-    }
-
-    // Sort: critical first, then by item count desc
-    return out.sort((a, b) => {
-      const sev = (x: HealthIssue) => (x.severity === "critical" ? 0 : x.severity === "warning" ? 1 : 2);
-      const d = sev(a) - sev(b);
-      return d !== 0 ? d : b.items.length - a.items.length;
-    });
-  }, [pods, deployments, nodes, jobs, pvcs]);
+  // Keep the selected resource tab visible in the horizontally scrolling tab strip.
+  useEffect(() => {
+    document.querySelector('[role="tab"][data-state="active"]')?.scrollIntoView({ inline: "center", block: "nearest" });
+  }, [activeTab]);
 
   const { isFastModel } = useAiConfig();
-  const aiSuggestionsCache = useRef<Map<string, string>>(new Map());
-  const [aiSuggestions, setAiSuggestions] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    if (!isFastModel || healthIssues.length === 0) return;
-    const controller = new AbortController();
-    const fetchSuggestions = async () => {
-      for (const issue of healthIssues) {
-        const key = `${issue.category}/${issue.reason}`;
-        if (aiSuggestionsCache.current.has(key)) {
-          setAiSuggestions((prev) => ({ ...prev, [key]: aiSuggestionsCache.current.get(key)! }));
-          continue;
-        }
-        try {
-          const suggestion = await fetchAiSuggestion(
-            `In one sentence, explain the most likely cause and fix for: ${issue.title} (reason=${issue.reason}, count=${issue.items.length}).`,
-            200,
-            controller.signal,
-          );
-          aiSuggestionsCache.current.set(key, suggestion);
-          setAiSuggestions((prev) => ({ ...prev, [key]: suggestion }));
-        } catch {
-          // ignore abort / failure
-        }
-      }
-    };
-    fetchSuggestions();
-    return () => controller.abort();
-  }, [isFastModel, healthIssues]);
+  const refFor = (type: string, name: string, namespace: string): ResourceRef => ({ context: currentContext, namespace, type, name });
 
   // Gate the spinner on whether the request has ever settled, never on the live
   // status: a refetch resets that to "pending" and would hang the screen again.
@@ -381,12 +344,40 @@ export default function Dashboard() {
     );
   }
 
-  const stats = [
-    { label: "PODS", value: getStatValue(pods, podsLoading, podsError, podsErrorObj), icon: Box, isError: podsError, isForbidden: podsErrorObj instanceof K8sError && podsErrorObj.isForbidden },
-    { label: "DEPLOY", value: getStatValue(deployments, deployLoading, deployError, deployErrorObj), icon: Layers, isError: deployError, isForbidden: deployErrorObj instanceof K8sError && deployErrorObj.isForbidden },
-    { label: "SVC", value: getStatValue(services, servicesLoading, servicesError, servicesErrorObj), icon: Network, isError: servicesError, isForbidden: servicesErrorObj instanceof K8sError && servicesErrorObj.isForbidden },
-    { label: "NODES", value: getStatValue(nodes, nodesLoading, nodesError, nodesErrorObj), icon: Server, isError: nodesError, isForbidden: nodesErrorObj instanceof K8sError && nodesErrorObj.isForbidden },
-    { label: "ING", value: getStatValue(ingresses, ingLoading, ingError, ingErrorObj), icon: Globe, isError: ingError, isForbidden: ingErrorObj instanceof K8sError && ingErrorObj.isForbidden },
+  const tileState = (loading: boolean, isErr: boolean, err: unknown): TileState =>
+    loading ? "loading" : isErr ? (err instanceof K8sError && err.isForbidden ? "forbidden" : err instanceof K8sError && err.isUnreachable ? "offline" : "error") : "ok";
+  const notRunning = health.pods.pending + health.pods.failed;
+  const degradedDeploys = health.deployments.total - health.deployments.ready;
+  const tiles: Tile[] = [
+    {
+      key: "pods", label: "Pods", icon: Box, state: tileState(podsLoading, podsError, podsErrorObj),
+      value: `${health.pods.running + health.pods.done}/${health.pods.total}`,
+      sub: notRunning > 0 ? `${notRunning} not running` : "all running", tone: health.pods.failed > 0 ? "bad" : notRunning > 0 ? "warn" : "good",
+      onClick: () => jumpToList("pods", notRunning > 0 ? "bad" : null), hint: "Open the pod list",
+    },
+    {
+      key: "deploy", label: "Deployments", icon: Layers, state: tileState(deployLoading, deployError, deployErrorObj),
+      value: `${health.deployments.ready}/${health.deployments.total}`,
+      sub: degradedDeploys > 0 ? `${degradedDeploys} not ready` : "all ready", tone: degradedDeploys > 0 ? "bad" : "good",
+      onClick: () => jumpToList("deployments", degradedDeploys > 0 ? "bad" : null), hint: "Open the deployment list",
+    },
+    {
+      key: "svc", label: "Services", icon: Network, state: tileState(servicesLoading, servicesError, servicesErrorObj),
+      value: String(services?.length ?? 0), sub: ingresses && ingresses.length > 0 ? `${ingresses.length} ingress${ingresses.length === 1 ? "" : "es"}` : undefined, tone: "neutral",
+      onClick: () => jumpToList("services", null), hint: "Open the service list",
+    },
+    {
+      key: "nodes", label: "Nodes", icon: Server, state: tileState(nodesLoading, nodesError, nodesErrorObj),
+      value: `${health.nodes.ready}/${health.nodes.total}`,
+      sub: health.nodes.ready < health.nodes.total ? `${health.nodes.total - health.nodes.ready} not ready` : nodeMetrics.data?.available && nodeMetrics.data.items?.length ? `CPU ${Math.round(nodeMetrics.data.items.reduce((t, n) => t + n.cpuPct, 0) / nodeMetrics.data.items.length)}% avg` : "all ready",
+      tone: health.nodes.ready < health.nodes.total ? "bad" : "good", onClick: () => jumpToList("nodes", null), hint: "Open the node list",
+    },
+    {
+      key: "restarts", label: "Restarts", icon: RotateCw, state: tileState(podsLoading, podsError, podsErrorObj),
+      value: String(health.restarts),
+      sub: health.flakyTotal > 0 ? `${health.flakyTotal} flaky pod${health.flakyTotal === 1 ? "" : "s"}` : "none flaky", tone: health.flakyTotal > 0 ? "warn" : "good",
+      onClick: () => jumpToList("pods", health.flakyTotal > 0 ? "restarts" : null), hint: "Pods with 5 or more restarts",
+    },
   ];
 
   const headerRight = (
@@ -401,7 +392,7 @@ export default function Dashboard() {
         <RefreshCw size={15} />
       </motion.button>
 
-      <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full" title="Auto-refreshing every 10s">
+      <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full" title="Auto-refreshing every 10s">
         <div className="relative">
           <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_5px_rgba(34,197,94,0.5)]" />
           <div className="absolute inset-0 w-1.5 h-1.5 rounded-full bg-green-500 animate-ping opacity-40" />
@@ -432,54 +423,58 @@ export default function Dashboard() {
             <p className="text-xs text-muted-foreground mt-1">Cluster resources and health for the selected context.</p>
           </div>
 
-          {/* ── STAT CARDS ── */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-            {stats.map((stat, i) => (
-              <motion.div
-                key={stat.label}
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.05, duration: 0.3 }}
-                whileHover={{ y: -2 }}
-                className={`group relative overflow-hidden rounded-xl shadow-sm transition-colors cursor-default
-                  ${stat.isForbidden
-                    ? 'border border-border/50 bg-muted/30'
-                    : stat.isError 
-                      ? 'border border-destructive/20 bg-destructive/5' 
-                      : 'border border-border/50 bg-card/50 backdrop-blur hover:border-primary/20'
-                  }`}
-              >
-                <div className="px-4 py-4 flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${stat.isError ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary'}`}>
-                    <stat.icon size={18} />
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-widest">{stat.label}</p>
-                    <p className={`text-2xl font-bold tabular-nums leading-tight tracking-tight ${stat.isError ? 'text-destructive text-lg' : 'text-foreground'}`}>
-                      {stat.value}
-                    </p>
-                  </div>
-                </div>
-              </motion.div>
-              ))}
-            </div>
+          <PinnedRecent context={currentContext} onOpen={(r) => goToDetail(r.type, r.name, r.namespace)} />
 
-          {/* ── HEALTH SUMMARY ── */}
-          {!podsLoading && !deployLoading && !nodesLoading && (
-            <div className="space-y-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Health</p>
-              <ClusterHealthPanel
-                context={currentContext}
-                namespace={currentNamespace}
-                issues={healthIssues}
-                loading={false}
-                onJumpToTab={setActiveTab}
-              />
+          {switchedNote && (
+            <div role="status" className="flex items-center gap-3 rounded-lg border border-primary/25 bg-primary/[0.06] px-4 py-2.5 text-xs">
+              <Sparkles className="h-4 w-4 shrink-0 text-primary" />
+              <p className="flex-1 text-foreground">
+                Showing <span className="font-mono font-semibold">{switchedNote.to}</span> — your user can't list pods {switchedNote.from === "all" ? "across all namespaces" : `in ${switchedNote.from}`} on this cluster.
+                Change it any time from the scope menu.
+              </p>
+              <button type="button" onClick={() => setSwitchedNote(null)} aria-label="Dismiss" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
             </div>
           )}
 
+          {podsLoading && !pods ? (
+            <div className="flex h-40 items-center justify-center rounded-xl border border-border/60 bg-card/40 text-sm text-muted-foreground">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />Reading {currentContext}…
+            </div>
+          ) : podsUnreachable ? (
+            <ConnectionGate
+              context={currentContext}
+              retrying={podsFetching}
+              onRetry={handleRefresh}
+              otherContexts={(contexts ?? []).map((c) => c.name).filter((n) => n !== currentContext)}
+              onSwitch={(name) => handleSetContext(name)}
+              detail={podsErrorObj instanceof Error ? podsErrorObj.message : undefined}
+            />
+          ) : podsForbidden ? (
+            <AccessGate context={currentContext} namespace={currentNamespace} access={access.data} onPick={setNamespace} />
+          ) : pods ? (
+            <HomeOverview
+              context={currentContext}
+              namespace={currentNamespace}
+              health={health}
+              changes={changes}
+              usage={usageTotals}
+              requests={requests}
+              metricsReason={podMetrics.data && !podMetrics.data.available ? podMetrics.data.reason : undefined}
+              nodeUsage={nodeMetrics.data?.available ? nodeMetrics.data.items : undefined}
+              onAsk={askAi}
+            />
+          ) : null}
+
+          <StatTiles tiles={tiles} />
+
+          <FleetOverview
+            contexts={contexts ?? []}
+            currentContext={currentContext}
+            onOpen={(name) => { handleSetContext(name); window.scrollTo({ top: 0 }); }}
+          />
+
           {/* ── RESOURCE TABS ── */}
-          <div className="space-y-3">
+          <div id="resources" className="space-y-3 scroll-mt-4">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Resources</p>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <div className="flex items-center gap-4 mb-5">
@@ -523,11 +518,42 @@ export default function Dashboard() {
               {/* ── PODS ── */}
                 <TabsContent value="pods" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+                    <div className="mb-3 flex flex-wrap items-center gap-2">
+                      {quickFilter && (
+                        <button type="button" onClick={() => setParam("f", null)} className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/15">
+                          {quickFilter === "restarts" ? "Pods with 5+ restarts" : "Only unhealthy pods"}{shownPods ? ` · ${shownPods.length}` : ""}
+                          <X className="h-3 w-3" aria-label="Clear filter" />
+                        </button>
+                      )}
+                      <div className="ml-auto flex rounded-lg border border-border bg-card/60 p-0.5 text-xs font-medium" role="group" aria-label="Pod view">
+                        <button type="button" onClick={() => setParam("view", null)} aria-pressed={podView === "list"} className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 transition-colors ${podView === "list" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}><Rows3 className="h-3.5 w-3.5" />List</button>
+                        <button type="button" onClick={() => setParam("view", "grouped")} aria-pressed={podView === "grouped"} className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 transition-colors ${podView === "grouped" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}><ListTree className="h-3.5 w-3.5" />By workload</button>
+                      </div>
+                    </div>
+                    {podView === "grouped" ? (
+                      <div className="overflow-hidden rounded-xl border border-border/60 bg-card/40">
+                        <WorkloadView
+                          pods={(shownPods ?? []) as unknown as WorkloadPod[]}
+                          usage={usageItems}
+                          showNamespace={!nsScoped}
+                          isPinned={(t, n, ns) => pinState.isPinned(refFor(t, n, ns))}
+                          onOpen={(t, n, ns) => goToDetail(t, n, ns)}
+                          onPin={(t, n, ns) => pinState.toggle(refFor(t, n, ns))}
+                          onAsk={askAi}
+                          onScale={(name, current) => { setScaleDialog({ name, current }); setScaleReplicas(String(current)); }}
+                          onRestart={handleRestart}
+                        />
+                      </div>
+                    ) : (
                     <ResourceTable
                       tableId="pods"
+
+                      hideNamespace={nsScoped}
+
+                      emptyLabel="pods"
                       search={searchFilter}
                       onSearchChange={setSearchFilter}
-                      data={pods}
+                      data={shownPods}
                       isLoading={podsLoading}
                     isError={podsError}
                     error={podsErrorObj}
@@ -565,18 +591,30 @@ export default function Dashboard() {
                         <span className="text-muted-foreground tabular-nums text-[10px]">{item.ip || "-"}</span>
                       )},
                       { header: "Restarts", accessorKey: "restarts", cell: (item) => (
-                        <span className={item.restarts > 0 ? 'text-foreground font-bold' : 'text-muted-foreground'}>{item.restarts}</span>
+                        <span className={`tabular-nums ${restartTone(item.restarts)}`} title={item.restarts >= 5 ? "Restarting repeatedly" : undefined}>{item.restarts}</span>
                       )},
+                      { header: usageItems ? "CPU" : "CPU req", id: "cpu", cell: (item: any) => {
+                        const u = usageByPod.get(item.namespace ? `${item.namespace}/${item.name}` : item.name) ?? usageByPod.get(item.name);
+                        if (u) return <span className="tabular-nums text-xs text-foreground/80" title={`${Math.round(u.memMi)}Mi memory in use`}>{Math.round(u.cpuMilli)}m</span>;
+                        const req = parseCpuMilli(item.cpu);
+                        return <span className="tabular-nums text-xs text-muted-foreground" title="Requested (live usage unavailable)">{req > 0 ? `${Math.round(req)}m` : "–"}</span>;
+                      }},
                       { header: "Node", accessorKey: "node", defaultHidden: true, cell: (item) => (
                         <span className="text-muted-foreground text-[10px]">{item.node}</span>
                       )},
                         { header: "Age", accessorKey: "age" },
                       { header: "", id: "actions", required: true, cell: (item) => (
-                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button className="p-1 rounded hover:bg-foreground/8 text-muted-foreground hover:text-foreground transition-colors" onClick={() => setSelectedPod({ name: item.name, type: 'logs' })} title="Logs">
+                        <div className="flex items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                          <button className="p-1.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors" onClick={() => askAi(`Diagnose pod ${item.name} in namespace ${item.namespace}: it is ${item.status} with ${item.restarts} restarts. Check its describe output, recent logs and events and tell me if anything is wrong.`)} title="Diagnose with AI" aria-label={`Diagnose ${item.name} with AI`}>
+                            <Sparkles className="h-3 w-3" />
+                          </button>
+                          <button className={`p-1.5 rounded hover:bg-foreground/8 transition-colors ${pinState.isPinned(refFor("pod", item.name, item.namespace)) ? "text-primary" : "text-muted-foreground hover:text-foreground"}`} onClick={() => pinState.toggle(refFor("pod", item.name, item.namespace))} title="Pin" aria-label={`Pin ${item.name}`} aria-pressed={pinState.isPinned(refFor("pod", item.name, item.namespace))}>
+                            <Pin className="h-3 w-3" />
+                          </button>
+                          <button className="p-1.5 rounded hover:bg-foreground/8 text-muted-foreground hover:text-foreground transition-colors" onClick={() => setSelectedPod({ name: item.name, type: 'logs' })} title="Logs" aria-label={`Logs of ${item.name}`}>
                             <Terminal className="h-3 w-3" />
                           </button>
-                          <button className="p-1 rounded hover:bg-foreground/8 text-muted-foreground hover:text-foreground transition-colors" onClick={() => setSelectedPod({ name: item.name, type: 'env' })} title="Env">
+                          <button className="p-1.5 rounded hover:bg-foreground/8 text-muted-foreground hover:text-foreground transition-colors" onClick={() => setSelectedPod({ name: item.name, type: 'env' })} title="Env" aria-label={`Environment of ${item.name}`}>
                             <List className="h-3 w-3" />
                           </button>
                           <button className="p-1 rounded hover:bg-foreground/8 text-muted-foreground hover:text-foreground transition-colors" onClick={() => {
@@ -594,13 +632,15 @@ export default function Dashboard() {
                           }} title="Port Forward">
                             <Share2 className="h-3 w-3" />
                           </button>
-                          <button className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors" onClick={() => handleDeletePod(item.name)} title="Delete">
+                          <span className="mx-1 h-3 w-px bg-border" aria-hidden />
+                          <button className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors" onClick={() => handleDeletePod(item.name)} title="Delete pod" aria-label={`Delete pod ${item.name}`}>
                             <Trash2 className="h-3 w-3" />
                           </button>
                             </div>
                       )},
                       ]}
                     />
+                    )}
                   </motion.div>
                 </TabsContent>
 
@@ -609,9 +649,13 @@ export default function Dashboard() {
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                   <ResourceTable
                     tableId="deployments"
+
+                    hideNamespace={nsScoped}
+
+                    emptyLabel="deployments"
                     search={searchFilter}
                     onSearchChange={setSearchFilter}
-                    data={deployments}
+                    data={shownDeployments}
                     isLoading={deployLoading}
                     isError={deployError}
                     error={deployErrorObj}
@@ -662,314 +706,25 @@ export default function Dashboard() {
                 </motion.div>
                 </TabsContent>
 
-              {/* ── SERVICES ── */}
-                <TabsContent value="services" className="mt-0 outline-none">
-                <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-                  <ResourceTable
-                    tableId="services"
-                    search={searchFilter}
-                    onSearchChange={setSearchFilter}
-                    data={services}
-                    isLoading={servicesLoading}
-                    isError={servicesError}
-                    error={servicesErrorObj}
-                    accentColor="emerald"
-                    columns={[
-                      { header: "Service", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("service", item.name, item.namespace)} className="text-foreground/80 font-medium hover:text-foreground hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
-                      )},
-                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
-                      { header: "Type", accessorKey: "type", cell: (item) => <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground bg-foreground/[0.04] px-1.5 py-0.5 rounded-sm border border-border">{item.type}</span> },
-                      { header: "Cluster IP", accessorKey: "clusterIP", cell: (item) => <span className="text-muted-foreground tabular-nums text-[10px]">{item.clusterIP}</span> },
-                      { header: "Ports", accessorKey: "ports", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.ports}</span> },
-                      { header: "Age", accessorKey: "age" },
-                    ]}
-                  />
-                </motion.div>
-              </TabsContent>
-
-              {/* ── STATEFULSETS ── */}
-              <TabsContent value="statefulsets" className="mt-0 outline-none">
-                <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-                  <ResourceTable
-                    tableId="statefulsets"
-                    search={searchFilter}
-                    onSearchChange={setSearchFilter}
-                    data={statefulsets}
-                    isLoading={stsLoading}
-                    isError={stsError}
-                    error={stsErrorObj}
-                    accentColor="cyan"
-                    columns={[
-                      { header: "StatefulSet", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("statefulset", item.name, item.namespace)} className="text-foreground/80 font-medium hover:text-foreground hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
-                      )},
-                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
-                      { header: "Ready", accessorKey: "ready", cell: (item) => {
-                        const [c, t] = item.ready.split("/");
-                        const ok = c === t && Number(c) > 0;
-                        return <span className={`px-1.5 py-0.5 rounded-sm text-[10px] font-bold border ${ok ? 'bg-foreground/5 text-foreground/70 border-foreground/10' : 'bg-foreground/[0.03] text-muted-foreground border-border'}`}>{item.ready}</span>;
-                      }},
-                      { header: "Replicas", accessorKey: "replicas" },
-                      { header: "Image", accessorKey: "images" as any, cell: (item: any) => {
-                        const imgs: string[] = item.images || [];
-                        if (imgs.length === 0) return <span className="text-muted-foreground/60">-</span>;
-                        return (
-                          <div className="flex flex-col gap-0.5">
-                            {imgs.map((img: string, idx: number) => (
-                              <span key={idx} className="text-[10px] text-muted-foreground" title={img}>
-                                {img.split("/").pop()?.split("@")[0] || img}
-                              </span>
-                            ))}
-                          </div>
-                        );
-                      }},
-                      { header: "Age", accessorKey: "age" },
-                    ]}
-                  />
-                </motion.div>
-              </TabsContent>
-
-              {/* ── DAEMONSETS ── */}
-              <TabsContent value="daemonsets" className="mt-0 outline-none">
-                <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-                  <ResourceTable
-                    tableId="daemonsets"
-                    search={searchFilter}
-                    onSearchChange={setSearchFilter}
-                    data={daemonsets}
-                    isLoading={dsLoading}
-                    isError={dsError}
-                    error={dsErrorObj}
-                    accentColor="violet"
-                    columns={[
-                      { header: "DaemonSet", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("daemonset", item.name, item.namespace)} className="text-foreground/80 font-medium hover:text-foreground hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
-                      )},
-                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
-                      { header: "Desired", accessorKey: "desired" },
-                      { header: "Current", accessorKey: "current" },
-                      { header: "Ready", accessorKey: "ready" },
-                      { header: "Available", accessorKey: "available" },
-                      { header: "Age", accessorKey: "age" },
-                    ]}
-                  />
-                </motion.div>
-              </TabsContent>
-
-              {/* ── JOBS ── */}
-              <TabsContent value="jobs" className="mt-0 outline-none">
-                <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-                  <ResourceTable
-                    tableId="jobs"
-                    search={searchFilter}
-                    onSearchChange={setSearchFilter}
-                    data={jobs}
-                    isLoading={jobsLoading}
-                    isError={jobsError}
-                    error={jobsErrorObj}
-                    accentColor="amber"
-                    columns={[
-                      { header: "Job", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("job", item.name, item.namespace)} className="text-foreground/80 font-medium hover:text-foreground hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
-                      )},
-                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
-                      { header: "Completions", accessorKey: "completions" },
-                      { header: "Duration", accessorKey: "duration" },
-                      { header: "Status", accessorKey: "status" },
-                      { header: "Age", accessorKey: "age" },
-                    ]}
-                  />
-                </motion.div>
-              </TabsContent>
-
-              {/* ── CRONJOBS ── */}
-              <TabsContent value="cronjobs" className="mt-0 outline-none">
-                <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-                  <ResourceTable
-                    tableId="cronjobs"
-                    search={searchFilter}
-                    onSearchChange={setSearchFilter}
-                    data={cronjobs}
-                    isLoading={cjLoading}
-                    isError={cjError}
-                    error={cjErrorObj}
-                    accentColor="violet"
-                    columns={[
-                      { header: "CronJob", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("cronjob", item.name, item.namespace)} className="text-foreground/80 font-medium hover:text-foreground hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
-                      )},
-                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
-                      { header: "Schedule", accessorKey: "schedule", cell: (item) => <span className="text-foreground/60 font-mono text-[10px]">{item.schedule}</span> },
-                      { header: "Suspend", accessorKey: "suspend" as any, cell: (item: any) => (
-                        <span className={`text-[10px] font-bold ${item.suspend ? 'text-foreground/70' : 'text-muted-foreground'}`}>{item.suspend ? "Yes" : "No"}</span>
-                      )},
-                      { header: "Active", accessorKey: "active" },
-                      { header: "Last Run", accessorKey: "lastSchedule" as any, cell: (item: any) => <span className="text-muted-foreground text-[10px]">{item.lastSchedule || "-"}</span> },
-                      { header: "Age", accessorKey: "age" },
-                    ]}
-                  />
-                </motion.div>
-              </TabsContent>
-
-              {/* ── CONFIGMAPS ── */}
-              <TabsContent value="configmaps" className="mt-0 outline-none">
-                <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-                  <ResourceTable
-                    tableId="configmaps"
-                    search={searchFilter}
-                    onSearchChange={setSearchFilter}
-                    data={configmaps}
-                    isLoading={cmLoading}
-                    isError={cmError}
-                    error={cmErrorObj}
-                    accentColor="cyan"
-                    columns={[
-                      { header: "ConfigMap", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("configmap", item.name, item.namespace)} className="text-foreground/80 font-medium hover:text-foreground hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
-                      )},
-                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
-                      { header: "Data Keys", accessorKey: "dataKeys", cell: (item) => <span className="text-muted-foreground tabular-nums">{item.dataKeys}</span> },
-                      { header: "Age", accessorKey: "age" },
-                    ]}
-                  />
-                </motion.div>
-              </TabsContent>
-
-              {/* ── SECRETS ── */}
-              <TabsContent value="secrets" className="mt-0 outline-none">
-                <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-                  <ResourceTable
-                    tableId="secrets"
-                    search={searchFilter}
-                    onSearchChange={setSearchFilter}
-                    data={secrets}
-                    isLoading={secLoading}
-                    isError={secError}
-                    error={secErrorObj}
-                    accentColor="violet"
-                    columns={[
-                      { header: "Secret", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("secret", item.name, item.namespace)} className="text-foreground/80 font-medium hover:text-foreground hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
-                      )},
-                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
-                      { header: "Type", accessorKey: "type", cell: (item) => <span className="text-[10px] text-muted-foreground bg-foreground/[0.04] px-1.5 py-0.5 rounded-sm border border-border">{item.type}</span> },
-                      { header: "Data", accessorKey: "dataKeys", cell: (item) => <span className="text-muted-foreground tabular-nums">{item.dataKeys}</span> },
-                      { header: "Age", accessorKey: "age" },
-                    ]}
-                  />
-                </motion.div>
-              </TabsContent>
-
-              {/* ── INGRESSES ── */}
-              <TabsContent value="ingresses" className="mt-0 outline-none">
-                <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-                  <ResourceTable
-                    tableId="ingresses"
-                    search={searchFilter}
-                    onSearchChange={setSearchFilter}
-                    data={ingresses}
-                    isLoading={ingLoading}
-                    isError={ingError}
-                    error={ingErrorObj}
-                    accentColor="pink"
-                    columns={[
-                      { header: "Ingress", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("ingress", item.name, item.namespace)} className="text-foreground/80 font-medium hover:text-foreground hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
-                      )},
-                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
-                      { header: "Hosts", accessorKey: "hosts", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.hosts}</span> },
-                      { header: "Class", accessorKey: "className" as any, cell: (item: any) => <span className="text-muted-foreground text-[10px]">{item.className || "-"}</span> },
-                      { header: "Ports", accessorKey: "ports" },
-                      { header: "Age", accessorKey: "age" },
-                    ]}
-                  />
-                </motion.div>
-              </TabsContent>
-
-              {/* ── NODES ── */}
-              <TabsContent value="nodes" className="mt-0 outline-none">
-                <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-                  <ResourceTable
-                    tableId="nodes"
-                    search={searchFilter}
-                    onSearchChange={setSearchFilter}
-                    data={nodes}
-                    isLoading={nodesLoading}
-                    isError={nodesError}
-                    error={nodesErrorObj}
-                    accentColor="amber"
-                    columns={[
-                      { header: "Node", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("node", item.name, "")} className="text-foreground/80 font-medium hover:text-foreground hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
-                      )},
-                      { header: "Status", accessorKey: "status" },
-                      { header: "Roles", accessorKey: "roles", cell: (item) => <span className="text-[10px] text-muted-foreground">{item.roles}</span> },
-                      { header: "Version", accessorKey: "version", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.version}</span> },
-                      { header: "CPU", accessorKey: "cpu", cell: (item) => <span className="text-muted-foreground tabular-nums text-[10px]">{item.cpu}</span> },
-                      { header: "Memory", accessorKey: "memory", cell: (item) => <span className="text-muted-foreground tabular-nums text-[10px]">{item.memory}</span> },
-                      { header: "OS", accessorKey: "os", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.os}</span> },
-                      { header: "Age", accessorKey: "age" },
-                    ]}
-                  />
-                </motion.div>
-              </TabsContent>
-
-              {/* ── HPA ── */}
-              <TabsContent value="hpa" className="mt-0 outline-none">
-                <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-                  <ResourceTable
-                    tableId="hpa"
-                    search={searchFilter}
-                    onSearchChange={setSearchFilter}
-                    data={hpa}
-                    isLoading={hpaLoading}
-                    isError={hpaError}
-                    error={hpaErrorObj}
-                    accentColor="emerald"
-                    columns={[
-                      { header: "HPA", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("hpa", item.name, item.namespace)} className="text-foreground/80 font-medium hover:text-foreground hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
-                      )},
-                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
-                      { header: "Reference", accessorKey: "reference", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.reference}</span> },
-                      { header: "Min", accessorKey: "minReplicas" },
-                      { header: "Max", accessorKey: "maxReplicas" },
-                      { header: "Current", accessorKey: "currentReplicas", cell: (item) => <span className="text-foreground/70 font-bold tabular-nums">{item.currentReplicas}</span> },
-                      { header: "Metrics", accessorKey: "metrics", cell: (item) => <span className="text-[10px] text-muted-foreground">{item.metrics}</span> },
-                      { header: "Age", accessorKey: "age" },
-                    ]}
-                  />
-                </motion.div>
-              </TabsContent>
-
-              {/* ── PVCs ── */}
-              <TabsContent value="pvcs" className="mt-0 outline-none">
-                <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-                  <ResourceTable
-                    tableId="pvcs"
-                    search={searchFilter}
-                    onSearchChange={setSearchFilter}
-                    data={pvcs}
-                    isLoading={pvcLoading}
-                    isError={pvcError}
-                    error={pvcErrorObj}
-                    accentColor="violet"
-                    columns={[
-                      { header: "PVC", accessorKey: "name", cell: (item) => (
-                        <button onClick={() => goToDetail("pvc", item.name, item.namespace)} className="text-foreground/80 font-medium hover:text-foreground hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
-                      )},
-                      { header: "NS", accessorKey: "namespace", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.namespace}</span> },
-                      { header: "Status", accessorKey: "status" },
-                      { header: "Volume", accessorKey: "volume", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.volume}</span> },
-                      { header: "Capacity", accessorKey: "capacity", cell: (item) => <span className="text-muted-foreground tabular-nums">{item.capacity}</span> },
-                      { header: "Access", accessorKey: "accessModes", cell: (item) => <span className="text-[10px] text-muted-foreground">{item.accessModes}</span> },
-                      { header: "Class", accessorKey: "storageClass", cell: (item) => <span className="text-[10px] text-muted-foreground">{item.storageClass}</span> },
-                      { header: "Age", accessorKey: "age" },
-                    ]}
-                  />
-                </motion.div>
-                </TabsContent>
+              <SimpleResourceTabs
+                q={{
+                  services: { data: services, isLoading: servicesLoading, isError: servicesError, error: servicesErrorObj },
+                  statefulsets: { data: statefulsets, isLoading: stsLoading, isError: stsError, error: stsErrorObj },
+                  daemonsets: { data: daemonsets, isLoading: dsLoading, isError: dsError, error: dsErrorObj },
+                  jobs: { data: jobs, isLoading: jobsLoading, isError: jobsError, error: jobsErrorObj },
+                  cronjobs: { data: cronjobs, isLoading: cjLoading, isError: cjError, error: cjErrorObj },
+                  configmaps: { data: configmaps, isLoading: cmLoading, isError: cmError, error: cmErrorObj },
+                  secrets: { data: secrets, isLoading: secLoading, isError: secError, error: secErrorObj },
+                  ingresses: { data: ingresses, isLoading: ingLoading, isError: ingError, error: ingErrorObj },
+                  nodes: { data: nodes, isLoading: nodesLoading, isError: nodesError, error: nodesErrorObj },
+                  hpa: { data: hpa, isLoading: hpaLoading, isError: hpaError, error: hpaErrorObj },
+                  pvcs: { data: pvcs, isLoading: pvcLoading, isError: pvcError, error: pvcErrorObj },
+                }}
+                search={searchFilter}
+                onSearchChange={setSearchFilter}
+                nsScoped={nsScoped}
+                goToDetail={goToDetail}
+              />
               </AnimatePresence>
             </Tabs>
           </div>

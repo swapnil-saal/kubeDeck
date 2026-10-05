@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { registerParamValidators, requireTrustedRequest, validateK8sQuery } from "./security";
+import { reportUnreachableAs503 } from "./errors";
 
 const app = express();
 const httpServer = createServer(app);
@@ -16,6 +17,7 @@ declare module "http" {
 // Every API call (kubectl exec, terminal, AI, settings…) must come from this app's own origin.
 app.use("/api", requireTrustedRequest);
 app.use("/api/k8s", validateK8sQuery);
+app.use("/api/k8s", reportUnreachableAs503);
 registerParamValidators(app);
 
 app.use(

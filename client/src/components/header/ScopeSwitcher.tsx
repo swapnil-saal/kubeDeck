@@ -61,9 +61,9 @@ export function ScopeSwitcher({ className }: { className?: string }) {
           )}
         >
           <span className={cn("h-2 w-2 shrink-0 rounded-full", dot)} />
-          <span className="truncate font-semibold text-foreground">{context || "Select cluster"}</span>
+          <span className="max-w-[9rem] shrink-0 truncate font-semibold text-foreground">{context || "Select cluster"}</span>
           <span className="text-muted-foreground/50">/</span>
-          <span className={cn("truncate font-mono", currentDenied ? "text-amber-500" : "text-muted-foreground")}>
+          <span className={cn("min-w-0 truncate font-mono", currentDenied ? "text-amber-500" : "text-muted-foreground")}>
             {namespace === "all" ? "all namespaces" : namespace}
           </span>
           {currentDenied && <Lock className="h-3 w-3 shrink-0 text-amber-500" aria-hidden />}

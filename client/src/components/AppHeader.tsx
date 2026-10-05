@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { Bot, ChevronRight, LayoutDashboard, Settings, Sparkles } from "lucide-react";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
 import { useK8sContexts } from "@/hooks/use-k8s";
-import { KubeDeckLogo } from "@/components/KubeDeckLogo";
+import { KubeDeckLogo, KubeDeckMark } from "@/components/KubeDeckLogo";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ScopeSwitcher } from "@/components/header/ScopeSwitcher";
 import { cn } from "@/lib/utils";
@@ -64,7 +64,8 @@ export function AppHeader({ breadcrumbs, rightSlot, showSelectors = true }: AppH
           className="flex shrink-0 items-center rounded-md py-1 transition-opacity hover:opacity-85"
           aria-label="KubeDeck — go to overview"
         >
-          <KubeDeckLogo size="xl" />
+          <KubeDeckMark size={34} className="sm:hidden" />
+          <KubeDeckLogo size="xl" className="hidden sm:inline-flex" />
         </button>
 
         {/* Primary navigation: labelled, with a clear current page. Drops to its own row on small screens. */}

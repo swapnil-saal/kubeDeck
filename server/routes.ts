@@ -10,7 +10,7 @@ import * as os from "os";
 import { loadSettings, saveSettings, getKubeconfigEnv, scanKubeconfigs } from "./settings";
 import { registerAiRoutes } from "./ai";
 import { registerHomeRoutes } from "./home-routes";
-import { ownerWorkload } from "./k8s-parse";
+import { ingressBackends, ingressHosts, ownerWorkload } from "./k8s-parse";
 import { registerTerminalWebSocket } from "./terminal-ws";
 
 /** Quick TCP connect test — resolves true if something is listening on host:port */
@@ -83,7 +83,8 @@ function spawnCommand(cmd: string, args: string[], envOverride?: Record<string, 
 }
 
 async function runKubectl(command: string): Promise<KubectlResult> {
-  const args = command.trim().split(/\s+/).concat("-o", "json");
+  // fail in seconds when a cluster is unreachable (kubectl would otherwise wait ~30s per call)
+  const args = command.trim().split(/\s+/).concat("-o", "json", "--request-timeout=20s");
   const { stdout, stderr, code } = await spawnCommand("kubectl", args, getKubeconfigEnv());
   if (code !== 0) {
     const combined = `${stderr} ${stdout}`.toLowerCase();
@@ -809,7 +810,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const context = req.query.context ? `--context=${req.query.context}` : "";
       const namespace = req.query.namespace ? `-n ${req.query.namespace}` : "";
 
-      const related: { pods: any[]; deployments: any[]; services: any[] } = { pods: [], deployments: [], services: [] };
+      const related: { pods: any[]; deployments: any[]; services: any[]; ingresses: any[] } = { pods: [], deployments: [], services: [], ingresses: [] };
 
       // Get the resource JSON to extract selectors
       const data = await runKubectl(`get ${type} ${name} ${context} ${namespace}`);
@@ -920,6 +921,51 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
               const ports = item.spec?.ports?.map((p: any) => `${p.port}/${p.protocol}`).join(", ") || "";
               return { name: item.metadata?.name, namespace: item.metadata?.namespace, type: item.spec?.type || "Unknown", ports };
             });
+          }
+        }
+      }
+
+      // Ingress → the Services it routes to, and the workloads / pods behind them.
+      if (resourceType === "ingress") {
+        const backends = ingressBackends(data);
+        if (backends.size > 0) {
+          const allSvc = await runKubectl(`get services ${context} ${namespace}`);
+          const svcs = allSvc._forbidden ? [] : (allSvc.items || []).filter((sv: any) => backends.has(sv.metadata?.name));
+          related.services = svcs.map((item: any) => ({
+            name: item.metadata?.name, namespace: item.metadata?.namespace, type: item.spec?.type || "Unknown",
+            ports: item.spec?.ports?.map((p: any) => `${p.port}/${p.protocol}`).join(", ") || "",
+          }));
+          const selectors = svcs.map((sv: any) => sv.spec?.selector).filter((sel: any) => sel && Object.keys(sel).length > 0);
+          const matches = (labels: Record<string, string> = {}) => selectors.some((sel: Record<string, string>) => Object.entries(sel).every(([k, v]) => labels[k] === v));
+          if (selectors.length > 0) {
+            const allDeploy = await runKubectl(`get deployments ${context} ${namespace}`);
+            if (!allDeploy._forbidden) {
+              related.deployments = (allDeploy.items || []).filter((d: any) => matches(d.spec?.template?.metadata?.labels)).map((item: any) => ({
+                name: item.metadata?.name, namespace: item.metadata?.namespace,
+                ready: `${item.status?.readyReplicas || 0}/${item.spec?.replicas || 0}`,
+              }));
+            }
+            const allPods = await runKubectl(`get pods ${context} ${namespace}`);
+            if (!allPods._forbidden) {
+              related.pods = (allPods.items || []).filter((pod: any) => matches(pod.metadata?.labels)).map((item: any) => {
+                let status = item.status?.phase || "Unknown";
+                const cs = item.status?.containerStatuses || [];
+                for (const c of cs) { if (c.state?.waiting?.reason) { status = c.state.waiting.reason; break; } }
+                return { name: item.metadata?.name, namespace: item.metadata?.namespace, status, restarts: cs.reduce((sum: number, c: any) => sum + (c.restartCount || 0), 0) };
+              });
+            }
+          }
+        }
+      } else {
+        // Ingresses that route to the Services found above (or to this Service itself).
+        const svcNames = new Set<string>(related.services.map((sv: any) => sv.name));
+        if (resourceType === "service") svcNames.add(name);
+        if (svcNames.size > 0) {
+          const ing = await runKubectl(`get ingresses ${context} ${namespace}`);
+          if (!ing._forbidden) {
+            related.ingresses = (ing.items || [])
+              .filter((i: any) => Array.from(ingressBackends(i)).some((b) => svcNames.has(b)))
+              .map((i: any) => ({ name: i.metadata?.name, namespace: i.metadata?.namespace, hosts: ingressHosts(i) }));
           }
         }
       }

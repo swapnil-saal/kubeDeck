@@ -1,6 +1,6 @@
 import { StatusBadge } from "./StatusBadge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Search, AlertTriangle, ShieldOff, Columns3, RotateCcw } from "lucide-react";
+import { Search, AlertTriangle, ShieldOff, Columns3, RotateCcw, Inbox } from "lucide-react";
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import { formatDistanceToNow } from "date-fns";
@@ -44,6 +44,10 @@ interface ResourceTableProps<T> {
    * Prefer one id per resource kind (e.g. "pods", "deployments").
    */
   tableId?: string;
+  /** Drop the Namespace column — redundant when the whole view is one namespace. */
+  hideNamespace?: boolean;
+  /** Plural noun for the empty state, e.g. "ingresses". */
+  emptyLabel?: string;
 }
 
 function formatAge(timestamp: string): string {
@@ -96,7 +100,7 @@ function saveHidden(tableId: string | undefined, hidden: Set<string>) {
 
 export function ResourceTable<T extends { name: string; status?: string }>({
   data,
-  columns,
+  columns: allColumns,
   isLoading,
   isError,
   error,
@@ -104,7 +108,13 @@ export function ResourceTable<T extends { name: string; status?: string }>({
   search: controlledSearch,
   onSearchChange,
   tableId,
+  hideNamespace,
+  emptyLabel,
 }: ResourceTableProps<T>) {
+  const columns = useMemo(
+    () => (hideNamespace ? allColumns.filter((c) => c.accessorKey !== "namespace") : allColumns),
+    [allColumns, hideNamespace],
+  );
   const [internalSearch, setInternalSearch] = useState("");
   const search = controlledSearch ?? internalSearch;
   const setSearch = onSearchChange ?? setInternalSearch;
@@ -309,8 +319,19 @@ export function ResourceTable<T extends { name: string; status?: string }>({
                 ))
               ) : filteredData?.length === 0 ? (
                 <tr>
-                  <td colSpan={Math.max(colCount, 1)} className="px-4 py-12 text-center">
-                    <p className="text-sm text-muted-foreground">No resources found</p>
+                  <td colSpan={Math.max(colCount, 1)} className="px-4 py-14 text-center">
+                    <div className="mx-auto flex max-w-sm flex-col items-center gap-2">
+                      <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-muted-foreground"><Inbox className="h-5 w-5" /></span>
+                      <p className="text-sm font-medium text-foreground">
+                        {search ? `No ${emptyLabel ?? "resources"} match “${search}”` : `No ${emptyLabel ?? "resources"} in this scope`}
+                      </p>
+                      <p className="text-xs leading-relaxed text-muted-foreground">
+                        {search ? "Clear the filter to see everything." : "Nothing of this kind exists here. Try another namespace from the scope menu in the header."}
+                      </p>
+                      {search && (
+                        <button type="button" onClick={() => setSearch("")} className="mt-1 rounded-md border border-border px-3 py-1 text-xs text-foreground transition-colors hover:bg-muted">Clear filter</button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ) : (

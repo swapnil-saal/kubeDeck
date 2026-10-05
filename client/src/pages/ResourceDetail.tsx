@@ -18,6 +18,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { AppHeader } from "@/components/AppHeader";
+import { Topology } from "@/components/Topology";
 import { CommandBar, buildDetailCommands } from "@/components/CommandBar";
 import {
   AiTroubleshootButton,
@@ -164,7 +165,7 @@ function YamlViewer({ content, isLoading }: { content?: string; isLoading: boole
   return (
     <div className="relative h-full">
       <div className="absolute top-2 right-2 z-10"><CopyButton text={content} /></div>
-      <div className="h-full overflow-auto p-4 rounded-lg border border-border bg-[hsl(220_18%_8%)] font-mono text-[11.5px] leading-[1.65] shadow-inner">
+      <div className="h-full overflow-auto p-4 rounded-lg border border-border bg-muted/40 dark:bg-[hsl(220_18%_8%)] font-mono text-[11.5px] leading-[1.65] shadow-inner">
         {highlighted.map((line, i) => (
           <div key={i} className="hover:bg-foreground/[0.03] flex min-h-[1.65em] group">
             <span className="text-muted-foreground/35 select-none mr-3.5 inline-block w-9 text-right tabular-nums shrink-0 group-hover:text-muted-foreground/55 transition-colors">{i + 1}</span>
@@ -599,25 +600,21 @@ function DeploymentLogsPane({ name, context, namespace, grep, onGrepChange }: { 
   return <LogViewer content={data?.logs} isLoading={isLoading} grep={grep} onGrepChange={onGrepChange} />;
 }
 
-/* ── Related Resources Panel ─────────────────────── */
+/* ── Connected resources: the traffic path ────────── */
 
 function RelatedPanel({ type, name, context, namespace, onNavigate }: {
   type: string; name: string; context: string; namespace: string;
   onNavigate: (type: string, name: string, ns: string) => void;
 }) {
   const { data: related, isLoading } = useResourceRelated(type, name, context, namespace);
+  const [, navigate] = useLocation();
 
   if (isLoading) {
     return <div className="h-full flex items-center justify-center text-muted-foreground font-mono text-[11px] animate-pulse">Resolving connections...</div>;
   }
 
-  const sections = [
-    { key: "services", icon: Network, label: "SERVICES", items: related?.services || [], linkType: "service" },
-    { key: "deployments", icon: Layers, label: "DEPLOYMENTS", items: related?.deployments || [], linkType: "deployment" },
-    { key: "pods", icon: Box, label: "PODS", items: related?.pods || [], linkType: "pod" },
-  ].filter(s => s.items.length > 0);
-
-  if (sections.length === 0) {
+  const count = (related?.services.length ?? 0) + (related?.deployments.length ?? 0) + (related?.pods.length ?? 0) + (related?.ingresses?.length ?? 0);
+  if (count === 0) {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-3 text-muted-foreground">
         <GitBranch className="w-8 h-8 text-muted-foreground/60" />
@@ -628,82 +625,16 @@ function RelatedPanel({ type, name, context, namespace, onNavigate }: {
   }
 
   return (
-    <div className="h-full overflow-auto p-4 space-y-6">
-      {/* Connection Map */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="px-3 py-1.5 rounded border text-[10px] font-bold uppercase tracking-wider bg-foreground/5 text-foreground/80 border-border">
-          {TYPE_META[type]?.label || type} / {name}
-        </div>
-        <div className="flex items-center gap-1 text-muted-foreground/60">
-          <div className="w-8 h-[1px] bg-gradient-to-r from-white/10 to-white/5" />
-          <GitBranch className="w-3 h-3" />
-          <div className="w-8 h-[1px] bg-gradient-to-r from-white/5 to-white/10" />
-        </div>
-        <div className="text-[9px] text-muted-foreground font-bold uppercase tracking-wider">
-          {sections.reduce((n, s) => n + s.items.length, 0)} connected
-        </div>
-      </div>
-
-      {sections.map((section) => (
-        <div key={section.key}>
-          <div className="flex items-center gap-2 mb-3">
-            <section.icon className="w-3.5 h-3.5 text-muted-foreground" />
-            <h3 className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">{section.label}</h3>
-            <span className="text-[9px] text-muted-foreground/60 tabular-nums">({section.items.length})</span>
-          </div>
-          <div className="grid gap-2">
-            {section.items.map((item: any) => (
-              <motion.button
-                key={item.name}
-                onClick={() => onNavigate(section.linkType, item.name, item.namespace)}
-                initial={{ opacity: 0, x: -4 }}
-                animate={{ opacity: 1, x: 0 }}
-                className="group text-left w-full p-3 rounded border border-border bg-foreground/[0.02] hover:border-foreground/15 hover:bg-foreground/[0.03] transition-all"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-1.5 h-1.5 rounded-full bg-foreground/30" />
-                    <span className="text-[11px] font-medium text-foreground/80 group-hover:text-foreground transition-colors">
-                      {item.name}
-                    </span>
-                    <span className="text-[9px] text-muted-foreground/60">{item.namespace}</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {item.status && (
-                      <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-sm border ${
-                        ["Running", "Active"].includes(item.status)
-                          ? "bg-foreground/5 text-foreground/60 border-border"
-                          : item.status.includes("Error") || item.status.includes("Crash")
-                            ? "bg-destructive/10 text-destructive border-destructive/20"
-                            : "bg-foreground/5 text-muted-foreground border-border"
-                      }`}>{item.status}</span>
-                    )}
-                    {item.ready && (
-                      <span className="text-[9px] font-bold text-muted-foreground bg-foreground/[0.04] px-1.5 py-0.5 rounded-sm border border-border">
-                        {item.ready}
-                      </span>
-                    )}
-                    {item.type && (
-                      <span className="text-[9px] font-bold text-muted-foreground uppercase">{item.type}</span>
-                    )}
-                    {item.ports && (
-                      <span className="text-[9px] text-muted-foreground tabular-nums">{item.ports}</span>
-                    )}
-                    {item.restarts !== undefined && item.restarts > 0 && (
-                      <span className="text-[9px] text-muted-foreground tabular-nums">{item.restarts} restarts</span>
-                    )}
-                    <ExternalLink className="w-3 h-3 text-muted-foreground/60 group-hover:text-muted-foreground transition-colors" />
-                  </div>
-                </div>
-              </motion.button>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
+    <Topology
+      type={type}
+      name={name}
+      namespace={namespace}
+      related={related}
+      onNavigate={onNavigate}
+      onAsk={(prompt) => navigate(`/ai?context=${encodeURIComponent(context)}&namespace=${encodeURIComponent(namespace)}&prompt=${encodeURIComponent(prompt)}`)}
+    />
   );
 }
-
 /* ── Port Forward Bar ────────────────────────────── */
 
 function PortForwardBar() {

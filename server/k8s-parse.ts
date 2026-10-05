@@ -124,3 +124,21 @@ export function countNodes(stdout: string): { ready: number; total: number } {
 export function parseNamespaceNames(stdout: string): string[] {
   return stdout.split("\n").map((l) => l.trim().replace(/^namespace\//, "")).filter(Boolean);
 }
+
+/** Names of the Services an Ingress routes to (rules and default backend). */
+export function ingressBackends(ing: any): Set<string> {
+  const out = new Set<string>();
+  const def = ing?.spec?.defaultBackend?.service?.name;
+  if (def) out.add(def);
+  for (const rule of ing?.spec?.rules || []) {
+    for (const path of rule?.http?.paths || []) {
+      const n = path?.backend?.service?.name;
+      if (n) out.add(n);
+    }
+  }
+  return out;
+}
+
+export function ingressHosts(ing: any): string {
+  return (ing?.spec?.rules || []).map((r: any) => r.host || "*").join(", ");
+}

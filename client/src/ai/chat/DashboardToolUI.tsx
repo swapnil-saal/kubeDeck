@@ -473,7 +473,7 @@ function DashboardBoard({ data }: { data: DashboardPayload }) {
         )}
         >
           {data.charts.map((c, i) => (
-            <div key={i} className="rounded-lg border border-border/80 bg-[hsl(220_16%_10%)] p-2.5">
+            <div key={i} className="rounded-lg border border-border/80 bg-muted/40 dark:bg-[hsl(220_16%_10%)] p-2.5">
               <MiniChart chart={c} />
             </div>
           ))}
