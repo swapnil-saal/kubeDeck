@@ -10,6 +10,7 @@ import * as os from "os";
 import { loadSettings, saveSettings, getKubeconfigEnv, scanKubeconfigs } from "./settings";
 import { registerAiRoutes } from "./ai";
 import { registerHomeRoutes } from "./home-routes";
+import { registerLogRoutes } from "./log-routes";
 import { ingressBackends, ingressHosts, ownerWorkload } from "./k8s-parse";
 import { registerTerminalWebSocket } from "./terminal-ws";
 
@@ -497,55 +498,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (result.code !== 0) return handleForbidden(res, result.stderr, `Failed to delete pod ${name}`);
       res.json({ message: `Pod ${name} deleted` });
     } catch (err) { res.status(500).json({ message: String(err) }); }
-  });
-
-  // ── Pod Logs (snapshot) ───────────────────────────
-  app.get(`${api.k8s.podLogs.path}`, async (req, res) => {
-    try {
-      const { name } = req.params;
-      const context = req.query.context ? `--context=${req.query.context}` : "";
-      const namespace = req.query.namespace ? `-n ${req.query.namespace}` : "";
-      const container = req.query.container ? `-c ${req.query.container}` : "";
-      if (isReplit) return res.json({ logs: `[MOCK LOGS for ${name}]\n2026-02-20 INFO Initializing...\n2026-02-20 INFO Ready.` });
-      const result = await runKubectlRaw(`logs ${name} ${context} ${namespace} ${container} --tail=500`);
-      if (result.code !== 0) return handleForbidden(res, result.stderr, `Cannot view logs for ${name}`);
-      res.json({ logs: result.stdout });
-    } catch (err) { res.status(500).json({ message: String(err) }); }
-  });
-
-  // ── Deployment Logs (aggregate all pod logs) ──────
-  app.get(api.k8s.deploymentLogs.path, async (req, res) => {
-    try {
-      const { name } = req.params;
-      const context = req.query.context ? `--context=${req.query.context}` : "";
-      const namespace = req.query.namespace ? `-n ${req.query.namespace}` : "";
-      const tail = req.query.tail ? `--tail=${req.query.tail}` : "--tail=300";
-      const result = await runKubectlRaw(
-        `logs deployment/${name} --all-containers=true --prefix ${context} ${namespace} ${tail}`
-      );
-      if (result.code !== 0) return handleForbidden(res, result.stderr, `Cannot view logs for deployment/${name}`);
-      res.json({ logs: result.stdout });
-    } catch (err) {
-      res.status(500).json({ message: String(err) });
-    }
-  });
-
-  // ── Pod Logs (SSE realtime stream) ────────────────
-  app.get(api.k8s.podLogsStream.path, (req: Request, res: Response) => {
-    const name = String(req.params.name);
-    res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no" });
-    res.write(`data: ${JSON.stringify("[stream connected]")}\n\n`);
-    const args: string[] = ["logs", "-f", "--tail=200", name];
-    if (req.query.context) args.push(`--context=${String(req.query.context)}`);
-    if (req.query.namespace) args.push("-n", String(req.query.namespace));
-    if (req.query.container) args.push("-c", String(req.query.container));
-    const kubeconfigEnv = getKubeconfigEnv();
-    const spawnEnv = Object.keys(kubeconfigEnv).length > 0 ? { env: { ...process.env, ...kubeconfigEnv } } : undefined;
-    const proc: ChildProcessWithoutNullStreams = spawn("kubectl", args, spawnEnv);
-    proc.stdout.on("data", (chunk: Buffer) => { for (const line of chunk.toString().split("\n")) { if (line) res.write(`data: ${JSON.stringify(line)}\n\n`); } });
-    proc.stderr.on("data", (chunk: Buffer) => { const msg = chunk.toString().trim(); if (msg) res.write(`data: ${JSON.stringify("[stderr] " + msg)}\n\n`); });
-    proc.on("close", () => { res.write(`data: ${JSON.stringify("[stream ended]")}\n\n`); res.end(); });
-    req.on("close", () => { proc.kill(); });
   });
 
   // ── Pod Env ───────────────────────────────────────
@@ -1067,6 +1019,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   registerHomeRoutes(app, { runKubectlRaw });
+  registerLogRoutes(app, { runKubectl });
   registerAiRoutes(app);
 
   return httpServer;

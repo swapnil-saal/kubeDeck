@@ -71,29 +71,29 @@
 }
 
 .dark {
-  /* Near-black, blue-tinted surfaces */
-  --background: 240 10% 4%;
+  /* Neutral charcoal, matching the logo tile (#0A0A0A) and cyan accent (#4FD1D9) */
+  --background: 0 0% 7.5%;
   --foreground: 0 0% 95%;
 
-  --card: 240 10% 6%;
+  --card: 0 0% 10%;
   --card-foreground: 0 0% 95%;
-  --card-border: 240 8% 13%;
+  --card-border: 0 0% 18%;
 
-  --popover: 240 10% 7%;
+  --popover: 0 0% 11.5%;
   --popover-foreground: 0 0% 95%;
-  --popover-border: 240 8% 15%;
+  --popover-border: 0 0% 20%;
 
   /* Brand cyan — exact logo / AI mascot tone (#4FD1D9) */
   --primary: 184 65% 58%;
-  --primary-foreground: 240 10% 6%;
+  --primary-foreground: 0 0% 6%;
 
-  --secondary: 240 8% 11%;
+  --secondary: 0 0% 14.5%;
   --secondary-foreground: 0 0% 92%;
 
-  --muted: 240 8% 11%;
-  --muted-foreground: 240 5% 65%;
+  --muted: 0 0% 14.5%;
+  --muted-foreground: 0 0% 66%;
 
-  --accent: 184 40% 12%;
+  --accent: 184 30% 15%;
   --accent-foreground: 184 65% 72%;
 
   --destructive: 0 70% 52%;
@@ -105,12 +105,12 @@
   --warning: 38 90% 52%;
   --warning-foreground: 0 0% 8%;
 
-  --border: 240 8% 14%;
-  --input: 240 8% 16%;
+  --border: 0 0% 18.5%;
+  --input: 0 0% 20%;
   --ring: 184 65% 58%;
 
-  --surface: 240 10% 6%;
-  --surface-inset: 240 10% 3%;
+  --surface: 0 0% 10%;
+  --surface-inset: 0 0% 5.5%;
 
   --chart-1: 184 65% 58%;
   --chart-2: 160 50% 48%;
@@ -118,12 +118,12 @@
   --chart-4: 200 50% 55%;
   --chart-5: 240 4% 55%;
 
-  --sidebar: 240 10% 5%;
+  --sidebar: 0 0% 8.5%;
   --sidebar-foreground: 0 0% 95%;
-  --sidebar-border: 240 10% 12%;
+  --sidebar-border: 0 0% 16%;
   --sidebar-primary: 184 65% 58%;
-  --sidebar-primary-foreground: 240 10% 6%;
-  --sidebar-accent: 240 10% 12%;
+  --sidebar-primary-foreground: 0 0% 6%;
+  --sidebar-accent: 0 0% 15%;
   --sidebar-accent-foreground: 0 0% 94%;
   --sidebar-ring: 184 65% 58%;
 }

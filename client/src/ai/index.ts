@@ -7,6 +7,7 @@ export { default as AiChatPage } from "./AiChatPage";
 export { AiExplainButton } from "./components/AiExplainYaml";
 export { AiTroubleshootButton } from "./components/AiTroubleshoot";
 export { ResourceAiInsight } from "./components/ResourceAiInsight";
+export { AiAvatar } from "./chat/AiAvatar";
 export { Markdown } from "./chat/Markdown";
 export { useAiConfig } from "./hooks/use-ai-config";
 export { useAiTooltip } from "./hooks/use-ai-tooltip";

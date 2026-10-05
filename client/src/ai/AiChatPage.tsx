@@ -149,7 +149,7 @@ function ChatHeader({
         <div className="flex flex-col min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold text-foreground leading-tight tracking-tight">
-              AI Operator
+              Ask Deck
             </span>
             <span className="hidden sm:inline-flex items-center rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary ring-1 ring-primary/15">
               live

@@ -1,10 +1,11 @@
 import { StatusBadge } from "./StatusBadge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Search, AlertTriangle, ShieldOff, Columns3, RotateCcw, Inbox } from "lucide-react";
+import { Search, AlertTriangle, ShieldOff, Columns3, RotateCcw, Inbox, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import { formatDistanceToNow } from "date-fns";
 import { K8sError } from "@/hooks/use-k8s";
+import { cycleSort, loadSort, saveSort, sortRows, type SortState } from "@/lib/table-sort";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -27,6 +28,10 @@ export interface Column<T> {
   required?: boolean;
   /** Start hidden until the user enables it (default false). */
   defaultHidden?: boolean;
+  /** What to sort by when it differs from the displayed value (e.g. severity for a status). */
+  sortValue?: (item: T) => string | number | null | undefined;
+  /** Set false to disable sorting (default: sortable when it has an accessorKey or sortValue). */
+  sortable?: boolean;
 }
 
 interface ResourceTableProps<T> {
@@ -169,12 +174,27 @@ export function ResourceTable<T extends { name: string; status?: string }>({
     [columnMeta, hidden],
   );
 
+  const [sort, setSort] = useState<SortState | null>(() => loadSort(tableId));
+  useEffect(() => { setSort(loadSort(tableId)); }, [tableId]);
+  const onSort = useCallback((id: string) => {
+    setSort((cur) => {
+      const next = cycleSort(cur, id);
+      saveSort(tableId, next);
+      return next;
+    });
+  }, [tableId]);
+
   const filteredData = useMemo(
-    () =>
-      data?.filter((item) =>
+    () => {
+      const filtered = data?.filter((item) =>
         String(item[searchKey]).toLowerCase().includes(search.toLowerCase()),
-      ),
-    [data, searchKey, search],
+      );
+      const col = sort ? columnMeta.find((c) => c.id === sort.id)?.col : undefined;
+      if (!filtered || !sort || !col) return filtered;
+      const valueOf = col.sortValue ?? ((item: T) => (col.accessorKey ? (item as Record<string, unknown>)[col.accessorKey as string] : undefined));
+      return sortRows(filtered, valueOf, sort.dir);
+    },
+    [data, searchKey, search, sort, columnMeta],
   );
 
   const colCount = visibleCols.length;
@@ -296,14 +316,31 @@ export function ResourceTable<T extends { name: string; status?: string }>({
           <table className="w-full border-collapse text-sm table-auto">
             <thead>
               <tr className="bg-secondary/40 border-b border-border/50">
-                {visibleCols.map(({ col, id }) => (
-                  <th
-                    key={id}
-                    className="px-4 py-2.5 text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-widest whitespace-nowrap"
-                  >
-                    {col.header}
-                  </th>
-                ))}
+                {visibleCols.map(({ col, id }) => {
+                  const sortable = col.sortable !== false && !!(col.accessorKey || col.sortValue) && !!col.header;
+                  const active = sort?.id === id ? sort.dir : null;
+                  return (
+                    <th
+                      key={id}
+                      aria-sort={active === "asc" ? "ascending" : active === "desc" ? "descending" : sortable ? "none" : undefined}
+                      className="px-4 py-2.5 text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-widest whitespace-nowrap"
+                    >
+                      {sortable ? (
+                        <button
+                          type="button"
+                          onClick={() => onSort(id)}
+                          title={active === "asc" ? "Sorted ascending — click for descending" : active === "desc" ? "Sorted descending — click to clear" : `Sort by ${col.header}`}
+                          className={`group/sort -mx-1 inline-flex items-center gap-1 rounded px-1 py-0.5 uppercase tracking-widest transition-colors hover:text-foreground ${active ? "text-foreground" : ""}`}
+                        >
+                          {col.header}
+                          {active === "asc" ? <ArrowUp className="h-3 w-3 text-primary" /> : active === "desc" ? <ArrowDown className="h-3 w-3 text-primary" /> : <ArrowUpDown className="h-3 w-3 opacity-0 transition-opacity group-hover/sort:opacity-50 group-focus-visible/sort:opacity-50" />}
+                        </button>
+                      ) : (
+                        col.header
+                      )}
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>

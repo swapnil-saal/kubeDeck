@@ -5,7 +5,7 @@ import {
   useK8sContexts, useK8sPods, useK8sDeployments, useK8sServices,
   useK8sConfigMaps, useK8sSecrets, useK8sIngresses, useK8sStatefulSets, useK8sDaemonSets,
   useK8sJobs, useK8sCronJobs, useK8sNodes, useK8sHpa, useK8sPvcs,
-  useDeletePod, usePodLogs, usePodEnv, usePortForward, usePortForwards, useStopPortForward,
+  useDeletePod, usePodEnv, usePortForward, usePortForwards, useStopPortForward,
   useScaleDeployment, useRestartDeployment, useClusterEvents,
   K8sError,
 } from "@/hooks/use-k8s";
@@ -19,6 +19,7 @@ import {
 import { AccessGate } from "@/pages/dashboard/AccessGate";
 import { StatTiles, type Tile, type TileState } from "@/pages/dashboard/StatTiles";
 import { PinnedRecent } from "@/pages/dashboard/PinnedRecent";
+import { TabStrip } from "@/pages/dashboard/TabStrip";
 import { HomeOverview } from "@/pages/dashboard/HomeOverview";
 import { ConnectionGate } from "@/pages/dashboard/ConnectionGate";
 import { SimpleResourceTabs } from "@/pages/dashboard/SimpleResourceTabs";
@@ -33,17 +34,22 @@ import {
   Zap, Square, FileText, Lock, Globe, Database, Clock, Server, Pin, X, ListTree, Rows3,
   Gauge, HardDrive, RotateCw, Scaling, HeartPulse, AlertTriangle, ChevronDown, ChevronUp, Sparkles, Loader2,
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
-import { useAiConfig, fetchAiSuggestion } from "@/ai";
+
+/** Failing pods sort first, then pending, then healthy, then finished. */
+const STATUS_RANK = (status: string): number =>
+  /^(CrashLoopBackOff|Error|ImagePullBackOff|ErrImagePull|OOMKilled|CreateContainerConfigError|InvalidImageName|Failed|Evicted)$/.test(status) ? 0
+    : /^(Pending|ContainerCreating|PodInitializing|Terminating|Init:.*)$/.test(status) ? 1
+    : status === "Running" ? 2 : 3;
 
 export default function Dashboard() {
   const { context: currentContext, namespace: currentNamespace, setContext: handleSetContext, setNamespace, setScope } = useTerminalStore();
-  const [selectedPod, setSelectedPod] = useState<{ name: string; type: 'logs' | 'env' | 'forward' | null }>({ name: '', type: null });
+  const [selectedPod, setSelectedPod] = useState<{ name: string; type: 'env' | 'forward' | null }>({ name: '', type: null });
   const [forwardPort, setForwardPort] = useState<string>("8080");
   const [remotePort, setRemotePort] = useState<string>("80");
   const [, navigate] = useLocation();
@@ -54,6 +60,12 @@ export default function Dashboard() {
   const setActiveTab = useCallback((tab: string) => setParam("tab", tab === "pods" ? null : tab), [setParam]);
   const searchFilter = getParam("q") || "";
   const setSearchFilter = useCallback((q: string) => setParam("q", q || null), [setParam]);
+
+  const goToLogs = (type: string, name: string, ns?: string) => {
+    const namespace = ns || currentNamespace;
+    if (currentContext) addRecent({ context: currentContext, namespace, type, name });
+    navigate(`/resource/${type}/${encodeURIComponent(name)}?context=${encodeURIComponent(currentContext)}&namespace=${encodeURIComponent(namespace)}&tab=logs`);
+  };
 
   const goToDetail = (type: string, name: string, ns?: string) => {
     const namespace = ns || currentNamespace;
@@ -112,12 +124,6 @@ export default function Dashboard() {
 
   const [scaleDialog, setScaleDialog] = useState<{ name: string; current: number } | null>(null);
   const [scaleReplicas, setScaleReplicas] = useState("1");
-  const [logAiSummary, setLogAiSummary] = useState<string | null>(null);
-  const [logAiSummaryLoading, setLogAiSummaryLoading] = useState(false);
-
-  const { data: logsData, isLoading: logsLoading } = usePodLogs(
-    selectedPod.name, currentContext, currentNamespace, selectedPod.type === 'logs'
-  );
   const { data: envData, isLoading: envLoading } = usePodEnv(
     selectedPod.name, currentContext, currentNamespace, selectedPod.type === 'env'
   );
@@ -277,12 +283,6 @@ export default function Dashboard() {
     requestAnimationFrame(() => document.getElementById("resources")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }, [setMany]);
 
-  // Keep the selected resource tab visible in the horizontally scrolling tab strip.
-  useEffect(() => {
-    document.querySelector('[role="tab"][data-state="active"]')?.scrollIntoView({ inline: "center", block: "nearest" });
-  }, [activeTab]);
-
-  const { isFastModel } = useAiConfig();
   const refFor = (type: string, name: string, namespace: string): ResourceRef => ({ context: currentContext, namespace, type, name });
 
   // Gate the spinner on whether the request has ever settled, never on the live
@@ -477,8 +477,8 @@ export default function Dashboard() {
           <div id="resources" className="space-y-3 scroll-mt-4">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Resources</p>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <div className="flex items-center gap-4 mb-5">
-              <TabsList className="bg-secondary/50 border border-border/50 p-1 h-auto rounded-xl gap-1 flex-nowrap overflow-x-auto no-scrollbar">
+            <TabStrip activeKey={activeTab}>
+              <TabsList className="bg-secondary/50 border border-border/50 p-1 h-auto rounded-xl gap-1 flex-nowrap w-max min-w-full justify-start">
                 {[
                   { val: "pods", label: "Pods", icon: Box },
                   { val: "deployments", label: "Deploy", icon: Layers },
@@ -505,16 +505,9 @@ export default function Dashboard() {
                 </TabsTrigger>
                 ))}
               </TabsList>
-              
-              <div className="ml-auto text-xs text-muted-foreground flex items-center gap-1.5">
-                <Activity className="w-3.5 h-3.5" />
-                <span>{currentContext}</span>
-                <span className="text-muted-foreground/30">/</span>
-                <span>{currentNamespace === 'all' ? '*' : currentNamespace}</span>
-              </div>
-            </div>
+            </TabStrip>
 
-              <AnimatePresence mode="wait">
+              <>
               {/* ── PODS ── */}
                 <TabsContent value="pods" className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
@@ -538,6 +531,7 @@ export default function Dashboard() {
                           showNamespace={!nsScoped}
                           isPinned={(t, n, ns) => pinState.isPinned(refFor(t, n, ns))}
                           onOpen={(t, n, ns) => goToDetail(t, n, ns)}
+                          onLogs={(t, n, ns) => goToLogs(t, n, ns)}
                           onPin={(t, n, ns) => pinState.toggle(refFor(t, n, ns))}
                           onAsk={askAi}
                           onScale={(name, current) => { setScaleDialog({ name, current }); setScaleReplicas(String(current)); }}
@@ -573,7 +567,7 @@ export default function Dashboard() {
                         const ok = cur === tot && Number(cur) > 0;
                         return <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-sm border ${ok ? 'bg-foreground/5 text-foreground/70 border-foreground/10' : 'bg-foreground/[0.03] text-muted-foreground border-border'}`}>{ready}</span>;
                       }},
-                        { header: "Status", accessorKey: "status" },
+                        { header: "Status", accessorKey: "status", sortValue: (item: any) => `${STATUS_RANK(item.status)}-${item.status}` },
                       { header: "Image", accessorKey: "images" as any, defaultHidden: true, cell: (item: any) => {
                         const imgs: string[] = item.images || [];
                         if (imgs.length === 0) return <span className="text-muted-foreground/60">-</span>;
@@ -593,7 +587,7 @@ export default function Dashboard() {
                       { header: "Restarts", accessorKey: "restarts", cell: (item) => (
                         <span className={`tabular-nums ${restartTone(item.restarts)}`} title={item.restarts >= 5 ? "Restarting repeatedly" : undefined}>{item.restarts}</span>
                       )},
-                      { header: usageItems ? "CPU" : "CPU req", id: "cpu", cell: (item: any) => {
+                      { header: usageItems ? "CPU" : "CPU req", id: "cpu", sortValue: (item: any) => (usageByPod.get(item.namespace ? `${item.namespace}/${item.name}` : item.name) ?? usageByPod.get(item.name))?.cpuMilli ?? parseCpuMilli(item.cpu), cell: (item: any) => {
                         const u = usageByPod.get(item.namespace ? `${item.namespace}/${item.name}` : item.name) ?? usageByPod.get(item.name);
                         if (u) return <span className="tabular-nums text-xs text-foreground/80" title={`${Math.round(u.memMi)}Mi memory in use`}>{Math.round(u.cpuMilli)}m</span>;
                         const req = parseCpuMilli(item.cpu);
@@ -611,7 +605,7 @@ export default function Dashboard() {
                           <button className={`p-1.5 rounded hover:bg-foreground/8 transition-colors ${pinState.isPinned(refFor("pod", item.name, item.namespace)) ? "text-primary" : "text-muted-foreground hover:text-foreground"}`} onClick={() => pinState.toggle(refFor("pod", item.name, item.namespace))} title="Pin" aria-label={`Pin ${item.name}`} aria-pressed={pinState.isPinned(refFor("pod", item.name, item.namespace))}>
                             <Pin className="h-3 w-3" />
                           </button>
-                          <button className="p-1.5 rounded hover:bg-foreground/8 text-muted-foreground hover:text-foreground transition-colors" onClick={() => setSelectedPod({ name: item.name, type: 'logs' })} title="Logs" aria-label={`Logs of ${item.name}`}>
+                          <button className="p-1.5 rounded hover:bg-foreground/8 text-muted-foreground hover:text-foreground transition-colors" onClick={() => goToLogs("pod", item.name, item.namespace)} title="Open logs" aria-label={`Logs of ${item.name}`}>
                             <Terminal className="h-3 w-3" />
                           </button>
                           <button className="p-1.5 rounded hover:bg-foreground/8 text-muted-foreground hover:text-foreground transition-colors" onClick={() => setSelectedPod({ name: item.name, type: 'env' })} title="Env" aria-label={`Environment of ${item.name}`}>
@@ -725,68 +719,32 @@ export default function Dashboard() {
                 nsScoped={nsScoped}
                 goToDetail={goToDetail}
               />
-              </AnimatePresence>
+              </>
             </Tabs>
           </div>
         </div>
       </main>
 
       {/* ══════ LOGS / ENV DIALOG ══════ */}
-      <Dialog open={selectedPod.type === 'logs' || selectedPod.type === 'env'} onOpenChange={() => { setSelectedPod({ name: '', type: null }); setLogAiSummary(null); }}>
+      <Dialog open={selectedPod.type === 'env'} onOpenChange={() => setSelectedPod({ name: '', type: null })}>
         <DialogContent className="max-w-5xl bg-card border-border p-0 overflow-hidden rounded-xl shadow-lg">
-          <DialogHeader className="px-5 py-3 border-b border-border flex flex-row items-center justify-between space-y-0">
+          <DialogHeader className="px-5 py-3 border-b border-border">
             <DialogTitle className="text-sm font-semibold text-foreground flex items-center gap-2">
               <div className="p-1.5 rounded-lg bg-primary/10">
                 <Terminal className="w-3.5 h-3.5 text-primary" />
               </div>
-              <span>{selectedPod.type === 'logs' ? 'Logs' : 'Environment'}</span>
+              <span>Environment</span>
               <span className="text-muted-foreground font-normal text-xs">— {selectedPod.name}</span>
             </DialogTitle>
-            {selectedPod.type === 'logs' && isFastModel && logsData?.logs && (
-              <button
-                onClick={async () => {
-                  if (logAiSummaryLoading) return;
-                  setLogAiSummaryLoading(true);
-                  try {
-                    const logLines = logsData.logs.split("\n").slice(-100).join("\n");
-                    const result = await fetchAiSuggestion(
-                      `Summarize these Kubernetes pod logs in 2-3 sentences, highlighting errors:\n${logLines}`,
-                      300,
-                    );
-                    setLogAiSummary(result);
-                  } catch { /* ignore */ }
-                  setLogAiSummaryLoading(false);
-                }}
-                disabled={logAiSummaryLoading}
-                className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold text-primary bg-primary/10 hover:bg-primary/20 rounded-md transition-colors"
-              >
-                {logAiSummaryLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                Summarize
-              </button>
-            )}
           </DialogHeader>
-          {logAiSummary && (
-            <div className="border-b border-primary/20 bg-primary/5 px-5 py-2.5">
-              <div className="flex items-start gap-2">
-                <Sparkles className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <p className="text-[10px] font-semibold text-primary mb-0.5">AI Summary</p>
-                  <p className="text-[11px] text-foreground/80 leading-relaxed">{logAiSummary}</p>
-                </div>
-                <button onClick={() => setLogAiSummary(null)} className="text-muted-foreground hover:text-foreground text-xs p-0.5">×</button>
-              </div>
-            </div>
-          )}
           <div className="p-4 bg-surface-inset h-[500px] overflow-auto font-mono text-[12px] leading-relaxed">
-            {(logsLoading || envLoading) ? (
+            {envLoading ? (
               <div className="flex items-center gap-2 text-muted-foreground">
                 <span className="inline-block w-2 h-4 bg-primary/30 animate-pulse rounded-sm" />
                 <span className="animate-pulse">Loading...</span>
               </div>
             ) : (
-              <pre className="whitespace-pre-wrap text-foreground/70">
-                {selectedPod.type === 'logs' ? logsData?.logs : envData?.env}
-              </pre>
+              <pre className="whitespace-pre-wrap text-foreground/70">{envData?.env}</pre>
             )}
           </div>
         </DialogContent>

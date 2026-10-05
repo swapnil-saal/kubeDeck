@@ -3,9 +3,8 @@ import { useParams, useLocation, useSearch } from "wouter";
 import { useHashParams } from "@/hooks/use-hash-params";
 import {
   useResourceDescribe, useResourceYaml, useResourceEvents,
-  usePodLogs, usePodEnv, useStreamingLogs, useResourceRelated,
+  usePodEnv, useResourceRelated,
   usePortForward, usePortForwards, useStopPortForward, useApplyYaml,
-  useDeploymentLogs,
 } from "@/hooks/use-k8s";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -19,6 +18,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { AppHeader } from "@/components/AppHeader";
 import { Topology } from "@/components/Topology";
+import { LogExplorer } from "@/components/logs/LogExplorer";
+import type { LogKind } from "@/hooks/use-log-stream";
 import { CommandBar, buildDetailCommands } from "@/components/CommandBar";
 import {
   AiTroubleshootButton,
@@ -271,336 +272,10 @@ function EnvViewer({ content, isLoading }: { content?: string; isLoading: boolea
   );
 }
 
-/* ── Log Analysis Engine ─────────────────────────── */
-
-interface LogInsight {
-  severity: "error" | "warning" | "info";
-  title: string;
-  detail: string;
-  count: number;
-  lineNumbers: number[];
-}
-
-const ERROR_PATTERNS: { pattern: RegExp; title: string; severity: "error" | "warning" }[] = [
-  { pattern: /OOMKill/i, title: "OOM Killed", severity: "error" },
-  { pattern: /out\s*of\s*memory/i, title: "Out of Memory", severity: "error" },
-  { pattern: /CrashLoopBackOff/i, title: "CrashLoopBackOff", severity: "error" },
-  { pattern: /panic:|PANIC:/i, title: "Panic / Crash", severity: "error" },
-  { pattern: /fatal|FATAL/i, title: "Fatal Error", severity: "error" },
-  { pattern: /Traceback \(most recent call last\)/i, title: "Python Traceback", severity: "error" },
-  { pattern: /Exception in thread/i, title: "Java Exception", severity: "error" },
-  { pattern: /segmentation fault|SIGSEGV/i, title: "Segfault", severity: "error" },
-  { pattern: /connection refused/i, title: "Connection Refused", severity: "error" },
-  { pattern: /ECONNREFUSED|ECONNRESET|ETIMEDOUT/i, title: "Network Error", severity: "error" },
-  { pattern: /could not connect|failed to connect/i, title: "Connection Failure", severity: "error" },
-  { pattern: /permission denied|access denied|unauthorized|403 Forbidden/i, title: "Permission Denied", severity: "error" },
-  { pattern: /ImagePullBackOff|ErrImagePull/i, title: "Image Pull Error", severity: "error" },
-  { pattern: /readiness probe failed|liveness probe failed/i, title: "Probe Failed", severity: "warning" },
-  { pattern: /error|ERROR|Error/g, title: "Error", severity: "error" },
-  { pattern: /warn|WARN|Warning/gi, title: "Warning", severity: "warning" },
-  { pattern: /timeout|timed out/i, title: "Timeout", severity: "warning" },
-  { pattern: /deprecated/i, title: "Deprecation Warning", severity: "warning" },
-  { pattern: /retry|retrying/i, title: "Retry Detected", severity: "warning" },
-];
-
-function analyzeLogs(lines: string[]): { insights: LogInsight[]; duplicateGroups: { line: string; count: number; first: number }[]; errorRate: { total: number; errors: number; pct: number } } {
-  const insightMap = new Map<string, LogInsight>();
-  let errorCount = 0;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (!line.trim()) continue;
-
-    let isError = false;
-    for (const { pattern, title, severity } of ERROR_PATTERNS) {
-      if (pattern.test(line)) {
-        pattern.lastIndex = 0;
-        const key = title;
-        const existing = insightMap.get(key);
-        if (existing) {
-          existing.count++;
-          if (existing.lineNumbers.length < 5) existing.lineNumbers.push(i + 1);
-        } else {
-          insightMap.set(key, { severity, title, detail: line.slice(0, 120).trim(), count: 1, lineNumbers: [i + 1] });
-        }
-        if (severity === "error") isError = true;
-      }
-    }
-    if (isError) errorCount++;
-  }
-
-  // Deduplicate lines — normalize by removing timestamps/IDs
-  const normalized = new Map<string, { line: string; count: number; first: number }>();
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-    const key = line.replace(/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^\s]*/g, "<TS>")
-                     .replace(/[0-9a-f]{8,}/gi, "<ID>")
-                     .replace(/\d+\.\d+\.\d+\.\d+/g, "<IP>")
-                     .replace(/:\d{2,5}/g, ":<PORT>");
-    const existing = normalized.get(key);
-    if (existing) {
-      existing.count++;
-    } else {
-      normalized.set(key, { line: line.slice(0, 120), count: 1, first: i + 1 });
-    }
-  }
-
-  const duplicateGroups = Array.from(normalized.values())
-    .filter(g => g.count > 2)
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 10);
-
-  const insights = Array.from(insightMap.values()).sort((a, b) => {
-    if (a.severity === "error" && b.severity !== "error") return -1;
-    if (b.severity === "error" && a.severity !== "error") return 1;
-    return b.count - a.count;
-  });
-
-  return {
-    insights,
-    duplicateGroups,
-    errorRate: { total: lines.filter(l => l.trim()).length, errors: errorCount, pct: lines.length > 0 ? Math.round((errorCount / lines.filter(l => l.trim()).length) * 100) : 0 },
-  };
-}
-
-/* ── Log Viewer with search/grep ─────────────────── */
-
-function LogViewer({ content, isLoading, streaming, streamProps, grep, onGrepChange }: {
-  content?: string;
-  isLoading: boolean;
-  streaming?: boolean;
-  streamProps?: { logs: string[]; isConnected: boolean; clear: () => void };
-  grep?: string;
-  onGrepChange?: (value: string) => void;
-}) {
-  const [internalGrep, setInternalGrep] = useState("");
-  const grepFilter = grep ?? internalGrep;
-  const setGrepFilter = onGrepChange ?? setInternalGrep;
-  const [follow, setFollow] = useState(true);
-  const [showAnalysis, setShowAnalysis] = useState(false);
-  const [aiSummary, setAiSummary] = useState<string | null>(null);
-  const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
-  const { isFastModel } = useAiConfig();
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  const lines = useMemo(() => {
-    if (streaming && streamProps) return streamProps.logs;
-    if (!content) return [];
-    return content.split("\n");
-  }, [content, streaming, streamProps]);
-
-  const filteredLines = useMemo(() => {
-    if (!grepFilter) return lines.map((l, i) => ({ line: l, num: i + 1 }));
-    const lower = grepFilter.toLowerCase();
-    return lines
-      .map((l, i) => ({ line: l, num: i + 1 }))
-      .filter(({ line }) => line.toLowerCase().includes(lower));
-  }, [lines, grepFilter]);
-
-  const analysis = useMemo(() => {
-    if (!showAnalysis || lines.length === 0) return null;
-    return analyzeLogs(lines);
-  }, [lines, showAnalysis]);
-
-  useEffect(() => {
-    if (follow && scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [filteredLines, follow]);
-
-  const isConnected = streaming && streamProps?.isConnected;
-
-  const highlightMatch = useCallback((text: string) => {
-    if (!grepFilter) return text;
-    const idx = text.toLowerCase().indexOf(grepFilter.toLowerCase());
-    if (idx === -1) return text;
-    return (
-      <>
-        {text.slice(0, idx)}
-        <mark className="bg-foreground/20 text-foreground rounded-sm px-0.5">{text.slice(idx, idx + grepFilter.length)}</mark>
-        {text.slice(idx + grepFilter.length)}
-      </>
-    );
-  }, [grepFilter]);
-
-  const severityColor = (s: string) => s === "error" ? "text-destructive" : s === "warning" ? "text-amber-500" : "text-foreground/60";
-  const severityBg = (s: string) => s === "error" ? "bg-destructive/8 border-destructive/20" : s === "warning" ? "bg-amber-500/8 border-amber-500/20" : "bg-foreground/[0.03] border-border";
-
-  return (
-    <div className="h-full flex flex-col">
-      <div className="flex items-center gap-2 px-3 py-2 bg-foreground/[0.02] border-b border-border rounded-t shrink-0">
-        {streaming && (
-          <div className="flex items-center gap-1.5">
-            {isConnected
-              ? <><Wifi className="w-3 h-3 text-foreground/50" /><span className="text-[9px] uppercase tracking-wider font-bold text-foreground/50">streaming</span></>
-              : <><WifiOff className="w-3 h-3 text-muted-foreground" /><span className="text-[9px] uppercase tracking-wider font-bold text-muted-foreground">disconnected</span></>}
-            <div className="w-px h-3 bg-border mx-1" />
-          </div>
-        )}
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-          <input value={grepFilter} onChange={e => setGrepFilter(e.target.value)} placeholder="grep filter..."
-            className="w-full h-6 pl-7 pr-3 bg-card border border-border rounded text-[10px] font-mono text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-foreground/20 transition-all" />
-        </div>
-        <div className="ml-auto flex items-center gap-1">
-          <span className="text-[9px] text-muted-foreground tabular-nums">
-            {grepFilter ? `${filteredLines.length}/${lines.length}` : `${lines.length}`} lines
-          </span>
-          {lines.length > 5 && (
-            <>
-              <button
-                onClick={() => setShowAnalysis(!showAnalysis)}
-                className={`px-2 py-0.5 rounded-sm text-[9px] uppercase font-bold tracking-wider border transition-colors ${showAnalysis ? 'bg-foreground/8 text-foreground border-foreground/15' : 'bg-foreground/[0.03] text-muted-foreground border-border hover:text-foreground'}`}
-              >
-                Analyze
-              </button>
-              {isFastModel && (
-                <button
-                  onClick={async () => {
-                    if (aiSummaryLoading) return;
-                    setAiSummaryLoading(true);
-                    try {
-                      const last100 = lines.slice(-100).join("\n");
-                      const result = await fetchAiSuggestion(
-                        `Summarize these Kubernetes pod logs in 2-3 sentences, highlighting errors:\n${last100}`,
-                        300,
-                      );
-                      setAiSummary(result);
-                    } catch { /* ignore */ }
-                    setAiSummaryLoading(false);
-                  }}
-                  disabled={aiSummaryLoading}
-                  className="flex items-center gap-1 px-2 py-0.5 rounded-sm text-[9px] uppercase font-bold tracking-wider border transition-colors bg-primary/10 text-primary border-primary/20 hover:bg-primary/20"
-                >
-                  {aiSummaryLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                  AI Summary
-                </button>
-              )}
-            </>
-          )}
-          {streaming && (
-            <>
-              <button onClick={() => setFollow(!follow)} className={`px-2 py-0.5 rounded-sm text-[9px] uppercase font-bold tracking-wider border transition-colors ${follow ? 'bg-foreground/8 text-foreground border-foreground/15' : 'bg-foreground/[0.03] text-muted-foreground border-border'}`}>
-                {follow ? "Follow ●" : "Follow ○"}
-              </button>
-              <button onClick={streamProps?.clear} className="px-2 py-0.5 rounded-sm text-[9px] uppercase font-bold tracking-wider bg-foreground/[0.03] text-muted-foreground border border-border hover:text-foreground transition-colors">Clear</button>
-            </>
-          )}
-          {lines.length > 0 && <CopyButton text={filteredLines.map(l => l.line).join("\n")} />}
-        </div>
-      </div>
-
-      {/* Analysis panel */}
-      {showAnalysis && analysis && (
-        <div className="border-b border-border bg-card/80 overflow-auto max-h-60 shrink-0">
-          <div className="p-3 space-y-3">
-            {/* Error rate summary */}
-            <div className="flex items-center gap-3">
-              <div className={`px-2 py-1 rounded border text-[10px] font-bold tabular-nums ${
-                analysis.errorRate.pct > 20 ? 'bg-destructive/10 border-destructive/20 text-destructive'
-                : analysis.errorRate.pct > 5 ? 'bg-amber-500/10 border-amber-500/20 text-amber-500'
-                : 'bg-foreground/[0.03] border-border text-foreground/60'
-              }`}>
-                {analysis.errorRate.pct}% error rate
-              </div>
-              <span className="text-[9px] text-muted-foreground">
-                {analysis.errorRate.errors} errors in {analysis.errorRate.total} lines
-              </span>
-              {analysis.insights.length === 0 && analysis.duplicateGroups.length === 0 && (
-                <span className="text-[9px] text-foreground/50 ml-2">✓ No significant issues detected</span>
-              )}
-            </div>
-
-            {/* Detected patterns */}
-            {analysis.insights.length > 0 && (
-              <div>
-                <p className="text-[9px] uppercase tracking-[0.2em] font-bold text-muted-foreground mb-1.5">DETECTED PATTERNS</p>
-                <div className="space-y-1">
-                  {analysis.insights.slice(0, 8).map((insight, i) => (
-                    <div key={i} className={`flex items-start gap-2 px-2 py-1.5 rounded border ${severityBg(insight.severity)}`}>
-                      <span className={`text-[9px] font-bold uppercase shrink-0 mt-px ${severityColor(insight.severity)}`}>
-                        {insight.severity === "error" ? "ERR" : "WRN"}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <span className="text-[10px] font-bold text-foreground/80">{insight.title}</span>
-                        <span className="text-[9px] text-muted-foreground ml-2">×{insight.count}</span>
-                        <p className="text-[9px] text-muted-foreground truncate mt-0.5">{insight.detail}</p>
-                      </div>
-                      <button
-                        onClick={() => setGrepFilter(insight.title.toLowerCase().includes("error") ? "error" : insight.title.split(" ")[0])}
-                        className="text-[8px] text-muted-foreground hover:text-foreground px-1.5 py-0.5 rounded border border-border hover:bg-foreground/5 transition-colors shrink-0"
-                      >
-                        GREP
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Duplicate groups */}
-            {analysis.duplicateGroups.length > 0 && (
-              <div>
-                <p className="text-[9px] uppercase tracking-[0.2em] font-bold text-muted-foreground mb-1.5">REPEATED PATTERNS</p>
-                <div className="space-y-1">
-                  {analysis.duplicateGroups.slice(0, 5).map((group, i) => (
-                    <div key={i} className="flex items-center gap-2 px-2 py-1.5 rounded border border-border bg-foreground/[0.02]">
-                      <span className="text-[10px] font-bold text-foreground/60 tabular-nums shrink-0">×{group.count}</span>
-                      <span className="text-[9px] text-muted-foreground truncate font-mono">{group.line}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {aiSummary && (
-        <div className="border-b border-primary/20 bg-primary/5 px-4 py-2.5 shrink-0">
-          <div className="flex items-start gap-2">
-            <Sparkles className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <p className="text-[10px] font-semibold text-primary mb-0.5">AI Summary</p>
-              <p className="text-[11px] text-foreground/80 leading-relaxed">{aiSummary}</p>
-            </div>
-            <button onClick={() => setAiSummary(null)} className="text-muted-foreground hover:text-foreground text-xs p-0.5">×</button>
-          </div>
-        </div>
-      )}
-
-      <div ref={scrollRef} className="flex-1 overflow-auto p-4 bg-surface-inset rounded-b border border-t-0 border-border font-mono text-[11px] leading-relaxed"
-        onScroll={() => { if (!scrollRef.current) return; const { scrollTop, scrollHeight, clientHeight } = scrollRef.current; if (scrollHeight - scrollTop - clientHeight > 100) setFollow(false); }}
-      >
-        {isLoading ? (
-          <div className="flex items-center gap-2 text-muted-foreground"><Terminal className="w-3.5 h-3.5" /><span className="animate-pulse">Loading logs...</span></div>
-        ) : filteredLines.length === 0 ? (
-          <div className="flex items-center gap-2 text-muted-foreground"><Terminal className="w-3.5 h-3.5" /><span>{grepFilter ? "No matching lines" : "No log output"}</span></div>
-        ) : filteredLines.map(({ line, num }) => (
-          <div key={num} className={`hover:bg-foreground/[0.02] ${line.startsWith("[stderr]") ? "text-destructive/70" : "text-foreground/60"}`}>
-            <span className="text-muted-foreground/40 select-none mr-3 inline-block w-10 text-right tabular-nums">{num}</span>
-            {highlightMatch(line)}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* ── Streaming Logs wrapper ──────────────────────── */
-
-function StreamingLogsPane({ name, context, namespace, grep, onGrepChange }: { name: string; context: string; namespace: string; grep?: string; onGrepChange?: (v: string) => void }) {
-  const { logs, isConnected, clear } = useStreamingLogs(name, context, namespace, true);
-  return <LogViewer content="" isLoading={false} streaming streamProps={{ logs, isConnected, clear }} grep={grep} onGrepChange={onGrepChange} />;
-}
-
-/* ── Deployment Logs (aggregate) ─────────────────── */
-
-function DeploymentLogsPane({ name, context, namespace, grep, onGrepChange }: { name: string; context: string; namespace: string; grep?: string; onGrepChange?: (v: string) => void }) {
-  const { data, isLoading } = useDeploymentLogs(name, context, namespace, true);
-  return <LogViewer content={data?.logs} isLoading={isLoading} grep={grep} onGrepChange={onGrepChange} />;
-}
-
 /* ── Connected resources: the traffic path ────────── */
+
+/** Resource kinds whose pods' logs can be read (a workload or service streams all of its pods). */
+const LOG_TYPES = ["pod", "deployment", "statefulset", "daemonset", "replicaset", "job", "service"] as const;
 
 function RelatedPanel({ type, name, context, namespace, onNavigate }: {
   type: string; name: string; context: string; namespace: string;
@@ -763,6 +438,7 @@ export default function ResourceDetail() {
   const meta = TYPE_META[type] || TYPE_META.pod;
   const isPod = type === "pod";
   const isDeployment = type === "deployment";
+  const hasLogs = (LOG_TYPES as readonly string[]).includes(type);
 
   const { get: getParam, set: setParam } = useHashParams();
   const activeTab = getParam("tab") || "describe";
@@ -784,6 +460,14 @@ export default function ResourceDetail() {
   const { data: yamlData, isLoading: yamlLoading, refetch: refetchYaml } = useResourceYaml(type, name, context, namespace, activeTab === "yaml" || activeTab === "edit");
   const { data: eventsData, isLoading: eventsLoading } = useResourceEvents(type, name, context, namespace, activeTab === "events");
   const { data: envData, isLoading: envLoading } = usePodEnv(name, context, namespace, isPod && activeTab === "env");
+  const { data: ownerRelated } = useResourceRelated(type, name, context, namespace, isPod && activeTab === "logs");
+  const ownerDeployment = isPod ? ownerRelated?.deployments?.[0]?.name : undefined;
+  const ownerLink = ownerDeployment
+    ? {
+        label: `All pods of ${ownerDeployment}`,
+        onClick: () => navigate(`/resource/deployment/${encodeURIComponent(ownerDeployment)}?context=${encodeURIComponent(context)}&namespace=${encodeURIComponent(namespace)}&tab=logs`),
+      }
+    : undefined;
 
   // When yaml data loads for edit
   useEffect(() => {
@@ -813,7 +497,7 @@ export default function ResourceDetail() {
       { id: "logs", label: "LOGS", icon: Terminal },
       { id: "env", label: "ENV", icon: Variable },
     ] : []),
-    ...(isDeployment ? [
+    ...(hasLogs && !isPod ? [
       { id: "logs", label: "LOGS", icon: Terminal },
     ] : []),
     { id: "events", label: "EVENTS", icon: ScrollText },
@@ -833,15 +517,18 @@ export default function ResourceDetail() {
         ]}
       />
 
-      <ResourceAiInsight
-        resourceType={type}
-        name={name}
-        namespace={namespace}
-        context={context}
-        describe={describeData?.content}
-        events={eventsData?.content}
-        autoRun={false}
-      />
+      {/* on the Logs tab every pixel of height belongs to the log lines */}
+      {activeTab !== "logs" && (
+        <ResourceAiInsight
+          resourceType={type}
+          name={name}
+          namespace={namespace}
+          context={context}
+          describe={describeData?.content}
+          events={eventsData?.content}
+          autoRun={false}
+        />
+      )}
 
       {/* ══════ CONTENT ══════ */}
       <div className="flex-1 overflow-hidden flex flex-col">
@@ -864,9 +551,9 @@ export default function ResourceDetail() {
           </Tabs>
         </div>
 
-        <div className="flex-1 overflow-hidden p-7 pt-3">
+        <div className={activeTab === "logs" ? "flex-1 overflow-auto p-3 pt-2" : "flex-1 overflow-hidden p-7 pt-3"}>
           <AnimatePresence mode="wait">
-            <motion.div key={activeTab} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }} className="h-full">
+            <motion.div key={activeTab} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }} className="h-full" style={activeTab === "logs" ? { minHeight: "26rem" } : undefined}>
               {activeTab === "describe" && (
                 <div className="h-full flex flex-col">
                   <div className="flex items-center justify-end gap-2 mb-2 shrink-0">
@@ -895,11 +582,16 @@ export default function ResourceDetail() {
                   </div>
                 </div>
               )}
-              {activeTab === "logs" && isPod && (
-                <StreamingLogsPane name={name} context={context} namespace={namespace} grep={grepFilter} onGrepChange={setGrepFilter} />
-              )}
-              {activeTab === "logs" && isDeployment && (
-                <DeploymentLogsPane name={name} context={context} namespace={namespace} grep={grepFilter} onGrepChange={setGrepFilter} />
+              {activeTab === "logs" && hasLogs && (
+                <LogExplorer
+                  kind={type as LogKind}
+                  name={name}
+                  context={context}
+                  namespace={namespace}
+                  query={grepFilter}
+                  onQueryChange={setGrepFilter}
+                  workloadLink={ownerLink}
+                />
               )}
               {activeTab === "env" && isPod && (
                 <EnvViewer content={envData?.env} isLoading={envLoading} />

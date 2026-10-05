@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect } from "react";
 import { useLocation } from "wouter";
-import { Bot, ChevronRight, LayoutDashboard, Settings, Sparkles } from "lucide-react";
+import { ChevronRight, Gauge, SlidersHorizontal, SquareTerminal } from "lucide-react";
+import { AiAvatar } from "@/ai";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
 import { useK8sContexts } from "@/hooks/use-k8s";
 import { KubeDeckLogo, KubeDeckMark } from "@/components/KubeDeckLogo";
@@ -24,9 +25,10 @@ interface AppHeaderProps {
 const inElectron = typeof navigator !== "undefined" && /Electron/i.test(navigator.userAgent);
 
 const NAV = [
-  { path: "/", label: "Overview", icon: LayoutDashboard },
-  { path: "/ai", label: "AI Operator", icon: Bot },
-  { path: "/settings", label: "Settings", icon: Settings },
+  { path: "/", label: "Overview", icon: Gauge },
+  // the mascot carries the logo's K and D as eyes, so the AI page is recognisable at a glance
+  { path: "/ai", label: "Ask Deck", icon: ({ size, className }: { size?: number; className?: string }) => <AiAvatar size={(size ?? 15) + 6} className={className} title="Ask Deck" /> },
+  { path: "/settings", label: "Settings", icon: SlidersHorizontal },
 ] as const;
 
 export function AppHeader({ breadcrumbs, rightSlot, showSelectors = true }: AppHeaderProps) {
@@ -103,7 +105,7 @@ export function AppHeader({ breadcrumbs, rightSlot, showSelectors = true }: AppH
             title="Run kubectl or describe what you want (⌘K)"
             aria-label="Open the kubectl command palette"
           >
-            <Sparkles size={14} className="shrink-0 text-primary" />
+            <SquareTerminal size={15} className="shrink-0 text-primary" />
             <span className="hidden xl:inline">Run kubectl…</span>
             <kbd className="hidden rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-medium lg:inline">⌘K</kbd>
           </button>

@@ -1,5 +1,5 @@
 import { useMemo, useState, type FC } from "react";
-import { ChevronDown, ChevronRight, Pin, RotateCw, Scaling, Sparkles } from "lucide-react";
+import { ChevronDown, ChevronRight, Pin, RotateCw, ScrollText, Scaling, Sparkles } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { parseCpuMilli, type UsageLike } from "@/lib/cluster-health";
 import { cn } from "@/lib/utils";
@@ -82,6 +82,8 @@ export interface WorkloadViewProps {
   showNamespace: boolean;
   isPinned: (type: string, name: string, ns: string) => boolean;
   onOpen: (type: string, name: string, ns: string) => void;
+  /** open the combined logs of a workload (all its pods) or of one pod */
+  onLogs: (type: string, name: string, ns: string) => void;
   onPin: (type: string, name: string, ns: string) => void;
   onAsk: (prompt: string) => void;
   onScale: (name: string, current: number) => void;
@@ -89,7 +91,7 @@ export interface WorkloadViewProps {
 }
 
 /** Pods grouped under the Deployment / StatefulSet / … that owns them. */
-export const WorkloadView: FC<WorkloadViewProps> = ({ pods, usage, showNamespace, isPinned, onOpen, onPin, onAsk, onScale, onRestart }) => {
+export const WorkloadView: FC<WorkloadViewProps> = ({ pods, usage, showNamespace, isPinned, onOpen, onLogs, onPin, onAsk, onScale, onRestart }) => {
   const [open, setOpen] = useState<Set<string>>(new Set());
   const usageMap = useMemo(() => new Map((usage ?? []).map((u) => [u.namespace ? `${u.namespace}/${u.name}` : u.name, u])), [usage]);
   const groups = useMemo(() => groupWorkloads(pods, usageMap), [pods, usageMap]);
@@ -124,6 +126,7 @@ export const WorkloadView: FC<WorkloadViewProps> = ({ pods, usage, showNamespace
               <span className="hidden w-16 shrink-0 text-right text-xs tabular-nums text-muted-foreground lg:inline" title={usage ? "CPU in use" : "CPU requested"}>{w.cpuMilli > 0 ? `${Math.round(w.cpuMilli)}m` : "–"}</span>
               <span className="hidden w-12 shrink-0 text-right text-[11px] text-muted-foreground lg:inline">{age(w.newest)}</span>
               <div className="flex shrink-0 items-center gap-0.5 opacity-60 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                <button type="button" title={w.pods.length > 1 ? `Logs of all ${w.pods.length} pods` : "Logs"} aria-label={`Logs of ${w.name}`} onClick={() => onLogs(type, w.name, w.namespace)} className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"><ScrollText className="h-3.5 w-3.5" /></button>
                 <button type="button" title="Diagnose with AI" aria-label={`Diagnose ${w.name} with AI`} onClick={() => onAsk(`Diagnose ${w.kind.toLowerCase()} ${w.name} in namespace ${w.namespace}: ${w.pods.length} pods, ${w.readyPods} ready, ${w.restarts} restarts. Check pod status, recent logs and events and tell me if anything is wrong.`)} className="rounded p-1.5 text-muted-foreground hover:bg-primary/10 hover:text-primary"><Sparkles className="h-3.5 w-3.5" /></button>
                 <button type="button" title={pinned ? "Unpin" : "Pin"} aria-label={pinned ? `Unpin ${w.name}` : `Pin ${w.name}`} aria-pressed={pinned} onClick={() => onPin(type, w.name, w.namespace)} className={cn("rounded p-1.5 hover:bg-muted", pinned ? "text-primary" : "text-muted-foreground hover:text-foreground")}><Pin className="h-3.5 w-3.5" /></button>
                 {w.kind === "Deployment" && (
@@ -139,6 +142,7 @@ export const WorkloadView: FC<WorkloadViewProps> = ({ pods, usage, showNamespace
                 {w.pods.map((p) => (
                   <li key={p.name} className="flex items-center gap-3 py-1.5 pl-[4.75rem] pr-4 text-xs hover:bg-muted/30">
                     <button type="button" onClick={() => onOpen("pod", p.name, p.namespace)} className="min-w-0 flex-1 truncate text-left font-mono text-foreground/80 hover:text-foreground hover:underline underline-offset-2">{p.name}</button>
+                    <button type="button" onClick={() => onLogs("pod", p.name, p.namespace)} aria-label={`Logs of ${p.name}`} title="Logs" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"><ScrollText className="h-3 w-3" /></button>
                     <Chip status={p.status} />
                     <span className={cn("w-12 shrink-0 text-right tabular-nums", restartTone(p.restarts))}>{p.restarts}↻</span>
                     <span className="hidden w-40 shrink-0 truncate text-[11px] text-muted-foreground lg:inline" title={p.node}>{p.node}</span>

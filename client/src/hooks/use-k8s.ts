@@ -244,30 +244,6 @@ export function useDeletePod() {
   });
 }
 
-export function usePodLogs(name: string, context: string, namespace: string, enabled: boolean) {
-  return useQuery({
-    queryKey: [api.k8s.podLogs.path, name, context, namespace],
-    queryFn: () => {
-      const url = buildUrl(api.k8s.podLogs.path, { name, context, namespace });
-      return k8sFetch(url, api.k8s.podLogs.responses[200]);
-    },
-    enabled,
-    retry: false,
-  });
-}
-
-export function useDeploymentLogs(name: string, context: string, namespace: string, enabled: boolean) {
-  return useQuery({
-    queryKey: ['deploymentLogs', name, context, namespace],
-    queryFn: () => {
-      const url = buildUrl(api.k8s.deploymentLogs.path, { name, context, namespace });
-      return k8sFetchJson<{ logs: string }>(url);
-    },
-    enabled,
-    retry: false,
-  });
-}
-
 export function usePodEnv(name: string, context: string, namespace: string, enabled: boolean, container?: string) {
   return useQuery({
     queryKey: [api.k8s.podEnv.path, name, context, namespace, container],
@@ -390,40 +366,5 @@ export function useResourceRelated(type: string, name: string, context: string, 
 }
 
 // ── Streaming logs hook (SSE) ───────────────────────
-
-export function useStreamingLogs(name: string, context: string, namespace: string, enabled: boolean, container?: string) {
-  const [logs, setLogs] = useState<string[]>([]);
-  const [isConnected, setIsConnected] = useState(false);
-  const esRef = useRef<EventSource | null>(null);
-  const clear = useCallback(() => setLogs([]), []);
-
-  useEffect(() => {
-    if (!enabled || !name) {
-      esRef.current?.close();
-      esRef.current = null;
-      setIsConnected(false);
-      return;
-    }
-    setLogs([]);
-    const params = new URLSearchParams({ context, namespace });
-    if (container) params.set("container", container);
-    const url = `/api/k8s/pods/${encodeURIComponent(name)}/logs/stream?${params.toString()}`;
-    const es = new EventSource(url);
-    esRef.current = es;
-    es.onopen = () => setIsConnected(true);
-    es.onmessage = (event) => {
-      try {
-        const line = JSON.parse(event.data);
-        if (line === "[stream connected]") return;
-        if (line === "[stream ended]") { setIsConnected(false); return; }
-        setLogs(prev => { const next = [...prev, line]; return next.length > 5000 ? next.slice(-5000) : next; });
-      } catch { setLogs(prev => [...prev, event.data]); }
-    };
-    es.onerror = () => { setIsConnected(false); es.close(); };
-    return () => { es.close(); esRef.current = null; setIsConnected(false); };
-  }, [name, context, namespace, container, enabled]);
-
-  return { logs, isConnected, clear };
-}
 
 export { K8sError, k8sFetchJson, LIST_REFETCH_MS };

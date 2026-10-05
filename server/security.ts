@@ -72,6 +72,12 @@ export const K8S_PARAM_RULES: Record<string, RegExp> = {
   warningsOnly: /^(true|false)$/,
   maxAgeMinutes: /^\d{1,5}$/,
   id: /^[\w-]{1,64}$/,
+  // log streaming
+  kind: /^(pod|deployment|statefulset|daemonset|replicaset|job|service)$/,
+  since: /^\d{1,4}[smhd]$/,
+  pods: /^[\w.:-]{1,253}(,[\w.:-]{1,253}){0,49}$/,
+  previous: /^(0|1|true|false)$/,
+  follow: /^(0|1|true|false)$/,
 };
 
 /** Returns the first invalid key, or null when every present value is acceptable. */
