@@ -14,6 +14,9 @@ import { TerminalPanel } from "@/components/TerminalPanel";
 import { KubectlPalette } from "@/components/KubectlPalette";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
 import { useAppHashLocation, useAppHashSearch } from "@/lib/hash-router";
+import { useAlertWatcher } from "@/hooks/use-alerts";
+import { alertHref, setToastHandler } from "@/lib/alert-store";
+import { toast } from "@/hooks/use-toast";
 
 function Routes() {
   return (
@@ -31,6 +34,20 @@ function AppShell() {
   const { context, namespace, terminalOpen, toggleTerminal } = useTerminalStore();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const closePalette = useCallback(() => setPaletteOpen(false), []);
+
+  // new failures in the selected namespace: bell + desktop notification (+ a toast when the window is in front)
+  useAlertWatcher();
+  useEffect(() => {
+    setToastHandler((a) =>
+      toast({
+        title: a.title,
+        description: a.body,
+        variant: a.severity === "critical" ? "destructive" : "default",
+        onClick: () => { window.location.hash = alertHref(a); },
+      } as Parameters<typeof toast>[0]),
+    );
+    return () => setToastHandler(null);
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

@@ -94,8 +94,32 @@ function truncateSessionContext(sessionContext: string, maxChars = 2500): string
   );
 }
 
-export function buildSystemPrompt(sessionContext: string, mode: AgentMode, accessLimits: string[] = []): string {
+export interface AgentScope {
+  context: string;
+  namespace: string;
+}
+
+/** Tells the model what the user has selected in the header, so it stops guessing scope. */
+export function scopePrompt({ context, namespace }: AgentScope): string {
+  const ns = namespace && namespace !== "all" ? namespace : "";
+  return [
+    "## Selected scope (set by the user in the header — respect it)",
+    `- Cluster context: ${context || "kubeconfig default"}`,
+    ns
+      ? `- Namespace: ${ns}. Every command is already scoped to it; do NOT use -A / --all-namespaces or other namespaces unless the user names one. "this namespace", "here" and "the cluster" mean ${ns}.`
+      : "- Namespace: all namespaces. Use -A when you need a cluster-wide view.",
+    "- Never mention or switch to another cluster unless asked.",
+  ].join("\n");
+}
+
+export function buildSystemPrompt(
+  sessionContext: string,
+  mode: AgentMode,
+  accessLimits: string[] = [],
+  scope?: AgentScope,
+): string {
   const parts = [MAIN_SYSTEM_PROMPT, MODE_PROMPTS[mode]];
+  if (scope) parts.push(scopePrompt(scope));
   if (accessLimits.length > 0) {
     parts.push(
       `Known access limits for this user (learned earlier in this chat — do NOT try these again):\n` +

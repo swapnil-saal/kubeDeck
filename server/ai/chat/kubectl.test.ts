@@ -9,6 +9,8 @@ import {
   injectContextFlag,
   injectContextIntoBash,
   injectNamespaceFlag,
+  narrowToNamespace,
+  narrowBashToNamespace,
   injectNamespaceIntoBash,
   parseForbidden,
   recordCall,
@@ -72,6 +74,12 @@ describe("command rewriting", () => {
     expect(injectNamespaceFlag("get pods", "e2")).toBe("get pods -n e2");
     expect(injectNamespaceFlag("get pods -n other", "e2")).toBe("get pods -n other");
     expect(injectNamespaceFlag("get pods -A", "e2")).toBe("get pods -A");
+    expect(narrowToNamespace("get pods -A -l app=kafka", "e2")).toEqual({ command: "get pods -l app=kafka -n e2", narrowed: true });
+    expect(narrowToNamespace("get pods --all-namespaces", "e2").command).toBe("get pods -n e2");
+    expect(narrowToNamespace("get pods -A", "all").narrowed).toBe(false);
+    expect(narrowBashToNamespace("kubectl get pods -A | grep kafka", "e2")).toBe("kubectl get pods -n e2 | grep kafka");
+    expect(narrowToNamespace("get pods -A", "").narrowed).toBe(false);
+    expect(narrowToNamespace("get pods -n x -A", "e2").command).toBe("get pods -n x");
     expect(injectNamespaceFlag("get nodes", "all")).toBe("get nodes");
     expect(injectNamespaceFlag("cluster-info", "e2")).toBe("cluster-info");
   });

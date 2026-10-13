@@ -119,6 +119,28 @@ export function injectNamespaceFlag(command: string, namespace: string): string 
   return `${command} -n ${namespace}`;
 }
 
+/**
+ * With a namespace selected, `-A` / `--all-namespaces` is narrowed to that namespace: the user
+ * picked a scope in the header, and cluster-wide reads are usually forbidden for their account
+ * anyway. Choosing "all" in the namespace selector lifts this.
+ */
+export function narrowToNamespace(command: string, namespace: string): { command: string; narrowed: boolean } {
+  if (!namespace || namespace === "all") return { command, narrowed: false };
+  const re = /(^|\s)(?:-A|--all-namespaces(?:=true)?)(?=\s|$)/g;
+  if (!re.test(command)) return { command, narrowed: false };
+  const base = command.replace(re, "$1").replace(/\s{2,}/g, " ").trim();
+  return { command: commandHasNamespace(base) ? base : `${base} -n ${namespace}`, narrowed: true };
+}
+
+/** Same narrowing for each `kubectl …` segment inside a shell pipeline. */
+export function narrowBashToNamespace(command: string, namespace: string): string {
+  if (!namespace || namespace === "all") return command;
+  return command.replace(/kubectl\s+([^|;&]*)/g, (m, rest: string) => {
+    const n = narrowToNamespace(rest.trimEnd(), namespace);
+    return n.narrowed ? `kubectl ${n.command}${/\s$/.test(rest) ? " " : ""}` : m;
+  });
+}
+
 export function injectNamespaceIntoBash(command: string, namespace: string): string {
   if (!namespace || namespace === "all") return command;
   // Add -n <ns> to each `kubectl <verb> ...` segment that doesn't already

@@ -15,6 +15,8 @@ import {
   injectContextIntoBash,
   injectNamespaceFlag,
   injectNamespaceIntoBash,
+  narrowToNamespace,
+  narrowBashToNamespace,
   recordCall,
   sanitizeKubectlCommand,
   truncate,
@@ -122,12 +124,16 @@ export function buildKubeTools({ context, namespace, threadId }: KubeToolScope) 
     if (classifyKubectlCommand(sanitized) === "block") {
       return `Blocked: '${command}' is a destructive operation. Use the KubeDeck UI or run it manually.`;
     }
-    const scoped = injectNamespaceFlag(injectContextFlag(sanitized, context), namespace);
+    const narrowed = narrowToNamespace(sanitized, namespace);
+    const scoped = injectNamespaceFlag(injectContextFlag(narrowed.command, context), namespace);
     const repeatStop = checkRepeat(threadId, "kubectl", scoped);
     if (repeatStop) return repeatStop;
     const output = await executeKubectl(scoped, { signal, bias });
     recordCall(threadId, "kubectl", scoped, output);
-    return output + (forbiddenHint(output) ?? "");
+    const note = narrowed.narrowed
+      ? `[Scoped to namespace "${namespace}" — the user selected it in the header. Do not retry with -A; ask them to pick "all namespaces" if they want a wider view.]\n`
+      : "";
+    return note + output + (forbiddenHint(output) ?? "");
   }
 
   return {
@@ -140,7 +146,7 @@ export function buildKubeTools({ context, namespace, threadId }: KubeToolScope) 
       inputSchema: z.object({
         resource: token("resource").describe("Resource type: pods, deployments, services, nodes, jobs, events, …"),
         name: token("name").optional().describe("Optional specific name filter"),
-        allNamespaces: z.boolean().optional().describe("List across all namespaces (-A)"),
+        allNamespaces: z.boolean().optional().describe("List across all namespaces (-A); ignored when the user selected a namespace"),
         labelSelector: labelSelector.optional().describe("Label selector, e.g. app=api or 'app in (a,b)'"),
         fieldSelector: token("fieldSelector").optional().describe("Field selector, e.g. status.phase=Failed"),
         wide: z.boolean().optional().describe("Use -o wide (more columns)"),
@@ -193,7 +199,7 @@ export function buildKubeTools({ context, namespace, threadId }: KubeToolScope) 
     kubectl: tool({
       description:
         "Free-form kubectl (WITHOUT the 'kubectl' prefix). Prefer k8s_list / k8s_describe / k8s_logs first. " +
-        "Context and namespace are auto-injected. Use -A for all namespaces. " +
+        "Context and namespace are auto-injected; -A is narrowed to the selected namespace. " +
         "Deletes/drains are blocked. Mutating commands require human approval.",
       inputSchema: z.object({
         command: z.string().describe("The kubectl command to run (without the 'kubectl' prefix)"),
@@ -215,7 +221,7 @@ export function buildKubeTools({ context, namespace, threadId }: KubeToolScope) 
         if (classifyBashCommand(command) === "block") {
           return "Blocked: this command is not allowed for safety reasons.";
         }
-        const scoped = injectNamespaceIntoBash(injectContextIntoBash(command, context), namespace);
+        const scoped = injectNamespaceIntoBash(injectContextIntoBash(narrowBashToNamespace(command, namespace), context), namespace);
         const repeatStop = checkRepeat(threadId, "bash", scoped);
         if (repeatStop) return repeatStop;
         const output = await executeBash(scoped, abortSignal);

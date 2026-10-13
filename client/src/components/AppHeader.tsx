@@ -6,6 +6,7 @@ import { useTerminalStore } from "@/hooks/use-terminal-store";
 import { useK8sContexts } from "@/hooks/use-k8s";
 import { KubeDeckLogo, KubeDeckMark } from "@/components/KubeDeckLogo";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { AlertBell } from "@/components/header/AlertBell";
 import { ScopeSwitcher } from "@/components/header/ScopeSwitcher";
 import { cn } from "@/lib/utils";
 
@@ -109,6 +110,7 @@ export function AppHeader({ breadcrumbs, rightSlot, showSelectors = true }: AppH
             <span className="hidden xl:inline">Run kubectl…</span>
             <kbd className="hidden rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-medium lg:inline">⌘K</kbd>
           </button>
+          <AlertBell />
           <ThemeToggle className="h-9 w-9 rounded-lg" />
           {rightSlot}
         </div>

@@ -81,7 +81,10 @@ export async function streamKubeAgent(
 
   const result = streamText({
     model,
-    instructions: buildSystemPrompt(req.sessionContext ?? "", parseAgentMode(req.mode), describeAccessLimits(req.threadId)),
+    instructions: buildSystemPrompt(req.sessionContext ?? "", parseAgentMode(req.mode), describeAccessLimits(req.threadId), {
+      context: req.context,
+      namespace: req.namespace,
+    }),
     messages: await convertToModelMessages(req.messages, { tools }),
     tools,
     stopWhen: stepCountIs(MAX_STEPS),
