@@ -4,7 +4,7 @@ import { AlertTriangle, Bell, BellOff, CheckCircle2, Info, Settings2, Trash2 } f
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAlertState } from "@/hooks/use-alerts";
 import {
-  alertHref, clearAlerts, markAllRead, notificationPermission, requestNotificationPermission, setAlertPrefs, type StoredAlert,
+  alertHref, clearAlerts, markAllRead, notificationPermission, playAlertSound, requestNotificationPermission, setAlertPrefs, type StoredAlert,
 } from "@/lib/alert-store";
 import { ago } from "@/lib/cluster-health";
 import { cn } from "@/lib/utils";
@@ -104,6 +104,13 @@ export function AlertBell() {
             />
           </label>
           {perm === "denied" && <p className="flex items-start gap-1.5 text-[11px] text-amber-500"><Settings2 className="mt-0.5 h-3 w-3 shrink-0" />Notifications are blocked for KubeDeck — allow them in System Settings → Notifications.</p>}
+          <label className="flex cursor-pointer items-center justify-between">
+            <span>Play a sound</span>
+            <span className="flex items-center gap-2">
+              <button type="button" onClick={() => playAlertSound("warning")} className="rounded px-1.5 py-0.5 text-[11px] text-primary hover:bg-primary/10">Test</button>
+              <input type="checkbox" checked={prefs.sound} onChange={(e) => setAlertPrefs({ sound: e.target.checked })} className="accent-[hsl(var(--primary))]" />
+            </span>
+          </label>
           <label className="flex items-center justify-between">
             <span>Interrupt me for</span>
             <select value={prefs.minSeverity} onChange={(e) => setAlertPrefs({ minSeverity: e.target.value as "critical" | "warning" })} className="rounded border border-border bg-background px-1.5 py-0.5 text-xs">

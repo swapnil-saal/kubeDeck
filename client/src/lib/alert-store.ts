@@ -26,9 +26,11 @@ export interface AlertPrefs {
   minSeverity: Severity;
   /** also tell me when a failing deployment recovers */
   recoveries: boolean;
+  /** play a short chime with each alert */
+  sound: boolean;
 }
 
-const DEFAULT_PREFS: AlertPrefs = { enabled: true, system: true, minSeverity: "warning", recoveries: false };
+const DEFAULT_PREFS: AlertPrefs = { enabled: true, system: true, minSeverity: "warning", recoveries: false, sound: true };
 const RANK: Record<Severity, number> = { critical: 0, warning: 1, info: 2 };
 
 interface State { history: StoredAlert[]; prefs: AlertPrefs }
@@ -94,10 +96,41 @@ let inAppToast: Deliver | null = null;
 /** the app shell registers how to show an in-app toast (keeps this module free of React) */
 export function setToastHandler(fn: Deliver | null) { inAppToast = fn; }
 
+let audio: AudioContext | null = null;
+
+/**
+ * A short two-note chime made with Web Audio (no asset to ship): rising for warnings, a lower,
+ * longer pair for critical failures. The OS notification sound is unreliable (Focus modes, a
+ * per-app "play sound" switch), so the app plays its own.
+ */
+export function playAlertSound(severity: Severity = "warning") {
+  try {
+    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctx) return;
+    audio ??= new Ctx();
+    if (audio.state === "suspended") void audio.resume();
+    const notes = severity === "critical" ? [440, 330, 440] : [660, 880];
+    const t0 = audio.currentTime + 0.02;
+    notes.forEach((freq, i) => {
+      const osc = audio!.createOscillator();
+      const gain = audio!.createGain();
+      const start = t0 + i * 0.16;
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.22, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.22);
+      osc.connect(gain).connect(audio!.destination);
+      osc.start(start);
+      osc.stop(start + 0.25);
+    });
+  } catch { /* autoplay blocked or no audio device: the visual alert still shows */ }
+}
+
 function systemNotify(a: StoredAlert) {
   if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
   try {
-    const n = new Notification(a.title, { body: a.body, tag: a.key, silent: a.severity !== "critical" });
+    const n = new Notification(a.title, { body: a.body, tag: a.key, silent: osChimeMuted() });
     n.onclick = () => {
       try { window.focus(); } catch { /* ignore */ }
       window.location.hash = alertHref(a);
@@ -105,6 +138,9 @@ function systemNotify(a: StoredAlert) {
     };
   } catch { /* some platforms throw when notifications are disabled by the OS */ }
 }
+
+// the app plays its own chime, so the OS one is muted to avoid a double sound
+const osChimeMuted = () => state.prefs.sound;
 
 /** Record alerts for a scope and deliver those that pass the user's preferences. */
 export function publishAlerts(alerts: Alert[], scope: { context: string; namespace: string }): StoredAlert[] {
@@ -118,6 +154,7 @@ export function publishAlerts(alerts: Alert[], scope: { context: string; namespa
   state = { ...state, history: [...stored, ...state.history].slice(0, MAX_HISTORY) };
   emit();
 
+  if (prefs.sound) playAlertSound(stored.some((s) => s.severity === "critical") ? "critical" : "warning");
   const visible = typeof document !== "undefined" && document.hasFocus();
   // a burst (many pods failing at once) becomes one notification, not a storm
   if (stored.length > 3) {
