@@ -15,6 +15,7 @@ import { KubectlPalette } from "@/components/KubectlPalette";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
 import { useAppHashLocation, useAppHashSearch } from "@/lib/hash-router";
 import { useAlertWatcher } from "@/hooks/use-alerts";
+import { useServerMode } from "@/hooks/use-server-mode";
 import { alertHref, setToastHandler } from "@/lib/alert-store";
 import { toast } from "@/hooks/use-toast";
 
@@ -34,6 +35,8 @@ function AppShell() {
   const { context, namespace, terminalOpen, toggleTerminal } = useTerminalStore();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const closePalette = useCallback(() => setPaletteOpen(false), []);
+  const serverMode = useServerMode();
+  const terminalAllowed = serverMode.features.terminal;
 
   // new failures in the selected namespace: bell + desktop notification (+ a toast when the window is in front)
   useAlertWatcher();
@@ -51,7 +54,7 @@ function AppShell() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key === "`") {
+      if (e.ctrlKey && e.key === "`" && terminalAllowed) {
         e.preventDefault();
         toggleTerminal();
       }
@@ -62,7 +65,7 @@ function AppShell() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [toggleTerminal]);
+  }, [toggleTerminal, terminalAllowed]);
 
   return (
     <div className="flex flex-col h-screen bg-background text-foreground overflow-hidden">
@@ -76,12 +79,14 @@ function AppShell() {
         </WouterRouter>
       </div>
 
-      <TerminalPanel
-        context={context}
-        namespace={namespace}
-        isOpen={terminalOpen}
-        onToggle={toggleTerminal}
-      />
+      {terminalAllowed && (
+        <TerminalPanel
+          context={context}
+          namespace={namespace}
+          isOpen={terminalOpen}
+          onToggle={toggleTerminal}
+        />
+      )}
 
       <KubectlPalette open={paletteOpen} onClose={closePalette} />
     </div>

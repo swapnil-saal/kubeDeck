@@ -1,3 +1,4 @@
+import { isWebMode, webConfig, webExecAllowed } from "../../web-mode";
 import { tool } from "ai";
 import { z } from "zod";
 import { getKubeconfigEnv } from "../../settings";
@@ -110,6 +111,17 @@ function shellQuote(s: string): string {
 
 const monitorCursors = new Map<string, string>();
 
+/** On a shared, read-only KubeDeck the agent may look but not touch, and may not step outside the server's identity. */
+function sharedHostRefusal(kubectlCommand: string): string | null {
+  if (!isWebMode()) return null;
+  const allowed = webExecAllowed(kubectlCommand);
+  if (!allowed.ok) return `Blocked: ${allowed.message}`;
+  if (webConfig().readOnly && classifyKubectlCommand(kubectlCommand) !== "allow") {
+    return "Blocked: this KubeDeck is read-only, so changes are turned off. Tell the user what you would change and let them do it.";
+  }
+  return null;
+}
+
 /**
  * All agent tools, bound to the cluster context / namespace of one request.
  *
@@ -124,6 +136,8 @@ export function buildKubeTools({ context, namespace, threadId }: KubeToolScope) 
     if (classifyKubectlCommand(sanitized) === "block") {
       return `Blocked: '${command}' is a destructive operation. Use the KubeDeck UI or run it manually.`;
     }
+    const shared = sharedHostRefusal(sanitized);
+    if (shared) return shared;
     const narrowed = narrowToNamespace(sanitized, namespace);
     const scoped = injectNamespaceFlag(injectContextFlag(narrowed.command, context), namespace);
     const repeatStop = checkRepeat(threadId, "kubectl", scoped);
@@ -221,6 +235,7 @@ export function buildKubeTools({ context, namespace, threadId }: KubeToolScope) 
         if (classifyBashCommand(command) === "block") {
           return "Blocked: this command is not allowed for safety reasons.";
         }
+        if (isWebMode()) return "Blocked: shell commands are not available on a shared KubeDeck. Use the kubectl or k8s_* tools.";
         const scoped = injectNamespaceIntoBash(injectContextIntoBash(narrowBashToNamespace(command, namespace), context), namespace);
         const repeatStop = checkRepeat(threadId, "bash", scoped);
         if (repeatStop) return repeatStop;

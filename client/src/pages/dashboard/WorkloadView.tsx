@@ -88,10 +88,12 @@ export interface WorkloadViewProps {
   onAsk: (prompt: string) => void;
   onScale: (name: string, current: number) => void;
   onRestart: (name: string) => void;
+  /** false on a read-only shared KubeDeck: hides scale / restart */
+  canWrite?: boolean;
 }
 
 /** Pods grouped under the Deployment / StatefulSet / … that owns them. */
-export const WorkloadView: FC<WorkloadViewProps> = ({ pods, usage, showNamespace, isPinned, onOpen, onLogs, onPin, onAsk, onScale, onRestart }) => {
+export const WorkloadView: FC<WorkloadViewProps> = ({ pods, usage, showNamespace, isPinned, onOpen, onLogs, onPin, onAsk, onScale, onRestart, canWrite = true }) => {
   const [open, setOpen] = useState<Set<string>>(new Set());
   const usageMap = useMemo(() => new Map((usage ?? []).map((u) => [u.namespace ? `${u.namespace}/${u.name}` : u.name, u])), [usage]);
   const groups = useMemo(() => groupWorkloads(pods, usageMap), [pods, usageMap]);
@@ -129,7 +131,7 @@ export const WorkloadView: FC<WorkloadViewProps> = ({ pods, usage, showNamespace
                 <button type="button" title={w.pods.length > 1 ? `Logs of all ${w.pods.length} pods` : "Logs"} aria-label={`Logs of ${w.name}`} onClick={() => onLogs(type, w.name, w.namespace)} className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"><ScrollText className="h-3.5 w-3.5" /></button>
                 <button type="button" title="Diagnose with AI" aria-label={`Diagnose ${w.name} with AI`} onClick={() => onAsk(`Diagnose ${w.kind.toLowerCase()} ${w.name} in namespace ${w.namespace}: ${w.pods.length} pods, ${w.readyPods} ready, ${w.restarts} restarts. Check pod status, recent logs and events and tell me if anything is wrong.`)} className="rounded p-1.5 text-muted-foreground hover:bg-primary/10 hover:text-primary"><Sparkles className="h-3.5 w-3.5" /></button>
                 <button type="button" title={pinned ? "Unpin" : "Pin"} aria-label={pinned ? `Unpin ${w.name}` : `Pin ${w.name}`} aria-pressed={pinned} onClick={() => onPin(type, w.name, w.namespace)} className={cn("rounded p-1.5 hover:bg-muted", pinned ? "text-primary" : "text-muted-foreground hover:text-foreground")}><Pin className="h-3.5 w-3.5" /></button>
-                {w.kind === "Deployment" && (
+                {canWrite && w.kind === "Deployment" && (
                   <>
                     <button type="button" title="Scale" aria-label={`Scale ${w.name}`} onClick={() => onScale(w.name, w.pods.length)} className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"><Scaling className="h-3.5 w-3.5" /></button>
                     <button type="button" title="Rolling restart" aria-label={`Restart ${w.name}`} onClick={() => onRestart(w.name)} className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"><RotateCw className="h-3.5 w-3.5" /></button>

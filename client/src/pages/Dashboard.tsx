@@ -1,3 +1,4 @@
+import { useServerMode } from "@/hooks/use-server-mode";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useLocation } from "wouter";
 import { useHashParams } from "@/hooks/use-hash-params";
@@ -115,6 +116,7 @@ export default function Dashboard() {
   const { data: hpa, isLoading: hpaLoading, isError: hpaError, error: hpaErrorObj, refetch: refetchHpa } = useK8sHpa(currentContext, currentNamespace);
   const { data: pvcs, isLoading: pvcLoading, isError: pvcError, error: pvcErrorObj, refetch: refetchPvc } = useK8sPvcs(currentContext, currentNamespace);
 
+  const serverMode = useServerMode();
   const deletePodMutation = useDeletePod();
   const portForwardMutation = usePortForward();
   const scaleMutation = useScaleDeployment();
@@ -536,6 +538,7 @@ export default function Dashboard() {
                           onAsk={askAi}
                           onScale={(name, current) => { setScaleDialog({ name, current }); setScaleReplicas(String(current)); }}
                           onRestart={handleRestart}
+                          canWrite={serverMode.canWrite}
                         />
                       </div>
                     ) : (
@@ -611,7 +614,7 @@ export default function Dashboard() {
                           <button className="p-1.5 rounded hover:bg-foreground/8 text-muted-foreground hover:text-foreground transition-colors" onClick={() => setSelectedPod({ name: item.name, type: 'env' })} title="Env" aria-label={`Environment of ${item.name}`}>
                             <List className="h-3 w-3" />
                           </button>
-                          <button className="p-1 rounded hover:bg-foreground/8 text-muted-foreground hover:text-foreground transition-colors" onClick={() => {
+                          {serverMode.features.portForward && (<button className="p-1 rounded hover:bg-foreground/8 text-muted-foreground hover:text-foreground transition-colors" onClick={() => {
                             // Auto-populate remote port from container ports
                             const pod = pods?.find(p => p.name === item.name);
                             const cPorts = pod?.containerPorts;
@@ -625,11 +628,13 @@ export default function Dashboard() {
                             setSelectedPod({ name: item.name, type: 'forward' });
                           }} title="Port Forward">
                             <Share2 className="h-3 w-3" />
-                          </button>
+                          </button>)}
+                          {serverMode.canWrite && (<>
                           <span className="mx-1 h-3 w-px bg-border" aria-hidden />
                           <button className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors" onClick={() => handleDeletePod(item.name)} title="Delete pod" aria-label={`Delete pod ${item.name}`}>
                             <Trash2 className="h-3 w-3" />
                           </button>
+                          </>)}
                             </div>
                       )},
                       ]}

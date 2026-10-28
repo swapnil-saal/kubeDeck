@@ -13,6 +13,8 @@ import { registerHomeRoutes } from "./home-routes";
 import { registerLogRoutes } from "./log-routes";
 import { ingressBackends, ingressHosts, ownerWorkload } from "./k8s-parse";
 import { registerTerminalWebSocket } from "./terminal-ws";
+import { isWebMode, webConfig, webExecAllowed } from "./web-mode";
+import { classifyKubectlCommand } from "./ai/chat/kubectl";
 
 /** Quick TCP connect test — resolves true if something is listening on host:port */
 function tcpProbe(host: string, port: number, timeoutMs = 2000): Promise<boolean> {
@@ -927,12 +929,17 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // ── Interactive terminal (WebSocket ↔ stdin/stdout) ─
-  registerTerminalWebSocket(httpServer);
+  // a shell on a shared host would hand every user the server's cluster identity
+  if (!isWebMode()) registerTerminalWebSocket(httpServer);
 
   // ── Settings endpoints ────────────────────────────
 
   app.get("/api/settings", async (_req, res) => {
     try {
+      if (isWebMode()) {
+        // settings come from the server's environment; never expose paths or keys to browsers
+        return res.json({ kubeconfigPaths: [], files: [], ai: { ...(loadSettings().ai ?? {}), apiKey: "" }, managed: true });
+      }
       const settings = loadSettings();
       const files = settings.kubeconfigPaths.map((p) => ({
         path: p,
@@ -946,6 +953,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.put("/api/settings", async (req, res) => {
     try {
+      if (isWebMode()) return res.status(403).json({ message: "Settings are managed by the server's environment on a shared KubeDeck." });
       const { kubeconfigPaths, ai } = req.body;
       if (!Array.isArray(kubeconfigPaths) || kubeconfigPaths.length === 0) {
         return res.status(400).json({ message: "kubeconfigPaths must be a non-empty array" });
@@ -965,6 +973,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.get("/api/settings/kubeconfig/scan", async (_req, res) => {
     try {
+      if (isWebMode()) return res.json([]);
       const results = scanKubeconfigs();
       res.json(results);
     } catch (err: any) {
@@ -998,6 +1007,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       }
 
       const verb = raw.split(/\s+/)[0]?.toLowerCase() || "";
+      if (isWebMode()) {
+        const allowed = webExecAllowed(raw);
+        if (!allowed.ok) return res.status(403).json({ message: allowed.message, blocked: true });
+        if (webConfig().readOnly && classifyKubectlCommand(raw) !== "allow") {
+          return res.status(403).json({ message: "This KubeDeck is read-only: only read commands can run here.", blocked: true });
+        }
+      }
       if (EXEC_BLOCKED_VERBS.has(verb)) {
         return res.status(403).json({
           message: `Command '${verb}' is blocked for safety. Use the KubeDeck UI or run it manually in your terminal.`,

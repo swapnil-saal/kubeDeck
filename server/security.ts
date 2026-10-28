@@ -1,5 +1,6 @@
 import type { IncomingMessage } from "http";
 import type { NextFunction, Request, Response } from "express";
+import { webConfig } from "./web-mode";
 
 /**
  * KubeDeck runs a local server that can execute kubectl and open a shell, so it must
@@ -30,7 +31,11 @@ export function isTrustedRequest(req: IncomingMessage): boolean {
   const host = req.headers.host;
   if (!host) return false;
   const name = hostnameOf(host);
-  if (!LOOPBACK.has(name) && !extraAllowedHosts().has(name)) return false;
+  const web = webConfig();
+  // Shared service: only the public hostname(s) are valid. Loopback names mean nothing there.
+  if (web.enabled) {
+    if (!web.hosts.includes(name) && !extraAllowedHosts().has(name)) return false;
+  } else if (!LOOPBACK.has(name) && !extraAllowedHosts().has(name)) return false;
 
   // Browsers label every request with where it came from. A cross-site <img>/<script>/navigation
   // carries no Origin on GET, but is still "cross-site" here. "none" = the user typed the URL.

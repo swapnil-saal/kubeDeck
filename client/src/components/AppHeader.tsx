@@ -1,12 +1,13 @@
 import { type ReactNode, useEffect } from "react";
 import { useLocation } from "wouter";
-import { ChevronRight, Gauge, SlidersHorizontal, SquareTerminal } from "lucide-react";
+import { ChevronRight, Gauge, LogOut, SlidersHorizontal, SquareTerminal } from "lucide-react";
 import { AiAvatar } from "@/ai";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
 import { useK8sContexts } from "@/hooks/use-k8s";
 import { KubeDeckLogo, KubeDeckMark } from "@/components/KubeDeckLogo";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { AlertBell } from "@/components/header/AlertBell";
+import { useServerMode } from "@/hooks/use-server-mode";
 import { ScopeSwitcher } from "@/components/header/ScopeSwitcher";
 import { cn } from "@/lib/utils";
 
@@ -36,6 +37,7 @@ export function AppHeader({ breadcrumbs, rightSlot, showSelectors = true }: AppH
   const [location, navigate] = useLocation();
   const { context: currentContext, setContext } = useTerminalStore();
   const { data: contexts } = useK8sContexts();
+  const serverMode = useServerMode();
 
   useEffect(() => {
     if (currentContext) return;
@@ -73,7 +75,7 @@ export function AppHeader({ breadcrumbs, rightSlot, showSelectors = true }: AppH
 
         {/* Primary navigation: labelled, with a clear current page. Drops to its own row on small screens. */}
         <nav aria-label="Main" className="order-last flex w-full items-center gap-1 md:order-none md:w-auto">
-          {NAV.map(({ path, label, icon: Icon }) => {
+          {NAV.filter((n) => n.path !== "/settings" || serverMode.features.settingsEdit).map(({ path, label, icon: Icon }) => {
             const active = isActive(path);
             return (
               <button
@@ -111,6 +113,17 @@ export function AppHeader({ breadcrumbs, rightSlot, showSelectors = true }: AppH
             <kbd className="hidden rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-medium lg:inline">⌘K</kbd>
           </button>
           <AlertBell />
+          {serverMode.mode === "web" && serverMode.user && (
+            <a
+              href="/oauth2/sign_out"
+              title={`Signed in as ${serverMode.user.email || serverMode.user.name} — click to sign out`}
+              aria-label="Sign out"
+              className="flex h-9 items-center gap-2 rounded-lg border border-border bg-secondary/40 px-2.5 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+            >
+              <span className="hidden max-w-[10rem] truncate lg:inline">{serverMode.user.name}</span>
+              <LogOut size={14} className="shrink-0" />
+            </a>
+          )}
           <ThemeToggle className="h-9 w-9 rounded-lg" />
           {rightSlot}
         </div>

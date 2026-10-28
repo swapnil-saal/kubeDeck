@@ -4,9 +4,27 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { registerParamValidators, requireTrustedRequest, validateK8sQuery } from "./security";
 import { reportUnreachableAs503 } from "./errors";
+import { ensureInClusterKubeconfig } from "./incluster";
+import { auditLog, describeMode, HEALTH_PATH, loadWebConfig, setWebConfig, validateWebConfig, webGate, webReadOnly } from "./web-mode";
+
+// Web (shared-service) mode is opt-in; refuse to start half-configured rather than serve cluster access to anyone.
+const webCfg = loadWebConfig();
+const webProblems = validateWebConfig(webCfg);
+if (webProblems.length > 0) {
+  for (const p of webProblems) console.error(`[kubedeck] ${p}`);
+  process.exit(1);
+}
+setWebConfig(webCfg);
+if (webCfg.enabled) {
+  const kc = ensureInClusterKubeconfig();
+  if (kc) console.log(`[kubedeck] running in a pod: using the service account via ${kc}`);
+}
 
 const app = express();
 const httpServer = createServer(app);
+
+// Pod-spec liveness/readiness probe: answers before any identity or host check, returns no data.
+app.get(HEALTH_PATH, (_req, res) => { res.type("text/plain").send("ok"); });
 
 declare module "http" {
   interface IncomingMessage {
@@ -16,6 +34,11 @@ declare module "http" {
 
 // Every API call (kubectl exec, terminal, AI, settings…) must come from this app's own origin.
 app.use("/api", requireTrustedRequest);
+// Web mode: pages and API alike need the login proxy's identity; writes are refused when read-only.
+app.use(webGate);
+app.use(auditLog);
+app.use("/api", webReadOnly);
+app.get("/api/mode", (req, res) => { res.json(describeMode(req)); });
 app.use("/api/k8s", validateK8sQuery);
 app.use("/api/k8s", reportUnreachableAs503);
 registerParamValidators(app);
@@ -90,7 +113,8 @@ app.use((req, res, next) => {
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
   const port = parseInt(process.env.PORT || "5000", 10);
-  const host = "127.0.0.1"; // loopback only — this server can run kubectl and open a shell
+  // Desktop: loopback only — this server can run kubectl and open a shell. Web mode must be reachable by the proxy.
+  const host = process.env.HOST || (webCfg.enabled ? "0.0.0.0" : "127.0.0.1");
   httpServer.listen(
     { port, host },
     () => {

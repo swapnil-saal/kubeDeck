@@ -1,0 +1,189 @@
+# KubeDeck web mode behind oauth2-proxy (Keycloak). Replace every CHANGE_ME / example value.
+#
+# The pod runs two containers. oauth2-proxy is the only thing reachable from outside: it signs
+# users in with Keycloak and forwards requests with their identity headers. KubeDeck listens on
+# 127.0.0.1 only, so nothing but the sidecar in the same pod can reach it — that is what makes
+# KUBEDECK_TRUST_PROXY_NETWORK=1 safe. docs/WEB.md explains each setting.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubedeck
+---
+# Cluster identity KubeDeck uses to read the cluster. Read-only; widen deliberately.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubedeck
+  namespace: kubedeck
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubedeck-reader
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log, services, endpoints, events, namespaces, nodes, persistentvolumeclaims, configmaps, resourcequotas, limitranges]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, daemonsets, replicasets]
+    verbs: [get, list, watch]
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
+    verbs: [get, list, watch]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses]
+    verbs: [get, list, watch]
+  - apiGroups: [autoscaling]
+    resources: [horizontalpodautoscalers]
+    verbs: [get, list, watch]
+  - apiGroups: [metrics.k8s.io]
+    resources: [pods, nodes]
+    verbs: [get, list]
+  # Secrets are deliberately NOT listed. Add them only if every KubeDeck user may read every secret.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubedeck-reader
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: kubedeck-reader }
+subjects:
+  - { kind: ServiceAccount, name: kubedeck, namespace: kubedeck }
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kubedeck-oauth
+  namespace: kubedeck
+type: Opaque
+stringData:
+  client-id: CHANGE_ME            # Keycloak client id
+  client-secret: CHANGE_ME        # Keycloak client secret
+  cookie-secret: CHANGE_ME        # 32 random bytes, base64: openssl rand -base64 32 | tr -- '+/' '-_'
+---
+# Optional: the AI assistant. Leave out to run without Ask Deck.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kubedeck-ai
+  namespace: kubedeck
+type: Opaque
+stringData:
+  api-key: CHANGE_ME
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubedeck
+  namespace: kubedeck
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: kubedeck }
+  template:
+    metadata:
+      labels: { app: kubedeck }
+    spec:
+      serviceAccountName: kubedeck
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: kubedeck
+          image: CHANGE_ME/kubedeck:1.12.2   # build from the Dockerfile in this repo
+          env:
+            - { name: KUBEDECK_MODE, value: web }
+            - { name: HOST, value: 127.0.0.1 }            # only the sidecar can reach it
+            - { name: KUBEDECK_TRUST_PROXY_NETWORK, value: "1" }
+            - { name: KUBEDECK_PUBLIC_URL, value: "https://kubedeck.example.com" }
+            - { name: KUBEDECK_READ_ONLY, value: "true" }
+            # - { name: KUBEDECK_ALLOWED_GROUPS, value: "platform,sre" }   # restrict by Keycloak group
+            - { name: KUBEDECK_AI_PROVIDER, value: anthropic }
+            - { name: KUBEDECK_AI_MODEL, value: claude-haiku-4-5-20251001 }
+            - name: KUBEDECK_AI_API_KEY
+              valueFrom: { secretKeyRef: { name: kubedeck-ai, key: api-key, optional: true } }
+          readinessProbe:
+            exec: { command: ["wget", "-qO-", "http://127.0.0.1:5000/healthz"] }
+            periodSeconds: 10
+          livenessProbe:
+            exec: { command: ["wget", "-qO-", "http://127.0.0.1:5000/healthz"] }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 100m, memory: 192Mi }
+            limits: { memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+        - name: oauth2-proxy
+          image: quay.io/oauth2-proxy/oauth2-proxy:v7.7.1
+          args:
+            - --provider=keycloak-oidc
+            - --oidc-issuer-url=https://saga.saal.ai/auth/realms/master
+            - --redirect-url=https://kubedeck.example.com/oauth2/callback
+            - --upstream=http://127.0.0.1:5000
+            - --http-address=0.0.0.0:4180
+            - --email-domain=*                 # narrow this (or use --allowed-group) for production
+            - --scope=openid email profile
+            - --oidc-groups-claim=groups
+            - --pass-user-headers=true
+            - --prefer-email-to-user=false
+            - --cookie-secure=true
+            - --cookie-samesite=lax
+            - --reverse-proxy=true
+            - --skip-provider-button=true
+          env:
+            - name: OAUTH2_PROXY_CLIENT_ID
+              valueFrom: { secretKeyRef: { name: kubedeck-oauth, key: client-id } }
+            - name: OAUTH2_PROXY_CLIENT_SECRET
+              valueFrom: { secretKeyRef: { name: kubedeck-oauth, key: client-secret } }
+            - name: OAUTH2_PROXY_COOKIE_SECRET
+              valueFrom: { secretKeyRef: { name: kubedeck-oauth, key: cookie-secret } }
+          ports:
+            - { name: http, containerPort: 4180 }
+          readinessProbe:
+            httpGet: { path: /ping, port: 4180 }
+          livenessProbe:
+            httpGet: { path: /ping, port: 4180 }
+            initialDelaySeconds: 10
+          resources:
+            requests: { cpu: 25m, memory: 32Mi }
+            limits: { memory: 128Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubedeck
+  namespace: kubedeck
+spec:
+  selector: { app: kubedeck }
+  ports:
+    - { name: http, port: 80, targetPort: http }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kubedeck
+  namespace: kubedeck
+  annotations:
+    # live log streaming needs long-lived responses
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [kubedeck.example.com]
+      secretName: CHANGE_ME-tls
+  rules:
+    - host: kubedeck.example.com
+      http:
+        paths:
+          - { path: /, pathType: Prefix, backend: { service: { name: kubedeck, port: { name: http } } } }

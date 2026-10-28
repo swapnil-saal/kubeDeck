@@ -1,3 +1,4 @@
+import { useServerMode } from "@/hooks/use-server-mode";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useParams, useLocation, useSearch } from "wouter";
 import { useHashParams } from "@/hooks/use-hash-params";
@@ -450,6 +451,7 @@ export default function ResourceDetail() {
   const [editYaml, setEditYaml] = useState("");
   const { toast } = useToast();
   const applyMutation = useApplyYaml();
+  const serverMode = useServerMode();
 
   const goToResource = (rType: string, rName: string, rNs: string) => {
     navigate(`/resource/${rType}/${encodeURIComponent(rName)}?context=${encodeURIComponent(context)}&namespace=${encodeURIComponent(rNs)}`);
@@ -492,7 +494,7 @@ export default function ResourceDetail() {
   const tabs = [
     { id: "describe", label: "DESCRIBE", icon: FileText },
     { id: "yaml", label: "YAML", icon: Code },
-    { id: "edit", label: "EDIT", icon: Pencil },
+    ...(serverMode.canWrite ? [{ id: "edit", label: "EDIT", icon: Pencil }] : []),
     ...(isPod ? [
       { id: "logs", label: "LOGS", icon: Terminal },
       { id: "env", label: "ENV", icon: Variable },
@@ -642,7 +644,7 @@ export default function ResourceDetail() {
       </div>
 
       {/* ══════ PORT FORWARD STATUS BAR ══════ */}
-      <PortForwardBar />
+      {serverMode.features.portForward && <PortForwardBar />}
 
       <CommandBar commands={buildDetailCommands(type, name, context, namespace, activeTab)} />
     </div>
