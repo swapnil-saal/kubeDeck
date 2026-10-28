@@ -6,7 +6,7 @@ set -eu
 cd "$(dirname "$0")/.."
 
 version=$(node -p "require('./package.json').version")
-image=kubedeck
+image=swapnilsaal/kubedeck
 
 docker build -t "$image:$version-web" .
 new_id=$(docker image inspect --format '{{.Id}}' "$image:$version-web")

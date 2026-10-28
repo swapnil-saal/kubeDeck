@@ -6,7 +6,8 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-RUN npm run build
+# every runtime dependency is bundled into dist/index.cjs, so the final image needs no node_modules
+RUN KUBEDECK_BUNDLE_ALL=1 npm run build
 
 FROM node:22-alpine AS runtime
 ARG KUBECTL_VERSION=v1.31.4
@@ -19,8 +20,6 @@ WORKDIR /app
 ENV NODE_ENV=production \
     KUBEDECK_MODE=web \
     PORT=5000
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 USER node
 EXPOSE 5000
