@@ -60,16 +60,6 @@ stringData:
   client-secret: CHANGE_ME        # Keycloak client secret
   cookie-secret: CHANGE_ME        # 32 random bytes, base64: openssl rand -base64 32 | tr -- '+/' '-_'
 ---
-# Optional: the AI assistant. Leave out to run without Ask Deck.
-apiVersion: v1
-kind: Secret
-metadata:
-  name: kubedeck-ai
-  namespace: kubedeck
-type: Opaque
-stringData:
-  api-key: CHANGE_ME
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -97,10 +87,6 @@ spec:
             - { name: KUBEDECK_PUBLIC_URL, value: "https://kubedeck.example.com" }
             - { name: KUBEDECK_READ_ONLY, value: "true" }
             # - { name: KUBEDECK_ALLOWED_GROUPS, value: "platform,sre" }   # restrict by Keycloak group
-            - { name: KUBEDECK_AI_PROVIDER, value: anthropic }
-            - { name: KUBEDECK_AI_MODEL, value: claude-haiku-4-5-20251001 }
-            - name: KUBEDECK_AI_API_KEY
-              valueFrom: { secretKeyRef: { name: kubedeck-ai, key: api-key, optional: true } }
           readinessProbe:
             exec: { command: ["wget", "-qO-", "http://127.0.0.1:5000/healthz"] }
             periodSeconds: 10

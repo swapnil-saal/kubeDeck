@@ -1036,7 +1036,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   registerHomeRoutes(app, { runKubectlRaw });
   registerLogRoutes(app, { runKubectl });
-  registerAiRoutes(app);
+  // Web mode has no AI: the endpoints are not even registered, so cluster data cannot reach a model provider.
+  if (!isWebMode()) registerAiRoutes(app);
 
   return httpServer;
 }

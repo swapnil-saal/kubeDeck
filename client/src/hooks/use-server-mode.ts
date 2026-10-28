@@ -5,14 +5,14 @@ export interface ServerMode {
   /** a shared KubeDeck refuses scale / restart / edit / delete */
   readOnly: boolean;
   user?: { name: string; email: string } | null;
-  features: { terminal: boolean; portForward: boolean; settingsEdit: boolean };
+  features: { terminal: boolean; portForward: boolean; settingsEdit: boolean; ai: boolean };
 }
 
 /** Desktop is the default while loading, and when the endpoint is missing (older server). */
-const DESKTOP: ServerMode = { mode: "desktop", readOnly: false, features: { terminal: true, portForward: true, settingsEdit: true } };
+const DESKTOP: ServerMode = { mode: "desktop", readOnly: false, features: { terminal: true, portForward: true, settingsEdit: true, ai: true } };
 
 /** Whether this KubeDeck is the desktop app or a shared web service, and who is signed in. */
-export function useServerMode(): ServerMode & { canWrite: boolean } {
+export function useServerMode(): ServerMode & { canWrite: boolean; aiEnabled: boolean } {
   const { data } = useQuery<ServerMode>({
     queryKey: ["/api/mode"],
     queryFn: async () => {
@@ -24,5 +24,6 @@ export function useServerMode(): ServerMode & { canWrite: boolean } {
     retry: false,
   });
   const m = data ?? DESKTOP;
-  return { ...m, canWrite: !m.readOnly };
+  // an older server has no `ai` flag: treat that as "available"
+  return { ...m, canWrite: !m.readOnly, aiEnabled: m.features.ai !== false };
 }

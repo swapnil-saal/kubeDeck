@@ -7,8 +7,9 @@
  *    "the network only lets the proxy reach me" declaration) and carry a user;
  *  - an optional group allow-list;
  *  - read-only by default: no scale / restart / apply / delete / exec-style mutation;
- *  - no shell, no port-forward, no editing of kubeconfig paths or AI keys from the browser;
- *  - an audit line for every non-GET request and every AI call, with the user's name.
+ *  - no shell, no port-forward, no editing of kubeconfig paths from the browser;
+ *  - no AI features at all (no endpoints, no UI): cluster data never leaves for a model provider;
+ *  - an audit line for every non-GET request, with the user's name.
  *
  * Turn it on with KUBEDECK_MODE=web. See docs/WEB.md.
  */
@@ -131,19 +132,16 @@ export function webGate(req: Request, res: Response, next: NextFunction): void {
 }
 
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
-/** AI calls are POSTs but read-only; the agent's own tools enforce read-only separately. */
-const READ_ONLY_POST_PREFIXES = ["/api/ai/"];
-
-/** Read-only web mode: refuse every write except the AI endpoints (and the kubectl palette, which classifies its own verbs). */
+/** Read-only web mode: refuse every write except the kubectl palette, which classifies its own verbs. */
 export function webReadOnly(req: Request, res: Response, next: NextFunction): void {
   if (!active.enabled || !active.readOnly || !MUTATING.has(req.method)) return next();
   // mounted under "/api", so req.path is relative to that mount; compare the full path
   const full = req.baseUrl + req.path;
-  if (READ_ONLY_POST_PREFIXES.some((p) => full.startsWith(p)) || full === "/api/kubectl/exec") return next();
+  if (full === "/api/kubectl/exec") return next();
   res.status(403).json({ message: "This KubeDeck is read-only. Scaling, restarting, editing and deleting are turned off here." });
 }
 
-/** One line per write or AI call, naming the user. Goes to stdout so the cluster's log pipeline keeps it. */
+/** One line per write (including palette commands), naming the user. Goes to stdout so the cluster's log pipeline keeps it. */
 export function auditLog(req: Request, res: Response, next: NextFunction): void {
   if (!active.enabled) return next();
   const audited = MUTATING.has(req.method) && req.path.startsWith("/api");
@@ -174,29 +172,14 @@ export function webExecAllowed(raw: string): { ok: true } | { ok: false; message
   return { ok: true };
 }
 
-/** AI provider from the environment (web mode never lets browsers write or read the key). */
-export function webAiFromEnv(env: NodeJS.ProcessEnv = process.env) {
-  if (!active.enabled || !env.KUBEDECK_AI_API_KEY) return undefined;
-  const provider = (["openai", "anthropic", "ollama", "custom"].includes(env.KUBEDECK_AI_PROVIDER ?? "")
-    ? env.KUBEDECK_AI_PROVIDER
-    : "openai") as "openai" | "anthropic" | "ollama" | "custom";
-  return {
-    provider,
-    apiKey: env.KUBEDECK_AI_API_KEY,
-    model: env.KUBEDECK_AI_MODEL || "gpt-4o-mini",
-    fastModel: env.KUBEDECK_AI_FAST_MODEL || undefined,
-    baseUrl: env.KUBEDECK_AI_BASE_URL || "",
-  };
-}
-
 /** Public description of the running mode, for the browser (never includes secrets). */
 export function describeMode(req: Request) {
   const c = active;
-  if (!c.enabled) return { mode: "desktop" as const, readOnly: false, features: { terminal: true, portForward: true, settingsEdit: true } };
+  if (!c.enabled) return { mode: "desktop" as const, readOnly: false, features: { terminal: true, portForward: true, settingsEdit: true, ai: true } };
   return {
     mode: "web" as const,
     readOnly: c.readOnly,
     user: req.kubedeckUser ? { name: req.kubedeckUser.name, email: req.kubedeckUser.email } : null,
-    features: { terminal: false, portForward: false, settingsEdit: false },
+    features: { terminal: false, portForward: false, settingsEdit: false, ai: false },
   };
 }

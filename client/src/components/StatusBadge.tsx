@@ -1,3 +1,4 @@
+import { useServerMode } from "@/hooks/use-server-mode";
 import { Sparkles, Loader2 } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import { useAiTooltip, useAiConfig } from "@/ai";
@@ -61,9 +62,10 @@ function AiStatusTooltipBadge({ status, resourceName }: { status: string; resour
 export function StatusBadge({ status, resourceName }: StatusBadgeProps) {
   const normalized = status.toLowerCase();
   const { isFastModel } = useAiConfig();
+  const { aiEnabled } = useServerMode();
   const isUnhealthy = UNHEALTHY_STATUSES.has(normalized);
 
-  if (isUnhealthy && isFastModel && resourceName) {
+  if (aiEnabled && isUnhealthy && isFastModel && resourceName) {
     return <AiStatusTooltipBadge status={status} resourceName={resourceName} />;
   }
 

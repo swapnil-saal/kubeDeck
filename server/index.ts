@@ -83,6 +83,9 @@ app.use((req, res, next) => {
 (async () => {
   await registerRoutes(httpServer, app);
 
+  // An unknown API path is a 404, not the single-page app's index.html (which answered 200 to anything).
+  app.use("/api", (_req, res) => { res.status(404).json({ message: "Not found" }); });
+
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";

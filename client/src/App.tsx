@@ -20,10 +20,11 @@ import { alertHref, setToastHandler } from "@/lib/alert-store";
 import { toast } from "@/hooks/use-toast";
 
 function Routes() {
+  const { aiEnabled } = useServerMode();
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
-      <Route path="/ai" component={AiChatPage} />
+      {aiEnabled && <Route path="/ai" component={AiChatPage} />}
       <Route path="/resource/:type/:name" component={ResourceDetail} />
       <Route path="/settings" component={Settings} />
       <Route component={NotFound} />

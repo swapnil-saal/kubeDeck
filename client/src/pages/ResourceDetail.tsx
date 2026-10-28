@@ -284,6 +284,7 @@ function RelatedPanel({ type, name, context, namespace, onNavigate }: {
 }) {
   const { data: related, isLoading } = useResourceRelated(type, name, context, namespace);
   const [, navigate] = useLocation();
+  const { aiEnabled } = useServerMode();
 
   if (isLoading) {
     return <div className="h-full flex items-center justify-center text-muted-foreground font-mono text-[11px] animate-pulse">Resolving connections...</div>;
@@ -307,7 +308,7 @@ function RelatedPanel({ type, name, context, namespace, onNavigate }: {
       namespace={namespace}
       related={related}
       onNavigate={onNavigate}
-      onAsk={(prompt) => navigate(`/ai?context=${encodeURIComponent(context)}&namespace=${encodeURIComponent(namespace)}&prompt=${encodeURIComponent(prompt)}`)}
+      onAsk={!aiEnabled ? undefined : (prompt) => navigate(`/ai?context=${encodeURIComponent(context)}&namespace=${encodeURIComponent(namespace)}&prompt=${encodeURIComponent(prompt)}`)}
     />
   );
 }
@@ -520,7 +521,7 @@ export default function ResourceDetail() {
       />
 
       {/* on the Logs tab every pixel of height belongs to the log lines */}
-      {activeTab !== "logs" && (
+      {activeTab !== "logs" && serverMode.aiEnabled && (
         <ResourceAiInsight
           resourceType={type}
           name={name}
@@ -558,7 +559,7 @@ export default function ResourceDetail() {
             <motion.div key={activeTab} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }} className="h-full" style={activeTab === "logs" ? { minHeight: "26rem" } : undefined}>
               {activeTab === "describe" && (
                 <div className="h-full flex flex-col">
-                  <div className="flex items-center justify-end gap-2 mb-2 shrink-0">
+                  {serverMode.aiEnabled && <div className="flex items-center justify-end gap-2 mb-2 shrink-0">
                     <AiTroubleshootButton
                       resourceType={type}
                       name={name}
@@ -567,7 +568,7 @@ export default function ResourceDetail() {
                       describe={describeData?.content}
                       events={eventsData?.content}
                     />
-                  </div>
+                  </div>}
                   <div className="flex-1 min-h-0">
                     <TerminalPane content={describeData?.content} isLoading={describeLoading}
                       emptyMsg={describeError ? (describeErrorObj?.message || "Failed to describe") : "No data"} />
@@ -576,9 +577,9 @@ export default function ResourceDetail() {
               )}
               {activeTab === "yaml" && (
                 <div className="h-full flex flex-col">
-                  <div className="flex items-center justify-end gap-2 mb-2 shrink-0">
+                  {serverMode.aiEnabled && <div className="flex items-center justify-end gap-2 mb-2 shrink-0">
                     <AiExplainButton yaml={yamlData?.content || ""} resourceType={type} />
-                  </div>
+                  </div>}
                   <div className="flex-1 min-h-0">
                     <YamlViewer content={yamlData?.content} isLoading={yamlLoading} />
                   </div>
@@ -592,6 +593,7 @@ export default function ResourceDetail() {
                   namespace={namespace}
                   query={grepFilter}
                   onQueryChange={setGrepFilter}
+                  aiEnabled={serverMode.aiEnabled}
                   workloadLink={ownerLink}
                 />
               )}

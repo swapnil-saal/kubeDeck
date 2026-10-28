@@ -47,9 +47,11 @@ export interface LogExplorerProps {
   onQueryChange: (q: string) => void;
   /** pods can jump to their workload's combined logs */
   workloadLink?: { label: string; onClick: () => void };
+  /** false hides the AI summary (shared web mode has no AI); default true */
+  aiEnabled?: boolean;
 }
 
-export const LogExplorer: FC<LogExplorerProps> = ({ kind, name, context, namespace, query, onQueryChange, workloadLink }) => {
+export const LogExplorer: FC<LogExplorerProps> = ({ kind, name, context, namespace, query, onQueryChange, workloadLink, aiEnabled = true }) => {
   const [prefs, setPrefs] = useState<GlobalPrefs>(loadPrefs);
   const patchPrefs = useCallback((patch: Partial<GlobalPrefs>) => { setPrefs((p) => ({ ...p, ...patch })); savePrefs(patch); }, []);
 
@@ -271,7 +273,7 @@ export const LogExplorer: FC<LogExplorerProps> = ({ kind, name, context, namespa
         onClear={() => { clear(); setFrozen(null); }}
         onDownload={download}
         onCopy={copyAll}
-        onSummarize={summarize}
+        onSummarize={aiEnabled ? summarize : undefined}
         summarizing={summarizing}
         format={prefs.format}
         onFormat={(f) => patchPrefs({ format: f })}

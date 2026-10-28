@@ -92,7 +92,6 @@ describe("web mode over HTTP (real middleware)", () => {
     app.get("/api/mode", (req, res) => res.json(describeMode(req)));
     app.get("/api/k8s/pods", (_req, res) => res.json(["pod-a"]));
     app.post("/api/k8s/deployments/scale", (_req, res) => res.json({ scaled: true }));
-    app.post("/api/ai/agent", (_req, res) => res.json({ answered: true }));
     server = await new Promise<Server>((r) => { const s = app.listen(0, "127.0.0.1", () => r(s)); });
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
@@ -128,11 +127,10 @@ describe("web mode over HTTP (real middleware)", () => {
   it("serves reads to a signed-in user and reports who they are", async () => {
     expect((await call("/api/k8s/pods", ok)).status).toBe(200);
     const mode = await (await call("/api/mode", ok)).json();
-    expect(mode).toMatchObject({ mode: "web", readOnly: true, user: { email: "dev@example.com" }, features: { terminal: false, portForward: false, settingsEdit: false } });
+    expect(mode).toMatchObject({ mode: "web", readOnly: true, user: { email: "dev@example.com" }, features: { terminal: false, portForward: false, settingsEdit: false, ai: false } });
   });
-  it("blocks writes when read-only but still allows AI calls", async () => {
+  it("blocks writes when read-only", async () => {
     expect((await call("/api/k8s/deployments/scale", ok, "POST")).status).toBe(403);
-    expect((await call("/api/ai/agent", ok, "POST")).status).toBe(200);
   });
   it("allows writes once read-only is turned off", async () => {
     setWebConfig(cfg({ readOnly: false }));

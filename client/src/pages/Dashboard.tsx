@@ -463,7 +463,8 @@ export default function Dashboard() {
               requests={requests}
               metricsReason={podMetrics.data && !podMetrics.data.available ? podMetrics.data.reason : undefined}
               nodeUsage={nodeMetrics.data?.available ? nodeMetrics.data.items : undefined}
-              onAsk={askAi}
+              onAsk={serverMode.aiEnabled ? askAi : undefined}
+              onOpen={goToDetail}
             />
           ) : null}
 
@@ -535,7 +536,7 @@ export default function Dashboard() {
                           onOpen={(t, n, ns) => goToDetail(t, n, ns)}
                           onLogs={(t, n, ns) => goToLogs(t, n, ns)}
                           onPin={(t, n, ns) => pinState.toggle(refFor(t, n, ns))}
-                          onAsk={askAi}
+                          onAsk={serverMode.aiEnabled ? askAi : undefined}
                           onScale={(name, current) => { setScaleDialog({ name, current }); setScaleReplicas(String(current)); }}
                           onRestart={handleRestart}
                           canWrite={serverMode.canWrite}
@@ -602,9 +603,9 @@ export default function Dashboard() {
                         { header: "Age", accessorKey: "age" },
                       { header: "", id: "actions", required: true, cell: (item) => (
                         <div className="flex items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-                          <button className="p-1.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors" onClick={() => askAi(`Diagnose pod ${item.name} in namespace ${item.namespace}: it is ${item.status} with ${item.restarts} restarts. Check its describe output, recent logs and events and tell me if anything is wrong.`)} title="Diagnose with AI" aria-label={`Diagnose ${item.name} with AI`}>
+{serverMode.aiEnabled && (<button className="p-1.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors" onClick={() => askAi(`Diagnose pod ${item.name} in namespace ${item.namespace}: it is ${item.status} with ${item.restarts} restarts. Check its describe output, recent logs and events and tell me if anything is wrong.`)} title="Diagnose with AI" aria-label={`Diagnose ${item.name} with AI`}>
                             <Sparkles className="h-3 w-3" />
-                          </button>
+                          </button>)}
                           <button className={`p-1.5 rounded hover:bg-foreground/8 transition-colors ${pinState.isPinned(refFor("pod", item.name, item.namespace)) ? "text-primary" : "text-muted-foreground hover:text-foreground"}`} onClick={() => pinState.toggle(refFor("pod", item.name, item.namespace))} title="Pin" aria-label={`Pin ${item.name}`} aria-pressed={pinState.isPinned(refFor("pod", item.name, item.namespace))}>
                             <Pin className="h-3 w-3" />
                           </button>

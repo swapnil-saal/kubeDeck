@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { isWebMode, webAiFromEnv } from "./web-mode";
+import { isWebMode } from "./web-mode";
 
 const SETTINGS_DIR = path.join(os.homedir(), ".kubedeck");
 const SETTINGS_FILE = path.join(SETTINGS_DIR, "settings.json");
@@ -55,8 +55,8 @@ function backupUnreadableSettings(raw: string, reason: string): void {
 }
 
 export function loadSettings(): KubeDeckSettings {
-  // Shared service: no per-machine settings file. The AI provider comes from the environment.
-  if (isWebMode()) return { kubeconfigPaths: [], ai: webAiFromEnv() ?? defaults().ai };
+  // Shared service: no per-machine settings file, and no AI.
+  if (isWebMode()) return { kubeconfigPaths: [], ai: defaults().ai };
   if (!fs.existsSync(SETTINGS_FILE)) return defaults();
   let raw: string;
   try {

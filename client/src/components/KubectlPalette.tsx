@@ -1,3 +1,4 @@
+import { useServerMode } from "@/hooks/use-server-mode";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   Copy, Check, Terminal, ArrowRight, Sparkles, Loader2, ShieldAlert, AlertTriangle,
@@ -263,7 +264,9 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
   const outputRef = useRef<HTMLPreElement>(null);
   const aiDebounceRef = useRef<ReturnType<typeof setTimeout>>();
   const { context, namespace, setNamespace } = useTerminalStore();
-  const { isConfigured } = useAiConfig();
+  const { isConfigured: aiConfigured } = useAiConfig();
+  const { aiEnabled } = useServerMode();
+  const isConfigured = aiConfigured && aiEnabled;
   const resourceNames = useResourceNames();
   const smartSuggestions = useSmartSuggestions(context, namespace);
   const { data: namespaces } = useK8sNamespaces(context);
@@ -507,7 +510,7 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
           namespace={namespace}
           namespaces={namespaces?.map((n) => n.name) || []}
           onNamespaceChange={setNamespace}
-          onAskAi={() => {
+          onAskAi={!aiEnabled ? undefined : () => {
             const q = query.trim();
             navigateHash(
               `/ai?prompt=${encodeURIComponent(q || "Help me investigate this cluster")}` +
@@ -956,7 +959,7 @@ function ScopeStrip({
   namespace: string;
   namespaces: string[];
   onNamespaceChange: (ns: string) => void;
-  onAskAi: () => void;
+  onAskAi?: () => void;
 }) {
   const [pickingNs, setPickingNs] = useState(false);
   const [nsFilter, setNsFilter] = useState("");
@@ -983,14 +986,16 @@ function ScopeStrip({
         <Layers className="w-2.5 h-2.5" />
         {namespace || "all"}
       </button>
-      <button
-        onClick={onAskAi}
-        className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
-        title="Open this query in AI chat"
-      >
-        <MessageSquare className="w-2.5 h-2.5" />
-        Ask AI
-      </button>
+      {onAskAi && (
+        <button
+          onClick={onAskAi}
+          className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
+          title="Open this query in AI chat"
+        >
+          <MessageSquare className="w-2.5 h-2.5" />
+          Ask AI
+        </button>
+      )}
 
       {pickingNs && (
         <div className="absolute left-2 right-2 top-full mt-1 z-10 bg-popover border border-border rounded-lg shadow-lg overflow-hidden">

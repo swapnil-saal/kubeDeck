@@ -24,15 +24,24 @@ const Card: FC<{ title: string; right?: React.ReactNode; className?: string; chi
   </section>
 );
 
-function IssueRow({ issue, action, onAsk }: { issue: Issue; action: string; onAsk: (p: string) => void }) {
+/** With AI off, a row opens the pod / deployment it is about instead of asking the assistant. */
+function openTarget(issue: Issue): { type: string; name: string; namespace: string } | null {
+  if (issue.kind !== "pod" && issue.kind !== "deployment") return null;
+  const [ns, name] = issue.id.replace(/^[a-z]+:/, "").split("/");
+  return name ? { type: issue.kind, name, namespace: ns } : null;
+}
+
+function IssueRow({ issue, action, onAsk, onOpen }: { issue: Issue; action: string; onAsk?: (p: string) => void; onOpen?: (type: string, name: string, ns: string) => void }) {
   const ui = SEVERITY[issue.severity];
+  const target = !onAsk && onOpen ? openTarget(issue) : null;
   return (
     <li>
       <button
         type="button"
-        onClick={() => onAsk(issue.prompt)}
-        className="group flex w-full items-start gap-2.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-muted/60"
-        title={`${action} with the AI operator`}
+        disabled={!onAsk && !target}
+        onClick={() => (onAsk ? onAsk(issue.prompt) : target && onOpen?.(target.type, target.name, target.namespace))}
+        className="group flex w-full items-start gap-2.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-muted/60 disabled:cursor-default disabled:hover:bg-transparent"
+        title={onAsk ? `${action} with the AI operator` : target ? `Open ${issue.title}` : undefined}
       >
         <span className="mt-1 shrink-0">{ui.icon}</span>
         <span className="min-w-0 flex-1">
@@ -43,7 +52,7 @@ function IssueRow({ issue, action, onAsk }: { issue: Issue; action: string; onAs
           </span>
         </span>
         <span className="mt-0.5 flex shrink-0 items-center gap-0.5 text-[11px] font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-          {action}<ArrowUpRight className="h-3 w-3" />
+          {onAsk ? action : target ? "Open" : ""}{(onAsk || target) && <ArrowUpRight className="h-3 w-3" />}
         </span>
       </button>
     </li>
@@ -73,8 +82,10 @@ export interface HomeOverviewProps {
   requests: { cpuMilli: number; memMi: number };
   metricsReason?: "forbidden" | "no-metrics-server" | "error";
   nodeUsage?: NodeUsage[];
-  /** send a question to the AI operator, scoped to this cluster/namespace */
-  onAsk: (prompt: string) => void;
+  /** send a question to the AI operator, scoped to this cluster/namespace. Absent when AI is off (shared web mode). */
+  onAsk?: (prompt: string) => void;
+  /** open a resource; used instead of the AI when it is off */
+  onOpen?: (type: string, name: string, namespace: string) => void;
 }
 
 /**
@@ -83,7 +94,7 @@ export interface HomeOverviewProps {
  * AI operator with a precise prompt.
  */
 export const HomeOverview: FC<HomeOverviewProps> = ({
-  context, namespace, health, changes, usage, requests, metricsReason, nodeUsage, onAsk,
+  context, namespace, health, changes, usage, requests, metricsReason, nodeUsage, onAsk, onOpen,
 }) => {
   const [question, setQuestion] = useState("");
   const [showFlaky, setShowFlaky] = useState(false);
@@ -98,7 +109,7 @@ export const HomeOverview: FC<HomeOverviewProps> = ({
     const q = question.trim();
     if (!q) return;
     setQuestion("");
-    onAsk(q);
+    onAsk?.(q);
   };
 
   const suggestions = useMemo(() => {
@@ -134,6 +145,7 @@ export const HomeOverview: FC<HomeOverviewProps> = ({
           </div>
         </div>
 
+        {onAsk && (
         <div className="min-w-0 flex-1">
           <form onSubmit={submit} className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-1.5 focus-within:border-primary/50">
             <Sparkles className="h-4 w-4 shrink-0 text-primary" />
@@ -156,6 +168,7 @@ export const HomeOverview: FC<HomeOverviewProps> = ({
             ))}
           </div>
         </div>
+        )}
       </div>
 
       <div className="grid items-start gap-4 lg:grid-cols-5">
@@ -163,8 +176,8 @@ export const HomeOverview: FC<HomeOverviewProps> = ({
         {/* Needs attention */}
         <Card
           title={`Needs attention${problems > 0 ? ` · ${problems}` : ""}`}
-          right={problems > 1 ? (
-            <button type="button" onClick={() => onAsk(diagnoseAllPrompt(health.issues, namespace))} className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary ring-1 ring-primary/20 transition-colors hover:bg-primary/20">
+          right={onAsk && problems > 1 ? (
+            <button type="button" onClick={() => onAsk?.(diagnoseAllPrompt(health.issues, namespace))} className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary ring-1 ring-primary/20 transition-colors hover:bg-primary/20">
               <Sparkles className="h-3 w-3" />Diagnose all
             </button>
           ) : null}
@@ -179,9 +192,9 @@ export const HomeOverview: FC<HomeOverviewProps> = ({
                 </div>
               </div>
             ) : (
-              <ul>{health.issues.slice(0, 7).map((i) => <IssueRow key={i.id} issue={i} action="Diagnose" onAsk={onAsk} />)}</ul>
+              <ul>{health.issues.slice(0, 7).map((i) => <IssueRow key={i.id} issue={i} action="Diagnose" onAsk={onAsk} onOpen={onOpen} />)}</ul>
             )}
-            {problems > 7 && <p className="px-3 pt-1 text-[11px] text-muted-foreground">+{problems - 7} more — use “Diagnose all”.</p>}
+            {problems > 7 && <p className="px-3 pt-1 text-[11px] text-muted-foreground">+{problems - 7} more{onAsk ? " — use “Diagnose all”." : "."}</p>}
 
             {health.flaky.length > 0 && (
               <div className="mt-2 border-t border-border/50 pt-2">
@@ -190,7 +203,7 @@ export const HomeOverview: FC<HomeOverviewProps> = ({
                   Flaky pods · {health.flakyTotal}
                   <span className="ml-auto font-normal normal-case tracking-normal">{health.restarts} restarts total</span>
                 </button>
-                {showFlaky && <ul>{health.flaky.map((i) => <IssueRow key={i.id} issue={i} action="Investigate" onAsk={onAsk} />)}</ul>}
+                {showFlaky && <ul>{health.flaky.map((i) => <IssueRow key={i.id} issue={i} action="Investigate" onAsk={onAsk} onOpen={onOpen} />)}</ul>}
               </div>
             )}
           </div>
@@ -217,7 +230,7 @@ export const HomeOverview: FC<HomeOverviewProps> = ({
                   <ul>
                     {changes.slice(0, 6).map((c) => (
                       <li key={c.id}>
-                        <button type="button" onClick={() => onAsk(c.prompt)} className="group flex w-full items-start gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted/60" title="Ask the AI operator to check this change">
+                        <button type="button" disabled={!onAsk} onClick={() => onAsk?.(c.prompt)} className="group flex w-full items-start gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted/60 disabled:cursor-default disabled:hover:bg-transparent" title={onAsk ? "Ask the AI operator to check this change" : undefined}>
                           <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
                             {c.kind === "scaled" ? <Scaling className="h-3 w-3" /> : <GitCommitHorizontal className="h-3 w-3" />}
                           </span>
@@ -234,7 +247,7 @@ export const HomeOverview: FC<HomeOverviewProps> = ({
               ) : health.events.length === 0 ? (
                 <p className="px-3 py-2 text-xs text-muted-foreground">No warning events in the last hour.</p>
               ) : (
-                <ul>{health.events.slice(0, 6).map((i) => <IssueRow key={i.id} issue={i} action="Explain" onAsk={onAsk} />)}</ul>
+                <ul>{health.events.slice(0, 6).map((i) => <IssueRow key={i.id} issue={i} action="Explain" onAsk={onAsk} onOpen={onOpen} />)}</ul>
               )}
             </div>
           </Card>
@@ -285,7 +298,7 @@ export const HomeOverview: FC<HomeOverviewProps> = ({
                   <ul>
                     {health.hot.slice(0, 3).map((h) => (
                       <li key={`${h.namespace}/${h.name}`}>
-                        <button type="button" onClick={() => onAsk(`Pod ${h.name}${h.namespace ? ` in namespace ${h.namespace}` : ""} ${health.hotSource === "usage" ? `is using ${Math.round(h.cpuMilli)}m CPU and ${Math.round(h.memMi)}Mi` : `requests ${Math.round(h.cpuMilli)}m CPU and ${Math.round(h.memMi)}Mi`}. Is that appropriate? Check its limits, throttling and logs.`)} className="flex w-full items-center justify-between gap-2 rounded-md px-1.5 py-1 text-left text-xs transition-colors hover:bg-muted/60">
+                        <button type="button" disabled={!onAsk} onClick={() => onAsk?.(`Pod ${h.name}${h.namespace ? ` in namespace ${h.namespace}` : ""} ${health.hotSource === "usage" ? `is using ${Math.round(h.cpuMilli)}m CPU and ${Math.round(h.memMi)}Mi` : `requests ${Math.round(h.cpuMilli)}m CPU and ${Math.round(h.memMi)}Mi`}. Is that appropriate? Check its limits, throttling and logs.`)} className="flex w-full items-center justify-between gap-2 rounded-md px-1.5 py-1 text-left text-xs transition-colors hover:bg-muted/60">
                           <code className="truncate font-mono text-foreground">{h.name}</code>
                           <span className="shrink-0 tabular-nums text-muted-foreground">{Math.round(h.cpuMilli)}m · {Math.round(h.memMi)}Mi</span>
                         </button>

@@ -85,7 +85,8 @@ export interface WorkloadViewProps {
   /** open the combined logs of a workload (all its pods) or of one pod */
   onLogs: (type: string, name: string, ns: string) => void;
   onPin: (type: string, name: string, ns: string) => void;
-  onAsk: (prompt: string) => void;
+  /** absent when AI is off (shared web mode): hides the Diagnose button */
+  onAsk?: (prompt: string) => void;
   onScale: (name: string, current: number) => void;
   onRestart: (name: string) => void;
   /** false on a read-only shared KubeDeck: hides scale / restart */
@@ -129,7 +130,7 @@ export const WorkloadView: FC<WorkloadViewProps> = ({ pods, usage, showNamespace
               <span className="hidden w-12 shrink-0 text-right text-[11px] text-muted-foreground lg:inline">{age(w.newest)}</span>
               <div className="flex shrink-0 items-center gap-0.5 opacity-60 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
                 <button type="button" title={w.pods.length > 1 ? `Logs of all ${w.pods.length} pods` : "Logs"} aria-label={`Logs of ${w.name}`} onClick={() => onLogs(type, w.name, w.namespace)} className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"><ScrollText className="h-3.5 w-3.5" /></button>
-                <button type="button" title="Diagnose with AI" aria-label={`Diagnose ${w.name} with AI`} onClick={() => onAsk(`Diagnose ${w.kind.toLowerCase()} ${w.name} in namespace ${w.namespace}: ${w.pods.length} pods, ${w.readyPods} ready, ${w.restarts} restarts. Check pod status, recent logs and events and tell me if anything is wrong.`)} className="rounded p-1.5 text-muted-foreground hover:bg-primary/10 hover:text-primary"><Sparkles className="h-3.5 w-3.5" /></button>
+                {onAsk && <button type="button" title="Diagnose with AI" aria-label={`Diagnose ${w.name} with AI`} onClick={() => onAsk(`Diagnose ${w.kind.toLowerCase()} ${w.name} in namespace ${w.namespace}: ${w.pods.length} pods, ${w.readyPods} ready, ${w.restarts} restarts. Check pod status, recent logs and events and tell me if anything is wrong.`)} className="rounded p-1.5 text-muted-foreground hover:bg-primary/10 hover:text-primary"><Sparkles className="h-3.5 w-3.5" /></button>}
                 <button type="button" title={pinned ? "Unpin" : "Pin"} aria-label={pinned ? `Unpin ${w.name}` : `Pin ${w.name}`} aria-pressed={pinned} onClick={() => onPin(type, w.name, w.namespace)} className={cn("rounded p-1.5 hover:bg-muted", pinned ? "text-primary" : "text-muted-foreground hover:text-foreground")}><Pin className="h-3.5 w-3.5" /></button>
                 {canWrite && w.kind === "Deployment" && (
                   <>

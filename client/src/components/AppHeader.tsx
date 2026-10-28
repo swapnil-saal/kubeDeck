@@ -75,7 +75,7 @@ export function AppHeader({ breadcrumbs, rightSlot, showSelectors = true }: AppH
 
         {/* Primary navigation: labelled, with a clear current page. Drops to its own row on small screens. */}
         <nav aria-label="Main" className="order-last flex w-full items-center gap-1 md:order-none md:w-auto">
-          {NAV.filter((n) => n.path !== "/settings" || serverMode.features.settingsEdit).map(({ path, label, icon: Icon }) => {
+          {NAV.filter((n) => (n.path !== "/settings" || serverMode.features.settingsEdit) && (n.path !== "/ai" || serverMode.aiEnabled)).map(({ path, label, icon: Icon }) => {
             const active = isActive(path);
             return (
               <button

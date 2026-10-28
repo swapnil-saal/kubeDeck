@@ -18,10 +18,10 @@ KubeDeck never sees passwords. It trusts the identity headers only when the requ
 | Writes (scale, restart, edit, delete) | allowed | **off by default** (`KUBEDECK_READ_ONLY=false` to allow) |
 | Terminal | yes | **never** (a shell would hand every user the server's cluster identity) |
 | Port-forward | yes | no |
-| Settings / AI key | edited in the app | set by environment variables; never sent to browsers |
+| Settings | edited in the app | none: configuration comes from the environment |
 | kubectl palette | any verb | read-only verbs; no `config`, `exec`, `cp`, `port-forward`, `auth`, and no `--token/--server/--kubeconfig/--as` flags |
-| Ask Deck (AI) | shell + kubectl tools | kubectl tools only, read-only; no shell tool |
-| Audit | – | one JSON line on stdout per write or AI call, with the user |
+| AI (Ask Deck, summaries, diagnose, explain, command translation) | available | **removed entirely**: no endpoints, no UI, so cluster data never goes to a model provider |
+| Audit | – | one JSON line on stdout per write (including palette commands), with the user |
 
 ## Settings (environment variables)
 
@@ -34,7 +34,6 @@ KubeDeck never sees passwords. It trusts the identity headers only when the requ
 | `KUBEDECK_ALLOWED_GROUPS` | comma list; the user must be in one (groups come from `X-Forwarded-Groups`) |
 | `KUBEDECK_READ_ONLY` | `true` (default) or `false` |
 | `HOST` | bind address (default `0.0.0.0` in web mode) |
-| `KUBEDECK_AI_PROVIDER`, `KUBEDECK_AI_API_KEY`, `KUBEDECK_AI_MODEL`, `KUBEDECK_AI_FAST_MODEL`, `KUBEDECK_AI_BASE_URL` | AI assistant; omit the key to run without it |
 | `KUBECONFIG` | optional; with no kubeconfig inside a pod, KubeDeck builds one context, `in-cluster`, from the pod's service account |
 
 KubeDeck **refuses to start** in web mode unless it has a proxy secret or network-trust flag, a public URL, and (if a secret is set) one of ≥16 characters.
@@ -53,7 +52,7 @@ With one service account, **every signed-in user sees what that account sees**. 
 
 ## Limits to know
 
-- Alerts and the log explorer work, but alerts only run while a browser tab is open.
+- Alerts and the log explorer work, but alerts only run while a browser tab is open. Without AI, issues on the home screen open the pod or deployment instead of asking the assistant.
 - If you put your own ingress-level oauth2-proxy in front instead of the sidecar, have it send `X-KubeDeck-Proxy-Secret` (ingress-nginx `configuration-snippet`) and set `KUBEDECK_PROXY_SECRET`; do **not** use the network-trust flag unless a NetworkPolicy really restricts access.
 - `X-Forwarded-Groups` is trusted exactly as much as the proxy that sets it.
 

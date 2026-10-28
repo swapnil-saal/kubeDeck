@@ -56,7 +56,8 @@ export interface LogToolbarProps {
   onClear: () => void;
   onDownload: () => void;
   onCopy: () => void;
-  onSummarize: () => void;
+  /** absent when AI is off (shared web mode) */
+  onSummarize?: () => void;
   summarizing: boolean;
   format: "auto" | "pretty" | "raw";
   onFormat: (f: "auto" | "pretty" | "raw") => void;
@@ -183,9 +184,11 @@ export const LogToolbar: FC<LogToolbarProps> = (p) => {
         <Btn onClick={p.onReconnect} title="Reload logs">
           {p.status === "connecting" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
         </Btn>
-        <Btn onClick={p.onSummarize} disabled={p.summarizing} title="Summarize what is going on with AI">
-          {p.summarizing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 text-primary" />}Summarize
-        </Btn>
+        {p.onSummarize && (
+          <Btn onClick={p.onSummarize} disabled={p.summarizing} title="Summarize what is going on with AI">
+            {p.summarizing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 text-primary" />}Summarize
+          </Btn>
+        )}
         <Popover>
           <PopoverTrigger asChild>
             <button type="button" aria-label="View options" title="View options" className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"><SlidersHorizontal className="h-3.5 w-3.5" /></button>
