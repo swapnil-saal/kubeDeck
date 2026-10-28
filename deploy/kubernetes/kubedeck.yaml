@@ -1,4 +1,5 @@
 # KubeDeck web mode behind oauth2-proxy (Keycloak). Replace every CHANGE_ME / example value.
+# Step-by-step: docs/DEPLOYMENT.md
 #
 # The pod runs two containers. oauth2-proxy is the only thing reachable from outside: it signs
 # users in with Keycloak and forwards requests with their identity headers. KubeDeck listens on
@@ -49,16 +50,8 @@ roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: kubedec
 subjects:
   - { kind: ServiceAccount, name: kubedeck, namespace: kubedeck }
 ---
-apiVersion: v1
-kind: Secret
-metadata:
-  name: kubedeck-oauth
-  namespace: kubedeck
-type: Opaque
-stringData:
-  client-id: CHANGE_ME            # Keycloak client id
-  client-secret: CHANGE_ME        # Keycloak client secret
-  cookie-secret: CHANGE_ME        # 32 random bytes, base64: openssl rand -base64 32 | tr -- '+/' '-_'
+# The Keycloak client credentials live in a Secret named "kubedeck-oauth" that you create with kubectl
+# (docs/DEPLOYMENT.md, step 3) so no secret value is ever written into this file.
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -79,7 +72,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: kubedeck
-          image: CHANGE_ME/kubedeck:1.12.2   # build from the Dockerfile in this repo
+          image: swapnilsaal/kubedeck:1.12.2-web   # or your own registry: see docs/DEPLOYMENT.md
           env:
             - { name: KUBEDECK_MODE, value: web }
             - { name: HOST, value: 127.0.0.1 }            # only the sidecar can reach it

@@ -48,7 +48,7 @@
 
 ## Web version
 
-KubeDeck can also run as a shared, read-only web service behind your login (oauth2-proxy / Keycloak). See [docs/WEB.md](docs/WEB.md) and `deploy/kubernetes/`.
+KubeDeck can also run as a shared, read-only web service behind your login (oauth2-proxy / Keycloak). See [docs/WEB.md](docs/WEB.md), the deployment runbook [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and `deploy/kubernetes/`.
 
 ## Screenshots
 
