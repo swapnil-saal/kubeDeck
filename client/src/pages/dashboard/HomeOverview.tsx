@@ -99,6 +99,8 @@ export const HomeOverview: FC<HomeOverviewProps> = ({
 }) => {
   const [question, setQuestion] = useState("");
   // remembered across visits: whoever expands the list wants it expanded next time too
+  // the whole overview folds into its header; remembered per cluster so each one keeps its own state
+  const [open, setOpen] = usePersistedState(`kubedeck-home-open:${context}`, true);
   const [showFlaky, setShowFlaky] = usePersistedState("kubedeck-home-flaky-open", false);
   const [feed, setFeed] = useState<"changes" | "warnings">("changes");
 
@@ -129,7 +131,26 @@ export const HomeOverview: FC<HomeOverviewProps> = ({
   const memPct = requests.memMi > 0 ? (memUsed / requests.memMi) * 100 : 0;
 
   return (
-    <div className="space-y-4">
+    <section className="rounded-xl border border-border bg-card/30">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        title={open ? "Collapse this overview" : "Expand this overview"}
+        className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left transition-colors hover:bg-muted/40"
+      >
+        {open ? <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />}
+        <span className="font-mono text-sm font-semibold text-foreground">{context} <span className="text-muted-foreground">/ {scopeText}</span></span>
+        <span className="ml-auto flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
+          <span className={cn("font-medium", tone?.text ?? "text-muted-foreground")}>
+            {health.score === null ? "Unknown" : problems > 0 ? `${problems} need${problems === 1 ? "s" : ""} attention` : tone?.label}
+          </span>
+          <span className="hidden sm:inline">{health.pods.total} pods</span>
+          {health.score !== null && <span className={cn("rounded-md px-1.5 py-0.5 font-mono font-semibold tabular-nums ring-1 ring-border", tone?.text)}>{health.score}</span>}
+        </span>
+      </button>
+      {open && (
+    <div className="space-y-4 px-4 pb-4">
       {/* Hero */}
       <div className="flex flex-col gap-5 rounded-xl border border-border/60 bg-card/50 p-5 lg:flex-row lg:items-center">
         <div className="flex items-center gap-4 lg:w-[24rem] lg:shrink-0">
@@ -315,5 +336,7 @@ export const HomeOverview: FC<HomeOverviewProps> = ({
         </div>
       </div>
     </div>
+      )}
+    </section>
   );
 };
