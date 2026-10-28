@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { buildUrl } from "@shared/routes";
-import { K8sError, k8sFetchJson, LIST_REFETCH_MS } from "@/hooks/use-k8s";
+import { k8sFetchJson, LIST_REFETCH_MS } from "@/hooks/use-k8s";
 import type { UsageLike } from "@/lib/cluster-health";
 
 /** Who can read what — lets the UI offer namespaces the user can open instead of "Access denied". */
@@ -48,24 +48,5 @@ export function useNodeMetrics(context?: string) {
     refetchInterval: LIST_REFETCH_MS * 3,
     staleTime: 15_000,
     retry: false,
-  });
-}
-
-export interface ClusterSummary {
-  pods?: { total: number; running: number; pending: number; failing: number };
-  deployments?: { ready: number; total: number } | null;
-  nodes?: { ready: number; total: number } | null;
-  error?: "forbidden" | "unreachable" | "error";
-  message?: string;
-}
-
-/** One small health summary for a cluster (multi-cluster overview). Not polled: it is a snapshot. */
-export function useClusterSummary(context: string, namespace: string, enabled = true) {
-  return useQuery({
-    queryKey: ["clusterSummary", context, namespace],
-    queryFn: () => k8sFetchJson<ClusterSummary>(buildUrl("/api/k8s/summary", { context, namespace })),
-    enabled: enabled && !!context,
-    staleTime: 60_000,
-    retry: (count, err) => !(err instanceof K8sError) && count < 1,
   });
 }

@@ -470,17 +470,3 @@ export function recentChanges(input: { pods?: PodLike[]; events?: EventLike[]; n
 
   return out.sort((a, b) => b.at - a.at).slice(0, input.limit ?? 8);
 }
-
-/** Score for a cluster known only through summary counts (the multi-cluster overview). */
-export function summaryScore(s: {
-  pods?: { total: number; running: number; failing: number };
-  deployments?: { ready: number; total: number } | null;
-  nodes?: { ready: number; total: number } | null;
-}): number | null {
-  if (!s.pods) return null;
-  const podHealth = s.pods.total > 0 ? s.pods.running / s.pods.total : 1;
-  const deployHealth = s.deployments && s.deployments.total > 0 ? s.deployments.ready / s.deployments.total : 1;
-  const nodesDown = s.nodes ? s.nodes.total - s.nodes.ready : 0;
-  const penalty = Math.min(30, (s.pods.failing > 0 ? 4 : 0) * Math.min(s.pods.failing, 5) + nodesDown * 8);
-  return Math.max(0, Math.round(100 * (0.55 * podHealth + 0.45 * deployHealth) - penalty));
-}

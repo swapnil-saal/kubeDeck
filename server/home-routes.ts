@@ -1,6 +1,6 @@
 import type { Express, Response } from "express";
 import {
-  countDeployments, countNodes, countPods, metricsUnavailable, parseNamespaceNames,
+  metricsUnavailable, parseNamespaceNames,
   parseTopNodes, parseTopPods,
 } from "./k8s-parse";
 
@@ -15,8 +15,6 @@ const ACCESS_TTL_MS = 60_000;
 const ACCESS_CONCURRENCY = 8;
 
 const isForbidden = (r: Raw) => /forbidden/i.test(`${r.stderr} ${r.stdout}`);
-const isUnreachable = (r: Raw) =>
-  /unable to connect|connection refused|i\/o timeout|no route to host|context deadline|tls handshake|dial tcp|certificate/i.test(r.stderr);
 
 function scope(ns: unknown): string {
   return !ns || ns === "all" ? "-A" : `-n ${ns}`;
@@ -95,33 +93,6 @@ export function registerHomeRoutes(app: Express, { runKubectlRaw }: HomeRouteDep
       const r = await runKubectlRaw(`top nodes ${ctxFlag(req.query.context)} --no-headers ${TIMEOUT}`);
       if (r.code !== 0) return sendUnavailable(res, r);
       res.json({ available: true, items: parseTopNodes(r.stdout) });
-    } catch (err) { res.status(500).json({ message: String(err) }); }
-  });
-
-  // One small health summary per cluster, for the multi-cluster overview.
-  app.get("/api/k8s/summary", async (req, res) => {
-    try {
-      const ctx = ctxFlag(req.query.context);
-      const sc = scope(req.query.namespace);
-      // custom-columns has no spaces inside the expression, so it survives runKubectlRaw's word splitting
-      const podQ = `get pods ${sc} ${ctx} ${TIMEOUT} --no-headers -o custom-columns=P:.status.phase,W:.status.containerStatuses[*].state.waiting.reason`;
-      const depQ = `get deployments ${sc} ${ctx} ${TIMEOUT} --no-headers -o custom-columns=R:.status.readyReplicas,W:.spec.replicas`;
-      const nodeQ = `get nodes ${ctx} ${TIMEOUT} --no-headers -o custom-columns=R:.status.conditions[?(@.type=="Ready")].status`;
-      const [pods, deps, nodes] = await Promise.all([runKubectlRaw(podQ), runKubectlRaw(depQ), runKubectlRaw(nodeQ)]);
-
-      if (isUnreachable(pods) && isUnreachable(deps)) {
-        return res.json({ error: "unreachable", message: pods.stderr.split("\n")[0].slice(0, 200) });
-      }
-      const podsOk = pods.code === 0;
-      if (!podsOk && isForbidden(pods)) {
-        return res.json({ error: "forbidden", message: "No permission to list pods in this scope.", nodes: nodes.code === 0 ? countNodes(nodes.stdout) : null });
-      }
-      if (!podsOk) return res.json({ error: "error", message: pods.stderr.split("\n")[0].slice(0, 200) });
-      res.json({
-        pods: countPods(pods.stdout),
-        deployments: deps.code === 0 ? countDeployments(deps.stdout) : null,
-        nodes: nodes.code === 0 ? countNodes(nodes.stdout) : null,
-      });
     } catch (err) { res.status(500).json({ message: String(err) }); }
   });
 }

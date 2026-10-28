@@ -77,11 +77,6 @@ export function setScope(ctx: string, ns: string) {
   notify();
 }
 
-/** The namespace remembered for a cluster, if any (used by the multi-cluster overview). */
-export function rememberedNamespace(ctx: string): string {
-  return state.namespaceByContext[ctx] || "";
-}
-
 export function toggleTerminal() {
   state = { ...state, terminalOpen: !state.terminalOpen };
   persist();

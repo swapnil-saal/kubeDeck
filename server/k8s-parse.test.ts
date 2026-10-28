@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  countDeployments, countNodes, countPods, ingressBackends, ingressHosts, metricsUnavailable, ownerWorkload, parseNamespaceNames,
+  ingressBackends, ingressHosts, metricsUnavailable, ownerWorkload, parseNamespaceNames,
   parseTopNodes, parseTopPods,
 } from "./k8s-parse";
 
@@ -56,25 +56,6 @@ describe("ownerWorkload", () => {
 });
 
 describe("summary counters", () => {
-  it("counts pod states from custom-columns output", () => {
-    const out = [
-      "Running   <none>",
-      "Running   <none>",
-      "Running   CrashLoopBackOff",
-      "Running   ContainerCreating",
-      "Pending   <none>",
-      "Failed    <none>",
-      "Succeeded <none>",
-      "Running   ImagePullBackOff,<none>",
-    ].join("\n");
-    expect(countPods(out)).toEqual({ total: 8, running: 3, pending: 2, failing: 3 });
-  });
-  it("counts deployments and skips scaled-to-zero ones", () => {
-    expect(countDeployments("2 2\n1 3\n<none> 2\n<none> <none>\n0 0\n")).toEqual({ ready: 1, total: 3 });
-  });
-  it("counts ready nodes", () => {
-    expect(countNodes("True\nTrue\nFalse\nUnknown\n")).toEqual({ ready: 2, total: 4 });
-  });
   it("reads namespace names", () => {
     expect(parseNamespaceNames("namespace/e2\nnamespace/kube-system\n")).toEqual(["e2", "kube-system"]);
   });

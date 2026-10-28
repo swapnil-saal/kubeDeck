@@ -76,50 +76,6 @@ export function ownerWorkload(refs: OwnerRef[] | undefined): { kind: string; nam
   return { kind: ref.kind, name: ref.name };
 }
 
-const FAILING_WAITING = new Set([
-  "CrashLoopBackOff", "Error", "ImagePullBackOff", "ErrImagePull", "InvalidImageName", "OOMKilled",
-  "CreateContainerConfigError", "CreateContainerError", "RunContainerError",
-]);
-
-export interface PodCounts { total: number; running: number; pending: number; failing: number }
-
-/** `kubectl get pods --no-headers -o custom-columns=P:.status.phase,W:...waiting.reason` lines: `Running <none>`. */
-export function countPods(stdout: string): PodCounts {
-  const c: PodCounts = { total: 0, running: 0, pending: 0, failing: 0 };
-  for (const raw of stdout.split("\n")) {
-    const line = raw.trim();
-    if (!line) continue;
-    c.total++;
-    const [phase, waiting = "<none>"] = line.split(/\s+/);
-    const reasons = waiting === "<none>" ? [] : waiting.split(",").filter(Boolean);
-    if (reasons.some((r) => FAILING_WAITING.has(r)) || phase === "Failed") c.failing++;
-    else if (phase === "Pending" || reasons.length > 0) c.pending++;
-    else if (phase === "Running" || phase === "Succeeded") c.running++;
-  }
-  return c;
-}
-
-/** `... -o custom-columns=R:.status.readyReplicas,W:.spec.replicas` lines: `2 3` / `<none> 2`. */
-export function countDeployments(stdout: string): { ready: number; total: number } {
-  let ready = 0, total = 0;
-  for (const raw of stdout.split("\n")) {
-    const line = raw.trim();
-    if (!line) continue;
-    const [r, w] = line.split(/\s+/);
-    const want = Number(w === "<none>" ? 0 : w);
-    if (!want) continue; // scaled to zero on purpose
-    total++;
-    if (Number(r === "<none>" ? 0 : r) >= want) ready++;
-  }
-  return { ready, total };
-}
-
-/** Lines that are the node Ready condition: `True` / `False` / `Unknown`. */
-export function countNodes(stdout: string): { ready: number; total: number } {
-  const lines = stdout.split("\n").map((l) => l.trim()).filter(Boolean);
-  return { ready: lines.filter((l) => l === "True").length, total: lines.length };
-}
-
 /** `namespace/foo` lines from `kubectl get ns -o name`. */
 export function parseNamespaceNames(stdout: string): string[] {
   return stdout.split("\n").map((l) => l.trim().replace(/^namespace\//, "")).filter(Boolean);

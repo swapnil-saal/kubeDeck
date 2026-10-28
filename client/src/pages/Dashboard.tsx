@@ -24,7 +24,6 @@ import { TabStrip } from "@/pages/dashboard/TabStrip";
 import { HomeOverview } from "@/pages/dashboard/HomeOverview";
 import { ConnectionGate } from "@/pages/dashboard/ConnectionGate";
 import { SimpleResourceTabs } from "@/pages/dashboard/SimpleResourceTabs";
-import { FleetOverview } from "@/pages/dashboard/FleetOverview";
 import { WorkloadView, restartTone, type WorkloadPod } from "@/pages/dashboard/WorkloadView";
 import { ResourceTable } from "@/components/ResourceTable";
 import { AppHeader } from "@/components/AppHeader";
@@ -469,12 +468,6 @@ export default function Dashboard() {
           ) : null}
 
           <StatTiles tiles={tiles} />
-
-          <FleetOverview
-            contexts={contexts ?? []}
-            currentContext={currentContext}
-            onOpen={(name) => { handleSetContext(name); window.scrollTo({ top: 0 }); }}
-          />
 
           {/* ── RESOURCE TABS ── */}
           <div id="resources" className="space-y-3 scroll-mt-4">
