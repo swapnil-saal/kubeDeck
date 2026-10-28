@@ -6,6 +6,7 @@ import {
 import { ScoreRing, scoreTone } from "@/components/health/ScoreRing";
 import { ago, diagnoseAllPrompt, type Change, type ClusterHealth, type Issue, type Severity } from "@/lib/cluster-health";
 import type { NodeUsage } from "@/hooks/use-cluster-extras";
+import { usePersistedState } from "@/hooks/use-persisted-state";
 import { cn } from "@/lib/utils";
 
 const SEVERITY: Record<Severity, { icon: JSX.Element; pill: string }> = {
@@ -97,7 +98,8 @@ export const HomeOverview: FC<HomeOverviewProps> = ({
   context, namespace, health, changes, usage, requests, metricsReason, nodeUsage, onAsk, onOpen,
 }) => {
   const [question, setQuestion] = useState("");
-  const [showFlaky, setShowFlaky] = useState(false);
+  // remembered across visits: whoever expands the list wants it expanded next time too
+  const [showFlaky, setShowFlaky] = usePersistedState("kubedeck-home-flaky-open", false);
   const [feed, setFeed] = useState<"changes" | "warnings">("changes");
 
   const scopeText = namespace === "all" ? "all namespaces" : namespace;
