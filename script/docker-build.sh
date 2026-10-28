@@ -1,15 +1,15 @@
 #!/bin/sh
 # Build the web-mode image and keep only the newest one: every older kubedeck image
 # (and any dangling layers left behind) is removed afterwards.
-#   script/docker-build.sh            builds kubedeck:<version>-web and kubedeck:web-latest
+#   script/docker-build.sh            builds kubedeck:<version>-web (one tag, one row in Docker Desktop)
 set -eu
 cd "$(dirname "$0")/.."
 
 version=$(node -p "require('./package.json').version")
 image=kubedeck
 
-docker build -t "$image:$version-web" -t "$image:web-latest" .
-new_id=$(docker image inspect --format '{{.Id}}' "$image:web-latest")
+docker build -t "$image:$version-web" .
+new_id=$(docker image inspect --format '{{.Id}}' "$image:$version-web")
 
 # remove every other kubedeck image (different id), then untagged leftovers
 for ref in $(docker images "$image" --format '{{.Repository}}:{{.Tag}}'); do
