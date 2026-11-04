@@ -11,7 +11,6 @@ import { registerPodFilesRoutes } from "./pod-files-routes";
 import { registerPortForwardRoutes } from "./port-forward-routes";
 import { registerResourceRoutes } from "./resource-routes";
 import { registerSettingsRoutes } from "./settings-routes";
-import { isWebMode } from "./web-mode";
 
 /** Mounts every HTTP route. Each area lives in its own module. */
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
@@ -19,15 +18,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   registerActionRoutes(app);
   registerPortForwardRoutes(app);
   registerDetailRoutes(app);
-  // file browsing runs kubectl exec: never on a shared host
-  if (!isWebMode()) registerPodFilesRoutes(app);
+  // web mode can switch pod files and AI off: see webFeatureOff
+  registerPodFilesRoutes(app);
 
   registerSettingsRoutes(app);
   registerExecRoutes(app);
   registerHomeRoutes(app, { runKubectlRaw });
   registerLogRoutes(app, { runKubectl });
-  // Web mode has no AI: the endpoints are not even registered, so cluster data cannot reach a model provider.
-  if (!isWebMode()) registerAiRoutes(app);
+  registerAiRoutes(app);
 
   return httpServer;
 }

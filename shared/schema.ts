@@ -160,6 +160,8 @@ export const aiProviderSchema = z.object({
   model: z.string(),
   fastModel: z.string().optional(),
   baseUrl: z.string(),
+  /** sent by a shared KubeDeck, which never sends its key: whether the server has a usable provider */
+  configured: z.boolean().optional(),
 });
 
 export const settingsSchema = z.object({

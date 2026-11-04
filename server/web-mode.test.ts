@@ -4,13 +4,14 @@ import { request, type Server } from "http";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { requireTrustedRequest } from "./security";
 import {
-  auditLog, checkRequest, describeMode, loadWebConfig, setWebConfig, userFromHeaders, validateWebConfig, webExecAllowed, webFeatureOff,
+  auditLog, checkRequest, describeMode, loadWebConfig, setWebConfig, userFromHeaders, validateWebConfig, webAgentRefusal, webExecAllowed, webFeatureOff,
   webGate, webReadOnly, type WebConfig,
 } from "./web-mode";
 
 const SECRET = "s3cret-s3cret-s3cret";
 const cfg = (over: Partial<WebConfig> = {}): WebConfig => ({
-  enabled: true, readOnly: true, hosts: ["kube.example.com"], proxySecret: SECRET, trustProxyNetwork: false, allowedGroups: [], ...over,
+  enabled: true, readOnly: true, ai: true, podFiles: true, hosts: ["kube.example.com"], proxySecret: SECRET, trustProxyNetwork: false,
+  allowedGroups: [], ...over,
 });
 const ok = { "x-kubedeck-proxy-secret": SECRET, "x-forwarded-email": "dev@example.com", "x-forwarded-preferred-username": "dev" };
 
@@ -20,9 +21,10 @@ describe("loadWebConfig / validateWebConfig", () => {
     expect(c.enabled).toBe(false);
     expect(validateWebConfig(c)).toEqual([]);
   });
-  it("is read-only unless explicitly turned off", () => {
-    expect(loadWebConfig({ KUBEDECK_MODE: "web" }).readOnly).toBe(true);
-    expect(loadWebConfig({ KUBEDECK_MODE: "web", KUBEDECK_READ_ONLY: "false" }).readOnly).toBe(false);
+  it("has every feature on unless the operator turns it off", () => {
+    expect(loadWebConfig({ KUBEDECK_MODE: "web" })).toMatchObject({ readOnly: false, ai: true, podFiles: true });
+    expect(loadWebConfig({ KUBEDECK_MODE: "web", KUBEDECK_READ_ONLY: "true", KUBEDECK_AI: "off", KUBEDECK_POD_FILES: "false" }))
+      .toMatchObject({ readOnly: true, ai: false, podFiles: false });
   });
   it("refuses to start with no way to authenticate, no host, or a weak secret", () => {
     expect(validateWebConfig(loadWebConfig({ KUBEDECK_MODE: "web" })).length).toBe(2);
@@ -75,7 +77,31 @@ describe("webExecAllowed", () => {
   it.each([
     "config view --raw", "get pods --kubeconfig=/etc/other", "get pods --token=abc", "get pods --as=system:admin", "get pods --server=https://evil",
     "get pods -s https://evil", "exec -it x -- sh", "port-forward x 80", "cp x:/etc/passwd .", "auth can-i --list",
+    "-n e2 exec x -- sh", "--context=a debug x", "kubectl config view", "--namespace e2 attach x",
   ])("refuses %s", (c) => expect(webExecAllowed(c).ok).toBe(false));
+});
+
+describe("webAgentRefusal (the assistant on a shared host)", () => {
+  afterEach(() => setWebConfig(loadWebConfig({})));
+  it("does nothing on the desktop", () => {
+    setWebConfig(loadWebConfig({}));
+    expect(webAgentRefusal("config view --raw", "kubectl", "allow")).toBeNull();
+  });
+  it("applies the palette's limits to the kubectl tool and to every kubectl in a pipeline", () => {
+    setWebConfig(cfg({ readOnly: false }));
+    expect(webAgentRefusal("get pods -A", "kubectl", "allow")).toBeNull();
+    expect(webAgentRefusal("kubectl get pods --no-headers | grep -s web | wc -l", "bash", "allow")).toBeNull();
+    expect(webAgentRefusal("config view --raw", "kubectl", "allow")).toMatch(/^Blocked: kubectl config/);
+    expect(webAgentRefusal("kubectl get pods --as=system:admin | wc -l", "bash", "allow")).toMatch(/flag is not allowed/);
+    expect(webAgentRefusal("kubectl get pods -o name | xargs kubectl exec -- id", "bash", "warn")).toMatch(/kubectl exec/);
+  });
+  it("lets the assistant only read when the KubeDeck is read-only", () => {
+    setWebConfig(cfg({ readOnly: true }));
+    expect(webAgentRefusal("get pods", "kubectl", "allow")).toBeNull();
+    expect(webAgentRefusal("scale deploy/web --replicas=2", "kubectl", "warn")).toMatch(/read-only/);
+    setWebConfig(cfg({ readOnly: false }));
+    expect(webAgentRefusal("scale deploy/web --replicas=2", "kubectl", "warn")).toBeNull();
+  });
 });
 
 describe("web mode over HTTP (real middleware)", () => {
@@ -94,6 +120,8 @@ describe("web mode over HTTP (real middleware)", () => {
     app.get("/api/mode", (req, res) => res.json(describeMode(req)));
     app.get("/api/k8s/pods", (_req, res) => res.json(["pod-a"]));
     app.post("/api/k8s/deployments/scale", (_req, res) => res.json({ scaled: true }));
+    app.post("/api/ai/tasks/troubleshoot", (_req, res) => res.json({ ai: true }));
+    app.get("/api/k8s/pods/web-1/files/list", (_req, res) => res.json({ files: [] }));
     server = await new Promise<Server>((r) => { const s = app.listen(0, "127.0.0.1", () => r(s)); });
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
@@ -129,7 +157,9 @@ describe("web mode over HTTP (real middleware)", () => {
   it("serves reads to a signed-in user and reports who they are", async () => {
     expect((await call("/api/k8s/pods", ok)).status).toBe(200);
     const mode = await (await call("/api/mode", ok)).json();
-    expect(mode).toMatchObject({ mode: "web", readOnly: true, user: { email: "dev@example.com" }, features: { portForward: false, settingsEdit: false, ai: false, podFiles: false } });
+    expect(mode).toMatchObject({ mode: "web", readOnly: true, user: { email: "dev@example.com" }, features: { portForward: false, settingsEdit: false, ai: true, podFiles: true } });
+    setWebConfig(cfg({ ai: false, podFiles: false }));
+    expect((await (await call("/api/mode", ok)).json()).features).toMatchObject({ ai: false, podFiles: false });
   });
   it("blocks writes when read-only", async () => {
     expect((await call("/api/k8s/deployments/scale", ok, "POST")).status).toBe(403);
@@ -138,21 +168,28 @@ describe("web mode over HTTP (real middleware)", () => {
     setWebConfig(cfg({ readOnly: false }));
     expect((await call("/api/k8s/deployments/scale", ok, "POST")).status).toBe(200);
   });
-  it("refuses the desktop-only features with their own reason, even when writes are allowed", async () => {
+  it("serves AI and pod files by default, read-only or not (the assistant judges its own commands)", async () => {
     for (const readOnly of [true, false]) {
       setWebConfig(cfg({ readOnly }));
-      const ai = await call("/api/ai/tasks/troubleshoot", ok, "POST");
-      expect(ai.status).toBe(403);
-      expect((await ai.json()).message).toMatch(/AI assistant is turned off/);
-      const files = await call("/api/k8s/pods/web-1/files/list?path=/", ok);
-      expect(files.status).toBe(403);
-      expect((await files.json()).message).toMatch(/pod files/);
-      const pf = await call("/api/k8s/pods/web-1/port-forward", ok, "POST");
-      expect(pf.status).toBe(403);
-      expect((await pf.json()).message).toMatch(/Port forwarding/);
-      expect((await call("/api/k8s/port-forwards/abc", ok, "DELETE")).status).toBe(403);
+      expect((await call("/api/ai/tasks/troubleshoot", ok, "POST")).status).toBe(200);
+      expect((await call("/api/k8s/pods/web-1/files/list?path=/", ok)).status).toBe(200);
     }
-    // listing forwards is still a plain read
+  });
+  it("refuses a feature the operator turned off with its own reason", async () => {
+    setWebConfig(cfg({ readOnly: false, ai: false, podFiles: false }));
+    const ai = await call("/api/ai/tasks/troubleshoot", ok, "POST");
+    expect(ai.status).toBe(403);
+    expect((await ai.json()).message).toMatch(/AI assistant is turned off/);
+    const files = await call("/api/k8s/pods/web-1/files/list?path=/", ok);
+    expect(files.status).toBe(403);
+    expect((await files.json()).message).toMatch(/pod files is turned off/);
+  });
+  it("never starts a port-forward on the server, but listing stays a read", async () => {
+    setWebConfig(cfg({ readOnly: false }));
+    const pf = await call("/api/k8s/pods/web-1/port-forward", ok, "POST");
+    expect(pf.status).toBe(403);
+    expect((await pf.json()).message).toMatch(/Port forwarding/);
+    expect((await call("/api/k8s/port-forwards/abc", ok, "DELETE")).status).toBe(403);
     expect((await call("/api/k8s/port-forwards", ok)).status).toBe(200);
   });
 });

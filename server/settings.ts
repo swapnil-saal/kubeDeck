@@ -54,9 +54,29 @@ function backupUnreadableSettings(raw: string, reason: string): void {
   }
 }
 
+const PROVIDERS: AiProviderSettings["provider"][] = ["openai", "anthropic", "ollama", "custom"];
+
+/** Web mode's AI provider, from the server's environment (a Kubernetes Secret), never from a browser. */
+export function aiSettingsFromEnv(env: NodeJS.ProcessEnv = process.env): AiProviderSettings {
+  const provider = (env.KUBEDECK_AI_PROVIDER ?? "").trim().toLowerCase() as AiProviderSettings["provider"];
+  return {
+    provider: PROVIDERS.includes(provider) ? provider : "openai",
+    apiKey: env.KUBEDECK_AI_API_KEY ?? "",
+    model: env.KUBEDECK_AI_MODEL ?? "",
+    fastModel: env.KUBEDECK_AI_FAST_MODEL || undefined,
+    baseUrl: env.KUBEDECK_AI_BASE_URL ?? "",
+  };
+}
+
+/** Whether a request to the provider can be made at all: a key, or a keyless local / self-hosted endpoint. */
+export function aiConfigured(ai: AiProviderSettings | undefined): boolean {
+  if (!ai) return false;
+  return !!ai.apiKey || ai.provider === "ollama" || (ai.provider === "custom" && !!ai.baseUrl);
+}
+
 export function loadSettings(): KubeDeckSettings {
-  // Shared service: no per-machine settings file, and no AI.
-  if (isWebMode()) return { kubeconfigPaths: [], ai: defaults().ai };
+  // Shared service: no per-machine settings file; the AI provider comes from the environment.
+  if (isWebMode()) return { kubeconfigPaths: [], ai: aiSettingsFromEnv() };
   if (!fs.existsSync(SETTINGS_FILE)) return defaults();
   let raw: string;
   try {

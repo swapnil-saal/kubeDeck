@@ -1,6 +1,7 @@
 import { tool, type ToolApprovalStatus } from "ai";
 import { z } from "zod";
 import { getKubeconfigEnv } from "../../settings";
+import { isWebMode, webAgentRefusal } from "../../web-mode";
 import {
   classifyBashCommand,
   classifyKubectlCommand,
@@ -13,6 +14,7 @@ import {
   execCommand,
   executeBash,
   executeKubectl,
+  executePipeline,
   forbiddenHint,
   quoteArg,
   summarizeTable,
@@ -112,6 +114,8 @@ export const kubeScopeSchema = z.object({
   namespace: z.string(),
   /** chat thread, for the repeat-call and access guards */
   threadId: z.string(),
+  /** who asked (web mode's signed-in user), for audit lines; empty on the desktop */
+  user: z.string().default(""),
 });
 export type KubeScope = z.infer<typeof kubeScopeSchema>;
 
@@ -128,20 +132,26 @@ function approvalFor(level: SafetyLevel): ToolApprovalStatus | undefined {
   return undefined;
 }
 
+/** The level, then the shared-host limits (web mode), then the usual approval rule. */
+function decide(command: string, tool: "kubectl" | "bash", level: SafetyLevel): ToolApprovalStatus | undefined {
+  const refusal = webAgentRefusal(command, tool, level);
+  return refusal ? { type: "denied", reason: refusal } : approvalFor(level);
+}
+
 /** Approval policy for the tools that run free-form commands. Every other tool is read-only. */
 export const kubeToolApproval = {
   kubectl: ({ command }: { command: string }): ToolApprovalStatus | undefined =>
     hasShellSyntax(command)
       ? { type: "denied", reason: SHELL_IN_KUBECTL_REASON }
-      : approvalFor(classifyKubectlCommand(sanitizeKubectlCommand(command))),
-  bash: ({ command }: { command: string }) => approvalFor(classifyBashCommand(command)),
+      : decide(command, "kubectl", classifyKubectlCommand(sanitizeKubectlCommand(command))),
+  bash: ({ command }: { command: string }) => decide(command, "bash", classifyBashCommand(command)),
 };
 
 /** Audit line for a command that changes the cluster (it only runs after the user approved it). */
 function logMutation(tool: string, command: string, scope: KubeScope): void {
   console.log(
-    `[kubedeck:agent] running approved ${tool} thread=${scope.threadId} context=${scope.context || "default"} ` +
-      `command=${JSON.stringify(command)}`,
+    `[kubedeck:agent] running approved ${tool}${scope.user ? ` user=${JSON.stringify(scope.user)}` : ""} ` +
+      `thread=${scope.threadId} context=${scope.context || "default"} command=${JSON.stringify(command)}`,
   );
 }
 
@@ -155,7 +165,10 @@ async function runKubectl(
   // the approval policy already refuses these; checked again here so no caller can skip it
   if (hasShellSyntax(command)) return SHELL_IN_KUBECTL_REASON;
   const sanitized = sanitizeKubectlCommand(command);
-  if (classifyKubectlCommand(sanitized) === "block") return BLOCKED_REASON;
+  const level = classifyKubectlCommand(sanitized);
+  if (level === "block") return BLOCKED_REASON;
+  const refusal = webAgentRefusal(command, "kubectl", level);
+  if (refusal) return refusal;
   const narrowed = narrowToNamespace(sanitized, scope.namespace);
   const scoped = injectNamespaceFlag(injectContextFlag(narrowed.command, scope.context), scope.namespace);
   const repeatStop = checkRepeat(scope.threadId, "kubectl", scoped);
@@ -282,15 +295,19 @@ export const kubeTools = {
     }),
     contextSchema: kubeScopeSchema,
     execute: async ({ command }, { abortSignal, context }) => {
-      if (classifyBashCommand(command) === "block") return BLOCKED_REASON;
+      const level = classifyBashCommand(command);
+      if (level === "block") return BLOCKED_REASON;
+      const refusal = webAgentRefusal(command, "bash", level);
+      if (refusal) return refusal;
       const scoped = injectNamespaceIntoBash(
         injectContextIntoBash(narrowBashToNamespace(command, context.namespace), context.context),
         context.namespace,
       );
       const repeatStop = checkRepeat(context.threadId, "bash", scoped);
       if (repeatStop) return repeatStop;
-      if (classifyBashCommand(command) === "warn") logMutation("bash", scoped, context);
-      const output = await executeBash(scoped, abortSignal);
+      if (level === "warn") logMutation("bash", scoped, context);
+      // a shared server runs the pipeline without a shell: each command is spawned directly
+      const output = await (isWebMode() ? executePipeline(scoped, abortSignal) : executeBash(scoped, abortSignal));
       recordCall(context.threadId, "bash", scoped, output);
       return output + (forbiddenHint(output) ?? "");
     },

@@ -10,7 +10,8 @@ kind: Namespace
 metadata:
   name: kubedeck
 ---
-# Cluster identity KubeDeck uses to read the cluster. Read-only; widen deliberately.
+# Cluster identity KubeDeck uses. Every signed-in user acts through it, so its RBAC is the real limit:
+# kubedeck-reader lets users look; kubedeck-operator (below) lets them change things and browse pod files.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -50,8 +51,44 @@ roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: kubedec
 subjects:
   - { kind: ServiceAccount, name: kubedeck, namespace: kubedeck }
 ---
+# Writes from the UI and the assistant (scale, restart, edit, delete), and pod files (fixed read-only
+# scripts run with kubectl exec). For a look-only KubeDeck, delete this role and its binding and set
+# KUBEDECK_READ_ONLY=true; to drop pod files only, remove pods/exec and set KUBEDECK_POD_FILES=off.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubedeck-operator
+rules:
+  - apiGroups: [""]
+    resources: [pods, services, configmaps, persistentvolumeclaims]
+    verbs: [patch, update, delete]
+  - apiGroups: [""]
+    resources: [pods/exec]
+    verbs: [create, get]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, daemonsets, replicasets, deployments/scale, statefulsets/scale]
+    verbs: [patch, update, delete]
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
+    verbs: [patch, update, delete]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses]
+    verbs: [patch, update, delete]
+  - apiGroups: [autoscaling]
+    resources: [horizontalpodautoscalers]
+    verbs: [patch, update, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubedeck-operator
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: kubedeck-operator }
+subjects:
+  - { kind: ServiceAccount, name: kubedeck, namespace: kubedeck }
+---
 # The Keycloak client credentials live in a Secret named "kubedeck-oauth" that you create with kubectl
-# (docs/DEPLOYMENT.md, step 3) so no secret value is ever written into this file.
+# (docs/DEPLOYMENT.md, step 3) so no secret value is ever written into this file. The AI provider for the
+# assistant comes from an optional Secret "kubedeck-ai" (docs/DEPLOYMENT.md, step 3); without it the assistant shows as offline.
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -80,8 +117,18 @@ spec:
             - { name: HOST, value: 127.0.0.1 }            # only the sidecar can reach it
             - { name: KUBEDECK_TRUST_PROXY_NETWORK, value: "1" }
             - { name: KUBEDECK_PUBLIC_URL, value: "https://kubedeck.example.com" }
-            - { name: KUBEDECK_READ_ONLY, value: "true" }
+            # Every feature is on. Turn one off here: KUBEDECK_READ_ONLY=true, KUBEDECK_AI=off, KUBEDECK_POD_FILES=off
             # - { name: KUBEDECK_ALLOWED_GROUPS, value: "platform,sre" }   # restrict by Keycloak group
+            - name: KUBEDECK_AI_PROVIDER                  # openai | anthropic | ollama | custom
+              valueFrom: { secretKeyRef: { name: kubedeck-ai, key: provider, optional: true } }
+            - name: KUBEDECK_AI_API_KEY
+              valueFrom: { secretKeyRef: { name: kubedeck-ai, key: api-key, optional: true } }
+            - name: KUBEDECK_AI_MODEL
+              valueFrom: { secretKeyRef: { name: kubedeck-ai, key: model, optional: true } }
+            - name: KUBEDECK_AI_FAST_MODEL
+              valueFrom: { secretKeyRef: { name: kubedeck-ai, key: fast-model, optional: true } }
+            - name: KUBEDECK_AI_BASE_URL
+              valueFrom: { secretKeyRef: { name: kubedeck-ai, key: base-url, optional: true } }
           readinessProbe:
             exec: { command: ["wget", "-qO-", "http://127.0.0.1:5000/healthz"] }
             periodSeconds: 10

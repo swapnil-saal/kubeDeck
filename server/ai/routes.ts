@@ -67,6 +67,8 @@ export function registerAiRoutes(app: Express): void {
           threadId: threadId || `thread_${Date.now()}`,
           context: context && context !== "default" ? context : "",
           namespace: namespace && namespace !== "all" ? namespace : "",
+          // web mode: the signed-in user, for the audit lines of approvals and changes
+          user: req.kubedeckUser?.email || req.kubedeckUser?.name || "",
         },
         mode,
         sessionContext: sessionContext?.slice(0, 10_000),

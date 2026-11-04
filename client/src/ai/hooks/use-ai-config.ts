@@ -15,8 +15,9 @@ export function useAiConfig() {
     const provider = settings?.ai?.provider || "openai";
     const model = settings?.ai?.model || "";
     const fastModel = settings?.ai?.fastModel || "";
-    const isConfigured = !!(
-      settings?.ai?.apiKey || provider === "ollama"
+    // a shared KubeDeck keeps its key on the server and says whether it has one
+    const isConfigured = settings?.ai?.configured ?? !!(
+      settings?.ai?.apiKey || provider === "ollama" || (provider === "custom" && settings?.ai?.baseUrl)
     );
     const hasFastModel = isConfigured && !!fastModel;
     // quick features (event summaries, status hints) run on the fast model: on once one is set,

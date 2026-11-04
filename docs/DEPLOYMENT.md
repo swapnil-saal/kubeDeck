@@ -1,6 +1,6 @@
 # Deploying KubeDeck (web) to Kubernetes
 
-A step-by-step runbook for running KubeDeck as a shared, read-only web service behind your Keycloak login. For *why* it works this way, see [WEB.md](WEB.md).
+A step-by-step runbook for running KubeDeck as a shared web service behind your Keycloak login, with the desktop app's features (writes, the AI assistant, pod files) on unless you turn them off. For *why* it works this way, see [WEB.md](WEB.md).
 
 ```
 browser ──HTTPS──▶ ingress ──▶ oauth2-proxy ──(127.0.0.1)──▶ KubeDeck ──▶ Kubernetes API
@@ -29,7 +29,7 @@ docker tag swapnilsaal/kubedeck:<version>-web <registry>/kubedeck:<version>-web
 docker push <registry>/kubedeck:<version>-web
 ```
 
-The image is about 311 MB, runs as the non-root `node` user, contains `kubectl`, and contains **no kubeconfig, no secrets and no AI**. If your registry is private, add an `imagePullSecrets` entry to the pod spec.
+The image is about 311 MB, runs as the non-root `node` user, contains `kubectl`, and contains **no kubeconfig and no secrets** (the AI provider key comes from a Secret you create). If your registry is private, add an `imagePullSecrets` entry to the pod spec.
 
 ## 2. Create the Keycloak client
 
@@ -56,6 +56,15 @@ kubectl -n kubedeck create secret generic kubedeck-oauth \
   --from-literal=cookie-secret="$(openssl rand -base64 32 | tr -- '+/' '-_')"
 ```
 
+For the AI assistant, add the provider (skip this and the assistant shows as offline; `KUBEDECK_AI=off` hides it):
+
+```sh
+kubectl -n kubedeck create secret generic kubedeck-ai \
+  --from-literal=provider='anthropic' \
+  --from-literal=api-key='<the provider key>'
+# optional keys: model, fast-model, base-url (base-url is required for provider=custom)
+```
+
 The manifest also declares the namespace, so the later `kubectl apply` simply adopts it (a harmless warning about a missing annotation is normal).
 
 ## 4. Edit the manifest
@@ -75,7 +84,9 @@ Optional settings (environment variables on the `kubedeck` container):
 | Variable | Effect |
 |---|---|
 | `KUBEDECK_ALLOWED_GROUPS=platform,sre` | the user must be in one of these Keycloak groups (needs the groups mapper from step 2) |
-| `KUBEDECK_READ_ONLY=false` | allow scale / restart / edit / delete. **Default is read-only.** Widen the service account's RBAC too, or those actions will fail with "forbidden" |
+| `KUBEDECK_READ_ONLY=true` | refuse scale / restart / edit / delete everywhere, including the assistant. Default: allowed, within the service account's RBAC (`kubedeck-operator`) |
+| `KUBEDECK_AI=off` | hide the assistant and every AI feature |
+| `KUBEDECK_POD_FILES=off` | hide the pod Files tab (and drop `pods/exec` from `kubedeck-operator`) |
 
 ## 5. Deploy
 
@@ -84,7 +95,7 @@ kubectl apply -f deploy/kubernetes/kubedeck.yaml
 kubectl -n kubedeck rollout status deploy/kubedeck
 ```
 
-This creates the namespace, a service account with a **read-only** cluster role (no secrets), the Deployment (KubeDeck + oauth2-proxy), a Service and an Ingress.
+This creates the namespace, a service account with a read cluster role (no secrets) and an operator role for changes and pod files, the Deployment (KubeDeck + oauth2-proxy), a Service and an Ingress.
 
 ## 6. Check it works
 
@@ -150,7 +161,8 @@ kubectl -n kubedeck rollout status deploy/kubedeck
 - [ ] `--email-domain` (or `--allowed-group`) narrowed from `*`
 - [ ] TLS on the ingress, and `--cookie-secure=true` (the default in the manifest)
 - [ ] Service account role reviewed; **secrets not included** unless every user may read every secret
-- [ ] `KUBEDECK_READ_ONLY` left `true` unless you have decided otherwise
+- [ ] `kubedeck-operator` kept only if every signed-in user may change workloads and read pod files; otherwise delete it and set `KUBEDECK_READ_ONLY=true`
+- [ ] the AI provider is one your organisation allows cluster data to be sent to (or `KUBEDECK_AI=off`)
 - [ ] Optionally a NetworkPolicy so only the ingress controller can reach port 4180 (KubeDeck itself is already unreachable except through the sidecar)
 - [ ] Image pulled by an exact tag (not `latest`); registry credentials stored as a Secret, not in the manifest
 - [ ] Keycloak client secret rotated if it was ever pasted into a chat, ticket or file

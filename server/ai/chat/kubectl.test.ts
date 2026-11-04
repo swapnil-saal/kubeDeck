@@ -3,6 +3,8 @@ import {
   checkRepeat,
   describeAccessLimits,
   execCommand,
+  executePipeline,
+  splitPipeline,
   forbiddenHint,
   injectContextFlag,
   injectContextIntoBash,
@@ -224,4 +226,27 @@ describe("parseTable / summarizeTable", () => {
   });
 
   it("handles an empty result", () => expect(summarizeTable("", "pods")).toBe("0 pods found."));
+});
+
+describe("splitPipeline / executePipeline (no shell)", () => {
+  it("splits on unquoted pipes and keeps quoted text whole", () => {
+    expect(splitPipeline(`kubectl get pods | grep 'a | b' | wc -l`)).toEqual([["kubectl", "get", "pods"], ["grep", "a | b"], ["wc", "-l"]]);
+    expect(splitPipeline("kubectl get pods 2>&1 | head -3")).toEqual([["kubectl", "get", "pods"], ["head", "-3"]]);
+  });
+  it.each(["a; b", "a && b", "a || b", "echo $(id)", "echo `id`", 'echo "$(id)"', "a &", "a\nb", "a | | b"])(
+    "refuses %s",
+    (line) => expect(splitPipeline(line)).toBeNull(),
+  );
+  it("runs a real pipeline", async () => {
+    expect((await executePipeline("printf 'b\\na\\nb\\n' | sort | uniq -c | wc -l")).trim()).toBe("2");
+  });
+  it("expands nothing: $HOME and globs reach the program as typed", async () => {
+    expect((await executePipeline("echo $HOME *")).trim()).toBe("$HOME *");
+  });
+  it("explains a refused line instead of running it", async () => {
+    expect(await executePipeline("echo a; id")).toMatch(/without a shell/);
+  });
+  it("reports a missing program", async () => {
+    expect(await executePipeline("no-such-program-kd | wc -l")).toMatch(/0|ENOENT/);
+  });
 });

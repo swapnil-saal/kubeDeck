@@ -3,6 +3,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { loadSettings, type AiProviderSettings } from "../settings";
+import { aiSettingsPlace } from "./errors";
 
 export const DEFAULTS: Record<string, { baseUrl: string; defaultModel: string; defaultFastModel: string }> = {
   openai: { baseUrl: "https://api.openai.com/v1", defaultModel: "gpt-4o-mini", defaultFastModel: "gpt-4o-mini" },
@@ -53,7 +54,7 @@ function anthropicBaseUrl(url: string): string {
 export function getLanguageModel(opts: LanguageModelOptions = {}): ResolvedModel {
   const config = getAiConfig();
   if (!config.apiKey && config.provider !== "ollama" && config.provider !== "custom") {
-    throw new Error(`No API key configured for ${config.provider}. Go to Settings → AI to add one.`);
+    throw new Error(`No API key configured for ${config.provider}. Add one in ${aiSettingsPlace()}.`);
   }
   const modelId = resolveModel(config, opts.useFastModel);
   const provider = config.provider;
@@ -74,7 +75,7 @@ export function getLanguageModel(opts: LanguageModelOptions = {}): ResolvedModel
 
   if (provider === "custom") {
     if (!config.baseUrl) {
-      throw new Error("No base URL configured for the custom provider. Go to Settings → AI to add one.");
+      throw new Error(`No base URL configured for the custom provider. Add one in ${aiSettingsPlace()}.`);
     }
     const custom = createOpenAICompatible({
       name: "custom",

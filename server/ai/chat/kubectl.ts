@@ -240,6 +240,100 @@ export async function executeBash(command: string, signal?: AbortSignal): Promis
   return truncate(r.stdout || r.stderr || "(no output)");
 }
 
+/** Redirections a model adds out of habit; harmless to drop when there is no shell. */
+const NOISE_REDIRECT = /^(2>&1|[12]?>\/dev\/null)$/;
+
+/**
+ * Split `a | b | c` into argument lists on unquoted single pipes. Null when the line uses anything
+ * else a shell would interpret: ; & && || newlines, $( ) or backticks.
+ */
+export function splitPipeline(line: string): string[][] | null {
+  const stages: string[] = [];
+  let current = "";
+  let quote: "'" | '"' | null = null;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    const next = line[i + 1];
+    if (quote) {
+      if (c === quote) quote = null;
+      else if (quote === '"' && (c === "`" || (c === "$" && next === "("))) return null;
+      current += c;
+      continue;
+    }
+    if (c === "'" || c === '"') { quote = c; current += c; continue; }
+    if (c === "\\") { current += c + (next ?? ""); i++; continue; }
+    if (c === "|") {
+      if (next === "|") return null;
+      stages.push(current);
+      current = "";
+      continue;
+    }
+    if (c === ";" || c === "\n" || c === "`" || (c === "$" && next === "(") || (c === "&" && line[i - 1] !== ">")) return null;
+    current += c;
+  }
+  if (quote) return null;
+  stages.push(current);
+  const out: string[][] = [];
+  for (const stage of stages) {
+    const args = splitArgs(stage.trim()).filter((a) => !NOISE_REDIRECT.test(a));
+    if (args.length === 0) return null;
+    out.push(args);
+  }
+  return out;
+}
+
+const PIPELINE_ONLY =
+  "Blocked: on a shared KubeDeck the bash tool runs a plain pipeline (kubectl … | grep … | wc -l) without a shell; " +
+  "; && || $( ) and backticks are not available. Run separate commands as separate tool calls.";
+
+/**
+ * Run a pipeline with no shell: each stage is spawned directly and wired stdout → stdin, so nothing
+ * is expanded, substituted or redirected. Used where the server's own identity is at stake (web mode).
+ */
+export function executePipeline(command: string, signal?: AbortSignal, timeoutMs = 30_000): Promise<string> {
+  const stages = splitPipeline(command);
+  if (!stages) return Promise.resolve(PIPELINE_ONLY);
+  if (signal?.aborted) return Promise.resolve("(cancelled)");
+  const env = { ...process.env, ...getKubeconfigEnv() };
+
+  return new Promise((resolve) => {
+    const procs = stages.map(([cmd, ...args]) => spawn(cmd, args, { env }));
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    let done = false;
+    const killAll = () => procs.forEach((p) => { try { p.kill("SIGTERM"); } catch { /* already gone */ } });
+    const timer = setTimeout(killAll, timeoutMs);
+    signal?.addEventListener("abort", killAll, { once: true });
+
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", killAll);
+      killAll(); // earlier stages may still be writing into a pipe nobody reads
+      if (signal?.aborted) return resolve("(cancelled)");
+      const out = Buffer.concat(stdout).toString("utf-8");
+      const err = Buffer.concat(stderr).toString("utf-8");
+      resolve(truncate(out || err || "(no output)"));
+    };
+
+    procs.forEach((p, i) => {
+      p.on("error", (e) => {
+        stderr.push(Buffer.from(`${stages[i][0]}: ${e.message}\n`));
+        if (i === procs.length - 1) finish();
+      });
+      p.stderr.on("data", (c: Buffer) => stderr.push(c));
+      p.stdin.on("error", () => { /* a later stage exited early (head) */ });
+      p.stdout.on("error", () => {});
+      if (i < procs.length - 1) p.stdout.pipe(procs[i + 1].stdin);
+    });
+    procs[0].stdin.end();
+    const last = procs[procs.length - 1];
+    last.stdout.on("data", (c: Buffer) => stdout.push(c));
+    last.on("close", finish);
+  });
+}
+
 // ═══════════════════════════════════════════════════
 //  LOOP / REPEAT-CALL GUARD
 // ═══════════════════════════════════════════════════

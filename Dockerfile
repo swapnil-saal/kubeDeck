@@ -12,7 +12,7 @@ RUN KUBEDECK_BUNDLE_ALL=1 npm run build
 
 FROM node:22-alpine AS runtime
 ARG KUBECTL_VERSION=v1.31.4
-RUN apk add --no-cache curl \
+RUN apk add --no-cache curl jq \
  && arch="$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')" \
  && curl -fsSLo /usr/local/bin/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${arch}/kubectl" \
  && chmod +x /usr/local/bin/kubectl \

@@ -78,3 +78,21 @@ describe("saveSettings", () => {
     expect(fs.statSync(settingsFile).mode & 0o777).toBe(0o600);
   });
 });
+
+describe("AI settings from the environment (web mode)", () => {
+  it("reads the provider from KUBEDECK_AI_* and falls back to openai for an unknown one", async () => {
+    const { aiSettingsFromEnv } = await import("./settings");
+    expect(aiSettingsFromEnv({ KUBEDECK_AI_PROVIDER: "Anthropic", KUBEDECK_AI_API_KEY: "k", KUBEDECK_AI_MODEL: "m", KUBEDECK_AI_FAST_MODEL: "f" }))
+      .toEqual({ provider: "anthropic", apiKey: "k", model: "m", fastModel: "f", baseUrl: "" });
+    expect(aiSettingsFromEnv({ KUBEDECK_AI_PROVIDER: "nope" }).provider).toBe("openai");
+  });
+  it("counts a key, ollama, or a custom endpoint as configured", async () => {
+    const { aiConfigured } = await import("./settings");
+    const base = { model: "", baseUrl: "", apiKey: "" };
+    expect(aiConfigured({ ...base, provider: "openai" })).toBe(false);
+    expect(aiConfigured({ ...base, provider: "openai", apiKey: "k" })).toBe(true);
+    expect(aiConfigured({ ...base, provider: "ollama" })).toBe(true);
+    expect(aiConfigured({ ...base, provider: "custom" })).toBe(false);
+    expect(aiConfigured({ ...base, provider: "custom", baseUrl: "http://gw:8787" })).toBe(true);
+  });
+});

@@ -40,7 +40,7 @@ function createKubeAgent(model: LanguageModel) {
     model,
     tools: kubeTools,
     // the real scope arrives with each request (prepareCall); this default is never used for a call
-    toolsContext: kubeToolsContext({ context: "", namespace: "", threadId: "" }),
+    toolsContext: kubeToolsContext({ context: "", namespace: "", threadId: "", user: "" }),
     callOptionsSchema: agentCallOptionsSchema,
     toolApproval: kubeToolApproval,
     experimental_toolApprovalSecret: APPROVAL_SECRET,
@@ -71,14 +71,14 @@ type KubeAgent = ReturnType<typeof createKubeAgent>;
 export type KubeAgentUIMessage = InferAgentUIMessage<KubeAgent>;
 
 /** One audit line per approval decision the browser sends, so every change to a cluster can be traced. */
-function logApprovalResponses(messages: KubeAgentUIMessage[], threadId: string): void {
+function logApprovalResponses(messages: KubeAgentUIMessage[], threadId: string, user: string): void {
   const last = messages[messages.length - 1];
   if (last?.role !== "assistant") return;
   for (const part of last.parts) {
     if (!("approval" in part) || part.state !== "approval-responded" || !part.approval) continue;
     const input = "input" in part ? (part.input as { command?: string }) : undefined;
     console.log(
-      `[kubedeck:agent] approval ${part.approval.approved ? "GRANTED" : "denied"} thread=${threadId} ` +
+      `[kubedeck:agent] approval ${part.approval.approved ? "GRANTED" : "denied"}${user ? ` user=${JSON.stringify(user)}` : ""} thread=${threadId} ` +
         `tool=${part.type.replace(/^tool-/, "")} command=${JSON.stringify(input?.command ?? "")}`,
     );
   }
@@ -105,7 +105,7 @@ export async function streamKubeAgent(
   const kubeAgent = getKubeAgent();
   const uiMessages = await validateUIMessages<KubeAgentUIMessage>({ messages, tools: kubeAgent.tools });
 
-  logApprovalResponses(uiMessages, options.scope.threadId);
+  logApprovalResponses(uiMessages, options.scope.threadId, options.scope.user);
 
   // A fresh user question resets the duplicate / budget guards; resuming after an approval must not.
   if (uiMessages[uiMessages.length - 1]?.role === "user") resetAgentCallGuards(options.scope.threadId);

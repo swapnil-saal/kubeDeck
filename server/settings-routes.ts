@@ -5,7 +5,7 @@ import type { Express } from "express";
 import { existsSync } from "fs";
 import * as path from "path";
 import { api } from "@shared/routes";
-import { loadSettings, saveSettings, scanKubeconfigs } from "./settings";
+import { aiConfigured, loadSettings, saveSettings, scanKubeconfigs } from "./settings";
 import { isWebMode } from "./web-mode";
 
 export function registerSettingsRoutes(app: Express): void {
@@ -15,7 +15,8 @@ export function registerSettingsRoutes(app: Express): void {
     try {
       if (isWebMode()) {
         // settings come from the server's environment; never expose paths or keys to browsers
-        return res.json({ kubeconfigPaths: [], files: [], ai: { ...(loadSettings().ai ?? {}), apiKey: "" }, managed: true });
+        const ai = loadSettings().ai;
+        return res.json({ kubeconfigPaths: [], files: [], ai: { ...(ai ?? {}), apiKey: "", configured: aiConfigured(ai) }, managed: true });
       }
       const settings = loadSettings();
       const files = settings.kubeconfigPaths.map((p) => ({
