@@ -4,8 +4,8 @@ import { request, type Server } from "http";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { requireTrustedRequest } from "./security";
 import {
-  auditLog, checkRequest, describeMode, loadWebConfig, setWebConfig, userFromHeaders, validateWebConfig, webExecAllowed, webGate,
-  webReadOnly, type WebConfig,
+  auditLog, checkRequest, describeMode, loadWebConfig, setWebConfig, userFromHeaders, validateWebConfig, webExecAllowed, webFeatureOff,
+  webGate, webReadOnly, type WebConfig,
 } from "./web-mode";
 
 const SECRET = "s3cret-s3cret-s3cret";
@@ -88,7 +88,9 @@ describe("web mode over HTTP (real middleware)", () => {
     app.use("/api", requireTrustedRequest);
     app.use(webGate);
     app.use(auditLog);
+    app.use("/api", webFeatureOff);
     app.use("/api", webReadOnly);
+    app.get("/api/k8s/port-forwards", (_req, res) => res.json([]));
     app.get("/api/mode", (req, res) => res.json(describeMode(req)));
     app.get("/api/k8s/pods", (_req, res) => res.json(["pod-a"]));
     app.post("/api/k8s/deployments/scale", (_req, res) => res.json({ scaled: true }));
@@ -135,5 +137,22 @@ describe("web mode over HTTP (real middleware)", () => {
   it("allows writes once read-only is turned off", async () => {
     setWebConfig(cfg({ readOnly: false }));
     expect((await call("/api/k8s/deployments/scale", ok, "POST")).status).toBe(200);
+  });
+  it("refuses the desktop-only features with their own reason, even when writes are allowed", async () => {
+    for (const readOnly of [true, false]) {
+      setWebConfig(cfg({ readOnly }));
+      const ai = await call("/api/ai/tasks/troubleshoot", ok, "POST");
+      expect(ai.status).toBe(403);
+      expect((await ai.json()).message).toMatch(/AI assistant is turned off/);
+      const files = await call("/api/k8s/pods/web-1/files/list?path=/", ok);
+      expect(files.status).toBe(403);
+      expect((await files.json()).message).toMatch(/pod files/);
+      const pf = await call("/api/k8s/pods/web-1/port-forward", ok, "POST");
+      expect(pf.status).toBe(403);
+      expect((await pf.json()).message).toMatch(/Port forwarding/);
+      expect((await call("/api/k8s/port-forwards/abc", ok, "DELETE")).status).toBe(403);
+    }
+    // listing forwards is still a plain read
+    expect((await call("/api/k8s/port-forwards", ok)).status).toBe(200);
   });
 });

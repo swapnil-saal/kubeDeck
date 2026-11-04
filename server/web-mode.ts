@@ -131,6 +131,23 @@ export function webGate(req: Request, res: Response, next: NextFunction): void {
   next();
 }
 
+/** Features a shared KubeDeck never offers (see describeMode), with the reason the browser shows. */
+const WEB_OFF: { match: RegExp; writesOnly: boolean; message: string }[] = [
+  { match: /^\/api\/ai(\/|$)/, writesOnly: false, message: "The AI assistant is turned off on a shared KubeDeck, so cluster data never reaches a model provider." },
+  { match: /^\/api\/k8s\/pods\/[^/]+\/files(\/|$)/, writesOnly: false, message: "Browsing pod files is not available on a shared KubeDeck." },
+  // listing forwards stays readable (always empty here); starting or stopping one is refused
+  { match: /^\/api\/k8s\/(pods\/[^/]+\/port-forward|port-forwards)(\/|$)/, writesOnly: true, message: "Port forwarding is not available on a shared KubeDeck." },
+];
+
+/** Web mode: refuse the desktop-only features with their own reason, read-only or not. */
+export function webFeatureOff(req: Request, res: Response, next: NextFunction): void {
+  if (!active.enabled) return next();
+  const full = req.baseUrl + req.path;
+  const off = WEB_OFF.find((f) => f.match.test(full) && (!f.writesOnly || MUTATING.has(req.method)));
+  if (!off) return next();
+  res.status(403).json({ message: off.message });
+}
+
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 /** Read-only web mode: refuse every write except the kubectl palette, which classifies its own verbs. */
 export function webReadOnly(req: Request, res: Response, next: NextFunction): void {

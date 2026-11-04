@@ -5,7 +5,7 @@ import { createServer } from "http";
 import { registerParamValidators, requireTrustedRequest, validateK8sQuery } from "./security";
 import { reportUnreachableAs503 } from "./errors";
 import { ensureInClusterKubeconfig } from "./incluster";
-import { auditLog, describeMode, HEALTH_PATH, loadWebConfig, setWebConfig, validateWebConfig, webGate, webReadOnly } from "./web-mode";
+import { auditLog, describeMode, HEALTH_PATH, loadWebConfig, setWebConfig, validateWebConfig, webFeatureOff, webGate, webReadOnly } from "./web-mode";
 
 // Web (shared-service) mode is opt-in; refuse to start half-configured rather than serve cluster access to anyone.
 const webCfg = loadWebConfig();
@@ -37,6 +37,7 @@ app.use("/api", requireTrustedRequest);
 // Web mode: pages and API alike need the login proxy's identity; writes are refused when read-only.
 app.use(webGate);
 app.use(auditLog);
+app.use("/api", webFeatureOff);
 app.use("/api", webReadOnly);
 app.get("/api/mode", (req, res) => { res.json(describeMode(req)); });
 app.use("/api/k8s", validateK8sQuery);
