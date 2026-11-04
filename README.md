@@ -6,8 +6,8 @@
 <p align="center">A Kubernetes navigator for the desktop or as a shared web service: browse clusters and resources, look inside pods, run kubectl, and investigate problems with a built-in AI operator.</p>
 
 <p align="center">
-  <a href="https://github.com/swapnil-saal/kube-navigator/releases/latest">
-    <img alt="Download" src="https://img.shields.io/github/downloads/swapnil-saal/kube-navigator/total?style=flat-square&logo=apple&label=Download%20DMG" />
+  <a href="https://github.com/swapnil-saal/kubeDeck/releases/latest">
+    <img alt="Download" src="https://img.shields.io/github/downloads/swapnil-saal/kubeDeck/total?style=flat-square&logo=apple&label=Download%20DMG" />
   </a>
   <img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Docker-blue?style=flat-square" />
   <img alt="License" src="https://img.shields.io/badge/license-MIT-green?style=flat-square" />
@@ -20,7 +20,7 @@
 
 > **macOS Apple Silicon (arm64, macOS 13+)**, **Windows** (installer or portable), and a **Docker image** for the web version (amd64 + arm64)
 
-👉 **[Download the latest release](https://github.com/swapnil-saal/kube-navigator/releases/latest)**
+👉 **[Download the latest release](https://github.com/swapnil-saal/kubeDeck/releases/latest)**
 
 **macOS:** download the `.dmg`, drag **KubeDeck** to Applications, then right-click → **Open** on first launch (unsigned build).
 **Windows:** run the NSIS installer, or use the portable `.exe`.
@@ -96,8 +96,8 @@ brew install node kubectl
 ### Setup
 
 ```bash
-git clone https://github.com/swapnil-saal/kube-navigator.git
-cd kube-navigator
+git clone https://github.com/swapnil-saal/kubeDeck.git
+cd kubeDeck
 npm install
 ```
 
