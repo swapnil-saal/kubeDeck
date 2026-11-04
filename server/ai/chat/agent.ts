@@ -1,106 +1,122 @@
 import { randomBytes } from "crypto";
 import type { ServerResponse } from "http";
 import {
-  convertToModelMessages,
-  pipeUIMessageStreamToResponse,
-  stepCountIs,
-  streamText,
-  toUIMessageStream,
-  type UIMessage,
+  ToolLoopAgent,
+  isStepCount,
+  pipeAgentUIStreamToResponse,
+  validateUIMessages,
+  type InferAgentUIMessage,
+  type LanguageModel,
 } from "ai";
+import { z } from "zod";
+import { formatProviderError } from "../errors";
 import { defaultMaxOutputTokens, getLanguageModel } from "../provider";
 import { describeAccessLimits, resetAgentCallGuards } from "./kubectl";
 import { buildSystemPrompt, parseAgentMode } from "./prompts";
-import { buildKubeTools } from "./tools";
+import { kubeScopeSchema, kubeToolApproval, kubeTools, kubeToolsContext } from "./tools";
 
 /** Hard backstop against tool-call loops (the discovery budget is enforced in kubectl.ts). */
 const MAX_STEPS = 14;
 
 /**
- * Signs approval requests so a client cannot forge an approval for a mutating
- * command it was never asked about. Per-process: a server restart invalidates
- * approvals that were still pending.
+ * Signs approval requests so a client cannot forge an approval for a command it was
+ * never asked about. Per process: a server restart invalidates approvals still pending.
  */
 const APPROVAL_SECRET = randomBytes(32);
 
-export function formatProviderError(raw: string): string {
-  const lower = raw.toLowerCase();
-  if (lower.includes("maximum context length") || lower.includes("context length") || lower.includes("too many tokens")) {
-    return (
-      `AI model context window exceeded. The model prompt (system + tools) is too large for this gateway. ` +
-      `Try a shorter question, or use a model with a larger context. (${raw.slice(0, 220)})`
-    );
-  }
-  if (lower.includes("503") || lower.includes("ring-balancer") || lower.includes("no healthy upstream")) {
-    return (
-      `AI provider is unavailable (503). Check Settings → AI base URL and model. ` +
-      `Current gateway may be down — try a working endpoint and a model that exists there. ` +
-      `(${raw.slice(0, 180)})`
-    );
-  }
-  if (lower.includes("404") && lower.includes("model")) {
-    return (
-      `AI model not found (404). Update Settings → AI model to one available on your gateway. ` +
-      `(${raw.slice(0, 180)})`
-    );
-  }
-  if (lower.includes("401") || lower.includes("unauthorized") || lower.includes("invalid api key")) {
-    return `AI API key rejected. Update Settings → AI API key. (${raw.slice(0, 180)})`;
-  }
-  return raw;
+/** What one agent request carries besides the messages. */
+export const agentCallOptionsSchema = z.object({
+  scope: kubeScopeSchema,
+  /** chat | troubleshoot | briefing | investigate */
+  mode: z.string().optional(),
+  /** free-form session summary from the client, appended to the instructions */
+  sessionContext: z.string().max(10_000).optional(),
+});
+export type AgentCallOptions = z.infer<typeof agentCallOptionsSchema>;
+
+function createKubeAgent(model: LanguageModel) {
+  return new ToolLoopAgent({
+    id: "kubedeck",
+    model,
+    tools: kubeTools,
+    // the real scope arrives with each request (prepareCall); this default is never used for a call
+    toolsContext: kubeToolsContext({ context: "", namespace: "", threadId: "" }),
+    callOptionsSchema: agentCallOptionsSchema,
+    toolApproval: kubeToolApproval,
+    experimental_toolApprovalSecret: APPROVAL_SECRET,
+    stopWhen: isStepCount(MAX_STEPS),
+    temperature: 0.25,
+    // Settings can change between requests, so the model and prompt are resolved per call.
+    prepareCall: ({ options, ...settings }) => {
+      const { model: current, provider } = getLanguageModel();
+      return {
+        ...settings,
+        model: current,
+        maxOutputTokens: defaultMaxOutputTokens(provider),
+        instructions: buildSystemPrompt(
+          options.sessionContext ?? "",
+          parseAgentMode(options.mode),
+          describeAccessLimits(options.scope.threadId),
+          options.scope,
+        ),
+        toolsContext: kubeToolsContext(options.scope),
+      };
+    },
+  });
 }
 
-export interface KubeAgentRequest {
-  messages: UIMessage[];
-  threadId: string;
-  /** kube context name; empty = kubeconfig default */
-  context: string;
-  /** active namespace; empty = not scoped */
-  namespace: string;
-  mode?: string;
-  /** free-form session summary appended to the system prompt */
-  sessionContext?: string;
+type KubeAgent = ReturnType<typeof createKubeAgent>;
+
+/** A chat message with KubeDeck's typed tool parts. */
+export type KubeAgentUIMessage = InferAgentUIMessage<KubeAgent>;
+
+/** One audit line per approval decision the browser sends, so every change to a cluster can be traced. */
+function logApprovalResponses(messages: KubeAgentUIMessage[], threadId: string): void {
+  const last = messages[messages.length - 1];
+  if (last?.role !== "assistant") return;
+  for (const part of last.parts) {
+    if (!("approval" in part) || part.state !== "approval-responded" || !part.approval) continue;
+    const input = "input" in part ? (part.input as { command?: string }) : undefined;
+    console.log(
+      `[kubedeck:agent] approval ${part.approval.approved ? "GRANTED" : "denied"} thread=${threadId} ` +
+        `tool=${part.type.replace(/^tool-/, "")} command=${JSON.stringify(input?.command ?? "")}`,
+    );
+  }
+}
+
+let agent: KubeAgent | undefined;
+
+/** The KubeDeck agent. Built on first use, so a missing AI configuration surfaces as a request error. */
+export function getKubeAgent() {
+  agent ??= createKubeAgent(getLanguageModel().model);
+  return agent;
 }
 
 /**
- * Run one agent turn and stream it to `res` as an AI SDK UI message stream.
+ * Run one agent turn and stream it to `response` as an AI SDK UI message stream.
  * History lives on the client; a request that ends with an approval response
  * (or an `ask_human` answer) continues the same assistant message.
  */
 export async function streamKubeAgent(
-  req: KubeAgentRequest,
-  res: ServerResponse,
+  { messages, options }: { messages: unknown[]; options: AgentCallOptions },
+  response: ServerResponse,
   abortSignal: AbortSignal,
 ): Promise<void> {
-  const { model, provider } = getLanguageModel();
-  const tools = buildKubeTools({ context: req.context, namespace: req.namespace, threadId: req.threadId });
+  const kubeAgent = getKubeAgent();
+  const uiMessages = await validateUIMessages<KubeAgentUIMessage>({ messages, tools: kubeAgent.tools });
 
-  // A fresh user question resets the duplicate / budget guards; resuming after an
-  // approval (last message is the assistant's) must not.
-  if (req.messages[req.messages.length - 1]?.role === "user") resetAgentCallGuards(req.threadId);
+  logApprovalResponses(uiMessages, options.scope.threadId);
 
-  const result = streamText({
-    model,
-    instructions: buildSystemPrompt(req.sessionContext ?? "", parseAgentMode(req.mode), describeAccessLimits(req.threadId), {
-      context: req.context,
-      namespace: req.namespace,
-    }),
-    messages: await convertToModelMessages(req.messages, { tools }),
-    tools,
-    stopWhen: stepCountIs(MAX_STEPS),
-    temperature: 0.25,
-    maxOutputTokens: defaultMaxOutputTokens(provider),
+  // A fresh user question resets the duplicate / budget guards; resuming after an approval must not.
+  if (uiMessages[uiMessages.length - 1]?.role === "user") resetAgentCallGuards(options.scope.threadId);
+
+  await pipeAgentUIStreamToResponse({
+    response,
+    agent: kubeAgent,
+    uiMessages,
+    options,
     abortSignal,
-    experimental_toolApprovalSecret: APPROVAL_SECRET,
-  });
-
-  await pipeUIMessageStreamToResponse({
-    response: res,
-    stream: toUIMessageStream({
-      stream: result.stream,
-      tools,
-      originalMessages: req.messages,
-      onError: (error) => formatProviderError(error instanceof Error ? error.message : String(error)),
-    }),
+    originalMessages: uiMessages,
+    onError: formatProviderError,
   });
 }

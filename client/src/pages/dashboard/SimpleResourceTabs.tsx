@@ -1,4 +1,4 @@
-import { motion } from "framer-motion";
+import { m as motion } from "framer-motion";
 import { TabsContent } from "@/components/ui/tabs";
 import { ResourceTable } from "@/components/ResourceTable";
 

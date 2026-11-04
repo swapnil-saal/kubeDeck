@@ -2,7 +2,7 @@ import { StatusBadge } from "./StatusBadge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Search, AlertTriangle, ShieldOff, Columns3, RotateCcw, Inbox, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { motion } from "framer-motion";
+import { m as motion } from "framer-motion";
 import { formatDistanceToNow } from "date-fns";
 import { K8sError } from "@/hooks/use-k8s";
 import { cycleSort, loadSort, saveSort, sortRows, type SortState } from "@/lib/table-sort";

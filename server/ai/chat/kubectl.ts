@@ -1,88 +1,13 @@
 /**
- * kubectl/bash safety, context injection, execution and the repeat-call guard.
- * Framework-independent: no AI SDK imports, so it can be unit-tested on its own.
+ * How the agent runs kubectl: context / namespace injection, execution, output truncation,
+ * and the per-thread repeat-call and access guards. Safety classification lives in
+ * `server/kubectl-safety.ts`. No AI SDK imports, so it can be unit-tested on its own.
  */
 import { spawn } from "child_process";
 import { getKubeconfigEnv } from "../../settings";
+import { splitArgs } from "../../kubectl-safety";
 
 const MAX_OUTPUT_LENGTH = 6000;
-
-const READ_ONLY_VERBS = new Set([
-  "get", "describe", "logs", "log", "top", "explain",
-  "api-resources", "api-versions", "version", "auth",
-  "cluster-info", "diff", "events", "wait",
-]);
-
-const BLOCKED_VERBS = new Set(["delete", "drain", "cordon", "uncordon", "taint"]);
-
-const ALLOWED_BASH_PREFIXES = [
-  "kubectl", "jq", "grep", "awk", "sed", "sort", "head", "tail",
-  "wc", "cut", "uniq", "tr", "cat", "echo", "date", "xargs",
-];
-
-export type SafetyLevel = "allow" | "warn" | "block";
-
-export function classifyKubectlCommand(command: string): SafetyLevel {
-  const parts = command.trim().split(/\s+/);
-  const verb = parts[0]?.toLowerCase();
-  if (!verb) return "block";
-  if (READ_ONLY_VERBS.has(verb)) return "allow";
-  if (BLOCKED_VERBS.has(verb)) return "block";
-  if (verb === "config") {
-    const sub = parts[1]?.toLowerCase();
-    if (sub === "view" || sub === "get-contexts" || sub === "current-context") return "allow";
-    return "warn";
-  }
-  // rollout status is read-only; other rollout subcommands mutate
-  if (verb === "rollout") {
-    const sub = parts[1]?.toLowerCase();
-    if (sub === "status" || sub === "history") return "allow";
-    return "warn";
-  }
-  if (verb === "auth" || verb === "api-resources" || verb === "api-versions") return "allow";
-  return "warn";
-}
-
-export function classifyBashCommand(command: string): SafetyLevel {
-  const trimmed = command.trim();
-  if (trimmed.startsWith("kubectl ")) {
-    return classifyKubectlCommand(trimmed.replace(/^kubectl\s+/, ""));
-  }
-  if (trimmed.includes("kubectl")) {
-    for (const blocked of Array.from(BLOCKED_VERBS)) {
-      if (new RegExp(`kubectl\\s+${blocked}\\b`).test(trimmed)) return "block";
-    }
-  }
-  const dangerous = [
-    "rm ", "rm -", "rmdir", "mkfs", "dd ", "shutdown", "reboot",
-    "kill ", "killall", "curl ", "wget ", "nc ", "ncat ",
-    "python ", "node ", "ruby ", "perl ", "bash -c", "sh -c",
-  ];
-  for (const d of dangerous) {
-    if (trimmed.startsWith(d) || trimmed.includes(` ${d}`)) return "block";
-  }
-  const firstCmd = trimmed.split(/\s+/)[0]?.replace(/.*\//, "");
-  if (firstCmd && !ALLOWED_BASH_PREFIXES.includes(firstCmd) && !trimmed.includes("kubectl")) {
-    return "block";
-  }
-  return "allow";
-}
-
-export function sanitizeKubectlCommand(command: string): string {
-  let cmd = command.trim();
-  cmd = cmd.replace(/\bcluster\s+info\b/gi, "cluster-info");
-  const tokens = cmd.split(/\s+/);
-  const leadingFlags: string[] = [];
-  let i = 0;
-  while (i < tokens.length && tokens[i].startsWith("-")) {
-    leadingFlags.push(tokens[i]);
-    i++;
-  }
-  if (leadingFlags.length > 0 && i < tokens.length) {
-    cmd = tokens.slice(i).join(" ") + " " + leadingFlags.join(" ");
-  }
-  return cmd.trim();
-}
 
 export function injectContextFlag(command: string, context: string): string {
   if (!context || command.includes("--context")) return command;
@@ -216,41 +141,16 @@ export function truncate(text: string, bias: TruncateBias = "even"): string {
   const tailLen = MAX_OUTPUT_LENGTH - headLen;
   const head = text.slice(0, headLen).replace(/[^\n]*$/, (m) => (m.length < 200 ? "" : m));
   const tail = text.slice(text.length - tailLen).replace(/^[^\n]*\n/, (m) => (m.length < 200 ? "" : m));
-  const omitted = text.length - head.length - tail.length;
+  const lines = (s: string) => (s ? s.replace(/\n$/, "").split("\n").length : 0);
+  const total = lines(text);
+  const shown = lines(head) + lines(tail);
   return (
-    `${head}\n… (${omitted} characters omitted from the middle — enough data to proceed; ` +
-    `do NOT re-run this command; present_dashboard or answer now) …\n${tail}`
+    `[Output too long: the full result has EXACTLY ${total} lines; ${shown} are shown, ${total - shown} omitted from the middle. ` +
+    `For "kubectl get … --no-headers" each line is one resource, so use ${total} as the count — never estimate from the visible lines.]\n` +
+    `${head}\n… (${total - shown} lines omitted — do NOT re-run this command; answer or present_dashboard now) …\n${tail}`
   );
 }
 
-/**
- * Splits a command line into arguments like a shell would for quoting only: whitespace
- * separates arguments, but text inside '…' or "…" stays one argument (so a label selector
- * such as `app in (a,b)` reaches kubectl as a single value). No expansion of any kind.
- */
-export function splitArgs(command: string): string[] {
-  const args: string[] = [];
-  let cur = "";
-  let quote: "'" | '"' | null = null;
-  let started = false;
-  for (const ch of command.trim()) {
-    if (quote) {
-      if (ch === quote) quote = null;
-      else cur += ch;
-    } else if (ch === "'" || ch === '"') {
-      quote = ch;
-      started = true; // an empty '' is still an argument
-    } else if (/\s/.test(ch)) {
-      if (cur || started) args.push(cur);
-      cur = "";
-      started = false;
-    } else {
-      cur += ch;
-    }
-  }
-  if (cur || started) args.push(cur);
-  return args;
-}
 
 /** Single-quotes a value for use in a command line (the allowed selector characters never include a quote). */
 export function quoteArg(value: string): string {
@@ -258,16 +158,80 @@ export function quoteArg(value: string): string {
 }
 
 export async function executeKubectl(
-  command: string, opts: { signal?: AbortSignal; bias?: TruncateBias } = {},
+  command: string,
+  opts: { signal?: AbortSignal; bias?: TruncateBias; transform?: (stdout: string) => string } = {},
 ): Promise<string> {
+  // never through a shell: pipelines go through the bash tool, which checks every command in them
   const env = getKubeconfigEnv();
-  if (command.includes("|") || command.includes(">") || command.includes("&&")) {
-    const r = await execCommand("sh", ["-c", `kubectl ${command}`], env, opts.signal);
-    return truncate(r.stdout || r.stderr || "(no output)", opts.bias);
-  }
   const args = splitArgs(command);
   const r = await execCommand("kubectl", args, env, opts.signal);
-  return truncate(r.stdout || r.stderr || "(no output)", opts.bias);
+  // a transform (e.g. a summary) sees the FULL output; only its result is truncated
+  const text = r.code === 0 && r.stdout && opts.transform ? opts.transform(r.stdout) : r.stdout || r.stderr || "(no output)";
+  return truncate(text, opts.bias);
+}
+
+/** Split an aligned kubectl table into rows of named cells (cells may contain single spaces). */
+export function parseTable(text: string): { columns: string[]; rows: Record<string, string>[] } {
+  const lines = text.replace(/\s+$/, "").split("\n").filter((l) => l.trim());
+  if (lines.length === 0) return { columns: [], rows: [] };
+  const header = lines[0];
+  const columns: string[] = [];
+  const starts: number[] = [];
+  for (const m of header.matchAll(/\S+(?: \S+)*/g)) {
+    columns.push(m[0]);
+    starts.push(m.index ?? 0);
+  }
+  const rows = lines.slice(1).map((line) => {
+    const row: Record<string, string> = {};
+    columns.forEach((c, i) => {
+      row[c] = line.slice(starts[i], i + 1 < starts.length ? starts[i + 1] : undefined).trim();
+    });
+    return row;
+  });
+  return { columns, rows };
+}
+
+const countBy = (values: string[]) => {
+  const m = new Map<string, number>();
+  for (const v of values) m.set(v, (m.get(v) ?? 0) + 1);
+  return [...m].sort((a, b) => b[1] - a[1]);
+};
+const listOf = (items: string[], max: number) =>
+  items.slice(0, max).join(", ") + (items.length > max ? `, … ${items.length - max} more` : "");
+
+/**
+ * Exact numbers from a kubectl table, so the model never counts rows by eye:
+ * total, by STATUS, not ready (READY a/b with a<b), restarts, and per namespace.
+ */
+export function summarizeTable(text: string, resource: string): string {
+  const { columns, rows } = parseTable(text);
+  if (rows.length === 0) return `0 ${resource} found.`;
+  const has = (c: string) => columns.includes(c);
+  const name = (r: Record<string, string>) => (has("NAMESPACE") ? `${r.NAMESPACE}/${r.NAME}` : r.NAME);
+  const out = [`SUMMARY (exact, computed by KubeDeck from the full output): ${rows.length} ${resource}.`];
+
+  if (has("NAMESPACE")) {
+    const ns = countBy(rows.map((r) => r.NAMESPACE));
+    if (ns.length > 1) out.push(`By namespace: ${listOf(ns.map(([k, v]) => `${k} ${v}`), 15)}`);
+  }
+  if (has("STATUS")) {
+    out.push(`By STATUS: ${countBy(rows.map((r) => r.STATUS)).map(([k, v]) => `${k} ${v}`).join(" · ")}`);
+  }
+  if (has("READY")) {
+    const notReady = rows.filter((r) => {
+      const m = r.READY.match(/^(\d+)\/(\d+)$/);
+      return m ? Number(m[1]) < Number(m[2]) : false;
+    });
+    out.push(`Not ready (READY below desired): ${notReady.length}${notReady.length ? ` → ${listOf(notReady.map((r) => `${name(r)} (${r.READY})`), 20)}` : ""}`);
+  }
+  if (has("RESTARTS")) {
+    const restarted = rows
+      .map((r) => ({ r, n: Number.parseInt(r.RESTARTS, 10) || 0 }))
+      .filter((x) => x.n > 0)
+      .sort((a, b) => b.n - a.n);
+    out.push(`With restarts: ${restarted.length}${restarted.length ? `; most: ${listOf(restarted.map((x) => `${name(x.r)} (${x.n})`), 8)}` : ""}`);
+  }
+  return out.join("\n");
 }
 
 export async function executeBash(command: string, signal?: AbortSignal): Promise<string> {

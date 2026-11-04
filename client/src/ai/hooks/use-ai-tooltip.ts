@@ -1,42 +1,34 @@
-import { useState, useRef, useCallback } from "react";
-import { fetchAiSuggestion } from "../api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useAiTask } from "./use-ai-task";
 
-const globalCache = new Map<string, string>();
+/** Answers survive re-renders and other badges with the same resource and status. */
+const cache = new Map<string, string>();
+const HOVER_DELAY_MS = 300;
 
+/** A one-sentence "why is it in this status, and how do I fix it", fetched on hover. */
 export function useAiTooltip(resourceName: string, status: string) {
-  const [suggestion, setSuggestion] = useState<string | null>(
-    () => globalCache.get(`${resourceName}:${status}`) ?? null,
-  );
-  const [loading, setLoading] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
-  const fetchedRef = useRef(false);
+  const key = `${resourceName}:${status}`;
+  const { text, loading, run } = useAiTask("explain-status");
+  const [cached, setCached] = useState(() => cache.get(key) ?? null);
+  const timer = useRef<ReturnType<typeof setTimeout>>();
+  const started = useRef(false);
+
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  useEffect(() => {
+    if (!loading && text) cache.set(key, text);
+  }, [key, loading, text]);
 
   const triggerFetch = useCallback(() => {
-    const key = `${resourceName}:${status}`;
-    if (globalCache.has(key)) {
-      setSuggestion(globalCache.get(key)!);
-      return;
-    }
-    if (fetchedRef.current || loading) return;
+    const hit = cache.get(key);
+    if (hit) return setCached(hit);
+    if (started.current) return;
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      started.current = true;
+      void run({ resource: resourceName, status });
+    }, HOVER_DELAY_MS);
+  }, [key, resourceName, status, run]);
 
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
-      fetchedRef.current = true;
-      setLoading(true);
-      try {
-        const result = await fetchAiSuggestion(
-          `In one brief sentence, explain why a Kubernetes resource "${resourceName}" has status "${status}" and how to fix it.`,
-          150,
-        );
-        globalCache.set(key, result);
-        setSuggestion(result);
-      } catch {
-        // silently fail
-      } finally {
-        setLoading(false);
-      }
-    }, 300);
-  }, [resourceName, status, loading]);
-
-  return { suggestion, loading, triggerFetch };
+  return { suggestion: cached ?? (text || null), loading, triggerFetch };
 }

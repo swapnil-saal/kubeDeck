@@ -1,9 +1,9 @@
 import { asSchema } from "ai";
 import { describe, expect, it } from "vitest";
-import { buildKubeTools } from "./tools";
+import { kubeToolApproval, kubeTools as tools } from "./tools";
 
-const tools = buildKubeTools({ context: "", namespace: "", threadId: "tools-test" });
-const opts = { toolCallId: "c1", messages: [], abortSignal: new AbortController().signal } as never;
+const context = { context: "", namespace: "", threadId: "tools-test" };
+const opts = { toolCallId: "c1", messages: [], abortSignal: new AbortController().signal, context } as never;
 
 async function valid(tool: keyof typeof tools, input: unknown): Promise<boolean> {
   const schema = asSchema((tools[tool] as { inputSchema: never }).inputSchema);
@@ -40,22 +40,29 @@ describe("structured tool inputs are plain tokens", () => {
   });
 });
 
-describe("approval gating", () => {
-  const needs = async (tool: "kubectl" | "bash", command: string) =>
-    await (tools[tool].needsApproval as (i: { command: string }, o: unknown) => boolean | Promise<boolean>)({ command }, opts);
+describe("approval policy", () => {
+  const decide = (tool: "kubectl" | "bash", command: string) => kubeToolApproval[tool]({ command });
 
-  it("does not ask for read-only kubectl", async () => {
-    expect(await needs("kubectl", "get pods -n x")).toBe(false);
-    expect(await needs("kubectl", "logs x --previous")).toBe(false);
+  it("lets read-only kubectl run", () => {
+    expect(decide("kubectl", "get pods -n x")).toBeUndefined();
+    expect(decide("kubectl", "logs x --previous")).toBeUndefined();
   });
-  it("asks for mutating kubectl", async () => {
-    expect(await needs("kubectl", "scale deploy x --replicas=3")).toBe(true);
-    expect(await needs("kubectl", "rollout restart deploy/x")).toBe(true);
-    expect(await needs("kubectl", "-n x apply -f y.yaml")).toBe(true);
+  it("asks the user for mutating kubectl", () => {
+    expect(decide("kubectl", "scale deploy x --replicas=3")).toBe("user-approval");
+    expect(decide("kubectl", "rollout restart deploy/x")).toBe("user-approval");
+    expect(decide("kubectl", "-n x apply -f y.yaml")).toBe("user-approval");
   });
-  it("asks for mutating kubectl inside bash, not for read-only pipes", async () => {
-    expect(await needs("bash", "kubectl scale deploy x --replicas=1")).toBe(true);
-    expect(await needs("bash", "kubectl get pods | wc -l")).toBe(false);
+  it("asks for mutating kubectl inside bash, not for read-only pipes", () => {
+    expect(decide("bash", "kubectl scale deploy x --replicas=1")).toBe("user-approval");
+    expect(decide("bash", "kubectl get pods | wc -l")).toBeUndefined();
+  });
+  it.each(["get pods && echo INJECTED", "get pods | sh", "get pods; curl evil.example", "get pods $(id)", "get pods > /tmp/x"])(
+    "refuses shell syntax in the kubectl tool: %s",
+    (command) => expect(decide("kubectl", command)).toMatchObject({ type: "denied", reason: expect.stringMatching(/bash tool/) }),
+  );
+  it("denies destructive commands with a reason, without asking", () => {
+    expect(decide("kubectl", "delete pod x")).toMatchObject({ type: "denied", reason: expect.stringMatching(/^Blocked/) });
+    expect(decide("bash", "kubectl get pods -o name | xargs kubectl delete")).toMatchObject({ type: "denied" });
   });
 });
 

@@ -1,6 +1,6 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useState, type FC, type ReactNode } from "react";
 import { Loader2, RefreshCw, ServerCrash, ShieldAlert, SearchX, X, Sparkles } from "lucide-react";
-import { fetchAiSuggestion } from "@/ai";
+import { Markdown, useAiTask } from "@/ai";
 import { useLogStream, type LogKind, type StreamSettings } from "@/hooks/use-log-stream";
 import { hiddenKey, loadHidden, loadPrefs, saveHidden, savePrefs, type GlobalPrefs } from "@/lib/log-prefs";
 import {
@@ -66,8 +66,7 @@ export const LogExplorer: FC<LogExplorerProps> = ({ kind, name, context, namespa
   const [container, setContainer] = useState<string | null>(null);
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
-  const [summary, setSummary] = useState<string | null>(null);
-  const [summarizing, setSummarizing] = useState(false);
+  const logSummary = useAiTask("summarize-logs");
   const [focus, setFocus] = useState(false);
   const [compact, setCompact] = useState(() => typeof window !== "undefined" && window.innerHeight < 860);
   useEffect(() => {
@@ -91,7 +90,7 @@ export const LogExplorer: FC<LogExplorerProps> = ({ kind, name, context, namespa
   const updateHidden = useCallback((next: string[]) => { setHidden(next); saveHidden(hkey, next); }, [hkey]);
 
   // reset view state that only makes sense for one stream
-  useEffect(() => { setSelectedPods(null); setContainer(null); setPaused(false); setFrozen(null); setLevels(null); setSummary(null); }, [kind, name, context, namespace, previous]);
+  useEffect(() => { setSelectedPods(null); setContainer(null); setPaused(false); setFrozen(null); setLevels(null); logSummary.reset(); }, [kind, name, context, namespace, previous]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => setActiveIdx(null), [query, regex, caseSensitive, levels]);
 
   const view = frozen ?? entries;
@@ -178,26 +177,14 @@ export const LogExplorer: FC<LogExplorerProps> = ({ kind, name, context, namespa
     void navigator.clipboard?.writeText(visibleText(rows, multiPod)).catch(() => {});
   };
 
-  const summarize = async () => {
-    setSummarizing(true);
-    setSummary(null);
-    try {
-      const base = result.base;
-      const problemsFirst = base.filter((e) => e.level === "error" || e.level === "fatal" || e.level === "warn").slice(-50);
-      const latest = base.slice(-70);
-      const picked = Array.from(new Map([...problemsFirst, ...latest].map((e) => [e.id, e])).values()).sort((a, b) => a.id - b.id);
-      const text = picked.map((e) => `${multiPod && e.source ? `[${e.source.slice(-12)}] ` : ""}${e.raw.slice(0, 280)}`).join("\n").slice(-7000);
-      const out = await fetchAiSuggestion(
-        `You are an SRE. These are recent logs from ${KIND_LABEL[kind].toLowerCase()} "${name}" (health checks already removed). ` +
-        `In 4-6 short bullet points: what is happening, any errors and their likely root cause, and the single next step to take. Be specific; cite messages.\n\n${text}`,
-        500,
-      );
-      setSummary(out);
-    } catch (e) {
-      setSummary(`Couldn't summarize: ${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      setSummarizing(false);
-    }
+  /** Send the problems first, then the latest lines, to the summarize-logs task. */
+  const summarize = () => {
+    const base = result.base;
+    const problemsFirst = base.filter((e) => e.level === "error" || e.level === "fatal" || e.level === "warn").slice(-50);
+    const latest = base.slice(-70);
+    const picked = Array.from(new Map([...problemsFirst, ...latest].map((e) => [e.id, e])).values()).sort((a, b) => a.id - b.id);
+    const logs = picked.map((e) => `${multiPod && e.source ? `[${e.source.slice(-12)}] ` : ""}${e.raw.slice(0, 280)}`).join("\n").slice(-7000);
+    if (logs) void logSummary.run({ source: `${KIND_LABEL[kind].toLowerCase()} "${name}"`, logs });
   };
 
   // ── empty / error states ──
@@ -274,7 +261,7 @@ export const LogExplorer: FC<LogExplorerProps> = ({ kind, name, context, namespa
         onDownload={download}
         onCopy={copyAll}
         onSummarize={aiEnabled ? summarize : undefined}
-        summarizing={summarizing}
+        summarizing={logSummary.loading}
         format={prefs.format}
         onFormat={(f) => patchPrefs({ format: f })}
         wrap={prefs.wrap}
@@ -326,12 +313,14 @@ export const LogExplorer: FC<LogExplorerProps> = ({ kind, name, context, namespa
           <button type="button" onClick={reconnect} className="ml-auto rounded px-2 py-0.5 font-medium hover:bg-destructive/10">Reconnect</button>
         </div>
       )}
-      {summary && (
-        <div className="relative max-h-24 overflow-auto border-x border-border bg-primary/[0.05] px-3 py-2 text-xs">
+      {(logSummary.text || logSummary.error) && (
+        <div className="relative max-h-40 overflow-auto border-x border-border bg-primary/[0.05] px-3 py-2 text-xs">
           <div className="flex items-start gap-2">
             <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-            <p className="min-w-0 flex-1 whitespace-pre-wrap leading-relaxed text-foreground/90">{summary}</p>
-            <button type="button" onClick={() => setSummary(null)} aria-label="Dismiss summary" className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
+            <div className="min-w-0 flex-1 leading-relaxed text-foreground/90">
+              {logSummary.error ? `Couldn't summarize: ${logSummary.error}` : <Markdown text={logSummary.text} />}
+            </div>
+            <button type="button" onClick={logSummary.reset} aria-label="Dismiss summary" className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
           </div>
         </div>
       )}

@@ -14,7 +14,7 @@ import {
   Box, Layers, Network, Share2, Square, ExternalLink, Save, Pencil,
   Sparkles, Loader2,
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { m as motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { AppHeader } from "@/components/AppHeader";
@@ -27,7 +27,7 @@ import {
   AiExplainButton,
   ResourceAiInsight,
   useAiConfig,
-  fetchAiSuggestion,
+  useAiTask,
 } from "@/ai";
 
 const TYPE_META: Record<string, { label: string }> = {
@@ -372,27 +372,19 @@ function PortForwardBar() {
 
 function EventsPane({ content, isLoading }: { content?: string; isLoading: boolean }) {
   const { isFastModel } = useAiConfig();
-  const [aiSummary, setAiSummary] = useState<string | null>(null);
-  const [summaryLoading, setSummaryLoading] = useState(false);
-  const fetchedRef = useRef(false);
+  const summary = useAiTask("summarize-events");
+  const [dismissed, setDismissed] = useState(false);
+  const { run, reset } = summary;
 
+  // summarize once per set of events; new events replace the old summary
   useEffect(() => {
-    if (!isFastModel || !content || content.length < 50 || fetchedRef.current) return;
-    fetchedRef.current = true;
-    setSummaryLoading(true);
-    fetchAiSuggestion(
-      `Summarize these Kubernetes events in 1-2 sentences, highlighting any failures or warnings:\n${content.slice(0, 2000)}`,
-      200,
-    )
-      .then(setAiSummary)
-      .catch(() => {})
-      .finally(() => setSummaryLoading(false));
-  }, [isFastModel, content]);
+    setDismissed(false);
+    if (!isFastModel || !content || content.length < 50) return reset();
+    void run({ events: content });
+  }, [isFastModel, content, run, reset]);
 
-  useEffect(() => {
-    fetchedRef.current = false;
-    setAiSummary(null);
-  }, [content]);
+  const aiSummary = dismissed ? null : summary.text || null;
+  const summaryLoading = !dismissed && summary.loading && !summary.text;
 
   return (
     <div className="h-full flex flex-col">
@@ -412,7 +404,7 @@ function EventsPane({ content, isLoading }: { content?: string; isLoading: boole
               )}
             </div>
             {aiSummary && (
-              <button onClick={() => setAiSummary(null)} className="text-muted-foreground hover:text-foreground text-xs p-0.5">×</button>
+              <button onClick={() => setDismissed(true)} aria-label="Dismiss summary" className="text-muted-foreground hover:text-foreground text-xs p-0.5">×</button>
             )}
           </div>
         </div>

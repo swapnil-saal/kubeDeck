@@ -1,10 +1,20 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
-import { WebLinksAddon } from "@xterm/addon-web-links";
-import "@xterm/xterm/css/xterm.css";
+import type { Terminal } from "@xterm/xterm";
+import type { FitAddon } from "@xterm/addon-fit";
 import { ChevronUp, X, TerminalSquare, RotateCcw } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { m as motion, AnimatePresence } from "framer-motion";
+
+/** xterm is ~330 KB: it loads the first time the terminal opens, not with the app. */
+let xtermModules: ReturnType<typeof importXterm> | null = null;
+function importXterm() {
+  return Promise.all([
+    import("@xterm/xterm"),
+    import("@xterm/addon-fit"),
+    import("@xterm/addon-web-links"),
+    import("@xterm/xterm/css/xterm.css"),
+  ]);
+}
+const loadXterm = () => (xtermModules ??= importXterm());
 
 /**
  * Powerlevel10k / Oh My Zsh icons live in the Private Use Area and only
@@ -31,10 +41,10 @@ const TERMINAL_FONT_FAMILY = [
   // last-resort symbols-only pack + regular coding fonts
   '"Symbols Nerd Font Mono"',
   '"Symbols Nerd Font"',
-  "'JetBrains Mono'",
-  "'Fira Code'",
   "'SF Mono'",
   "'Cascadia Code'",
+  // bundled with the app, so there is always a good mono face
+  "'JetBrains Mono Variable'",
   "Menlo",
   "ui-monospace",
   "monospace",
@@ -71,6 +81,8 @@ export function TerminalPanel({ context, namespace, isOpen, onToggle, height = 3
   const xtermRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  /** bumps on every open/close, so a connect that finishes loading after a close does nothing */
+  const attemptRef = useRef(0);
   const [isConnected, setIsConnected] = useState(false);
   const [panelHeight, setPanelHeight] = useState(height);
   const resizingRef = useRef(false);
@@ -89,7 +101,11 @@ export function TerminalPanel({ context, namespace, isOpen, onToggle, height = 3
     nsRef.current = namespace;
   }, [context, namespace, isOpen, isConnected]);
 
-  const connectTerminal = useCallback(() => {
+  const connectTerminal = useCallback(async () => {
+    const attempt = ++attemptRef.current;
+    const [{ Terminal }, { FitAddon }, { WebLinksAddon }] = await loadXterm();
+    if (attempt !== attemptRef.current) return;
+
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
@@ -245,9 +261,10 @@ export function TerminalPanel({ context, namespace, isOpen, onToggle, height = 3
 
   useEffect(() => {
     if (isOpen) {
-      const t = setTimeout(() => connectTerminal(), 50);
+      const t = setTimeout(() => void connectTerminal(), 50);
       return () => clearTimeout(t);
     }
+    attemptRef.current++;
     wsRef.current?.close();
     wsRef.current = null;
     xtermRef.current?.dispose();

@@ -97,21 +97,14 @@ const colorMap = {
 ### Font Stack
 
 ```css
---font-sans: 'Outfit', sans-serif;       /* Body, UI labels, headings */
---font-mono: 'JetBrains Mono', monospace; /* Code blocks, technical content */
+--font-sans: 'Outfit Variable', 'Outfit', system-ui, sans-serif;                     /* Body, UI labels, headings */
+--font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, monospace;   /* Logs, YAML, commands, numbers in tables */
 ```
 
-Import via Google Fonts:
-
-```html
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-```
-
-Or in CSS:
-
-```css
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
-```
+Both are variable fonts (every weight in one file: ~31 KB Outfit, ~39 KB JetBrains Mono for Latin), bundled with the app from
+`@fontsource-variable/outfit` and `@fontsource-variable/jetbrains-mono` and imported once in `client/src/main.tsx`.
+Do not load fonts from Google Fonts or any other CDN: the desktop app must work offline, and web mode
+must not call third parties. Do not add more font families.
 
 ### Type Scale
 
@@ -424,7 +417,7 @@ const { theme, setTheme } = useTheme();
 | Data fetching | @tanstack/react-query | catalog |
 | Forms | react-hook-form + @hookform/resolvers | ^7.55, ^3.10 |
 | Charts | recharts | ^2.15 |
-| Fonts | Google Fonts: Outfit + JetBrains Mono | — |
+| Fonts | Outfit + JetBrains Mono, bundled via @fontsource-variable | — |
 | Theme | next-themes | ^0.4.6 |
 
 ---

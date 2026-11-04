@@ -34,7 +34,7 @@ import {
   Zap, Square, FileText, Lock, Globe, Database, Clock, Server, Pin, X, ListTree, Rows3,
   Gauge, HardDrive, RotateCw, Scaling, HeartPulse, AlertTriangle, ChevronDown, ChevronUp, Sparkles, Loader2,
 } from "lucide-react";
-import { motion } from "framer-motion";
+import { m as motion } from "framer-motion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

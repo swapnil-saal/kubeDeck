@@ -319,16 +319,19 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
         if (!byKind[k].includes(r.name)) byKind[k].push(r.name);
       }
 
-      const cmd = await translateToKubectl({
+      const { command, explanation, risk } = await translateToKubectl({
         prompt: q,
         context: context || undefined,
         namespace: namespace && namespace !== "all" ? namespace : undefined,
         resources: byKind,
       });
-      if (cmd) {
-        setAiTranslated({ description: q, command: cmd, confidence: 0.95 });
+      if (command) {
+        const description = risk === "blocked"
+          ? `KubeDeck won't run this (destructive): ${explanation || q}`
+          : risk === "write" ? `Changes the cluster: ${explanation || q}` : explanation || q;
+        setAiTranslated({ description, command, confidence: 0.95 });
       }
-    } catch { /* ignore */ }
+    } catch { /* translation is optional; the typed text still works as a search */ }
     setAiTranslating(false);
   }, [context, namespace, resourceNames]);
 

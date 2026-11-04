@@ -4,29 +4,9 @@ import {
 } from "ai";
 import { AssistantChatTransport } from "@assistant-ui/react-ai-sdk";
 
-/** Thread id scopes the server-side repeat-call guards; history itself lives in the client. */
-const THREAD_KEY = "kubedeck.ai.threadId";
-
-export function getThreadId(): string {
-  try {
-    let id = sessionStorage.getItem(THREAD_KEY);
-    if (!id) {
-      id = `thread_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      sessionStorage.setItem(THREAD_KEY, id);
-    }
-    return id;
-  } catch {
-    return `thread_${Date.now()}`;
-  }
-}
-
-export function resetThreadId(): string {
-  const id = `thread_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  try { sessionStorage.setItem(THREAD_KEY, id); } catch {}
-  return id;
-}
-
 export interface AgentRequestScope {
+  /** the open chat's id; the server scopes its repeat-call and access guards to it */
+  threadId: string;
   context: string;
   namespace: string;
   mode: string;
@@ -37,7 +17,7 @@ export interface AgentRequestScope {
 export function buildAgentTransport(getScope: () => AgentRequestScope) {
   return new AssistantChatTransport<UIMessage>({
     api: "/api/ai/agent",
-    body: () => ({ ...getScope(), threadId: getThreadId() }),
+    body: () => getScope(),
   });
 }
 

@@ -58,7 +58,7 @@ beforeAll(async () => {
     const ac = new AbortController();
     res.on("close", () => { if (!res.writableEnded) ac.abort(); });
     await streamKubeAgent(
-      { messages: body.messages, threadId: body.threadId, context: "", namespace: "", mode: "chat" },
+      { messages: body.messages, options: { scope: { threadId: body.threadId, context: "", namespace: "" }, mode: "chat" } },
       res,
       ac.signal,
     );
@@ -88,11 +88,12 @@ describe("streamKubeAgent", () => {
     expect(calls).toBe(1); // the loop stopped, waiting for the user
   });
 
-  it("blocks a destructive command and lets the model carry on", async () => {
+  it("denies a destructive command without asking, and lets the model carry on", async () => {
     script = ["delete", "text"]; calls = 0;
     const out = await turn("delete it", "agent-test-2");
-    expect(out).not.toContain('"type":"tool-approval-request"');
-    expect(out).toMatch(/"type":"tool-output-available"[^\n]*Blocked/);
+    expect(out).toMatch(/"type":"tool-approval-response"[^\n]*"approved":false/);
+    expect(out).toContain('"type":"tool-output-denied"');
+    expect(out).not.toContain('"type":"tool-output-available"');
     expect(out).toContain("All done.");
     expect(calls).toBe(2);
   });

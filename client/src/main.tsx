@@ -1,4 +1,7 @@
 import { createRoot } from "react-dom/client";
+// Fonts ship with the app (no Google Fonts request): works offline in Electron and in a locked-down web mode.
+import "@fontsource-variable/outfit/wght.css";
+import "@fontsource-variable/jetbrains-mono/wght.css";
 import App from "./App";
 import "./index.css";
 import { migrateSearchIntoHash } from "./lib/hash-router";
