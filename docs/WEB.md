@@ -48,7 +48,7 @@ KubeDeck **refuses to start** in web mode unless it has a proxy secret or networ
 
 Full runbook with every command: **[DEPLOYMENT.md](DEPLOYMENT.md)**. In short:
 
-1. Build the image: `docker build -t <registry>/kubedeck:<version> .` (the `Dockerfile` has no `HEALTHCHECK`; probes live in the pod spec).
+1. Use `swapnilsaal/kubedeck:<version>-web` (amd64 + arm64), or build your own: `docker buildx build --platform linux/amd64,linux/arm64 -t <registry>/kubedeck:<version>-web --push .` (the `Dockerfile` has no `HEALTHCHECK`; probes live in the pod spec).
 2. In Keycloak create an OIDC client for `https://<your-host>/oauth2/callback` and add a `groups` claim mapper if you want group limits.
 3. Edit `deploy/kubernetes/kubedeck.yaml` (every `CHANGE_ME` and `kubedeck.example.com`) and apply it.
 

@@ -24,12 +24,13 @@ Both containers run in **one pod**. Only oauth2-proxy is reachable from outside;
 Use the published image as-is, or build and push your own:
 
 ```sh
-script/docker-build.sh                       # builds swapnilsaal/kubedeck:<version>-web, keeps only the newest
-docker tag swapnilsaal/kubedeck:<version>-web <registry>/kubedeck:<version>-web
-docker push <registry>/kubedeck:<version>-web
+script/docker-build.sh                       # local build for this machine: swapnilsaal/kubedeck:<version>-web
+script/docker-build.sh --push                # amd64 + arm64, pushed as one tag (needs docker login)
+# your own registry, both architectures:
+docker buildx build --platform linux/amd64,linux/arm64 -t <registry>/kubedeck:<version>-web --push .
 ```
 
-The image is about 311 MB, runs as the non-root `node` user, contains `kubectl`, and contains **no kubeconfig and no secrets** (the AI provider key comes from a Secret you create). If your registry is private, add an `imagePullSecrets` entry to the pod spec.
+The published image covers `linux/amd64` and `linux/arm64`. It is about 312 MB, runs as the non-root user uid 1000 (`node`), contains `kubectl` and `jq`, and contains **no kubeconfig and no secrets** (the AI provider key comes from a Secret you create). If your registry is private, add an `imagePullSecrets` entry to the pod spec.
 
 ## 2. Create the Keycloak client
 
@@ -112,14 +113,14 @@ kubectl -n kubedeck logs deploy/kubedeck -c oauth2-proxy  # login activity
 
 ## What users can see
 
-**Everyone who signs in sees whatever the service account can read.** The login decides who may *enter*; Kubernetes RBAC on the `kubedeck` service account decides what they can *read*. The shipped role covers pods, logs, events, namespaces, nodes, services, workloads, jobs, ingresses and metrics, and deliberately **not secrets**.
+**Everyone who signs in can do whatever the service account can do.** The login decides who may *enter*; Kubernetes RBAC on the `kubedeck` service account decides what they can *read* and *change*, from the UI and through the assistant. `kubedeck-reader` covers pods, logs, events, namespaces, nodes, services, workloads, jobs, ingresses and metrics, and deliberately **not secrets**. `kubedeck-operator` adds changes to those workloads and `pods/exec` for pod files; delete it (and set `KUBEDECK_READ_ONLY=true`) for a look-only KubeDeck.
 
 To show a team less, run a separate KubeDeck per team with its own service account and a narrower role. Per-person limits (impersonation by Keycloak group) are not built yet.
 
 ### Several clusters
 
 In a pod KubeDeck shows **one** cluster: the one it runs in (context `in-cluster`). Options for more:
-- Deploy one KubeDeck per cluster (simplest, and each keeps its own read-only account).
+- Deploy one KubeDeck per cluster (simplest, and each keeps its own service account and RBAC).
 - Mount a kubeconfig as a Secret and set `KUBECONFIG` to it. KubeDeck then lists every context in that file, and every user gets that file's access. Use only credentials you are happy to share with all signed-in users, and prefer read-only ones.
 
 ## Operations
@@ -169,6 +170,6 @@ kubectl -n kubedeck rollout status deploy/kubedeck
 
 ## What has and has not been tested
 
-Tested: the image builds and runs; the login gate, host check, read-only rules, removed AI and in-cluster context creation behave as described (with a fake service-account token); the manifest parses.
+Tested: the image builds and runs as uid 1000 on amd64 and arm64; the login gate, host check, feature switches, read-only rules and in-cluster context creation behave as described (with a fake service-account token); with a real cluster and AI provider, the assistant answers, runs shell-free pipelines, refuses `config view --raw`, and in read-only mode refuses changes without asking; pod files list a real pod; the manifest parses.
 
 **Not yet tested end to end:** a real deployment on a cluster, the real Keycloak login, and that your oauth2-proxy version sends the user and group headers under the names KubeDeck reads (`X-Forwarded-User`, `-Email`, `-Preferred-Username`, `-Groups`). Check these on the first deploy: if the page says *Sign in required* after a successful login, the headers are the first thing to look at.
