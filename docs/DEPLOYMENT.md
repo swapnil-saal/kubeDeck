@@ -89,6 +89,10 @@ Optional settings (environment variables on the `kubedeck` container):
 | `KUBEDECK_AI=off` | hide the assistant and every AI feature |
 | `KUBEDECK_POD_FILES=off` | hide the pod Files tab (and drop `pods/exec` from `kubedeck-operator`) |
 
+### Trying it without Keycloak
+
+For a private test cluster you can skip steps 2 and the `kubedeck-oauth` Secret: remove the oauth2-proxy container, and on the `kubedeck` container set `HOST=0.0.0.0`, `KUBEDECK_AUTH=none` and `KUBEDECK_PUBLIC_URL=http://<ip>:<port>` (drop `KUBEDECK_TRUST_PROXY_NETWORK`). Point the Service at port 5000. There is then **no login**: anyone who reaches it has KubeDeck's cluster access, so add `KUBEDECK_READ_ONLY=true` unless you mean otherwise. Details in [WEB.md](WEB.md#no-sign-in-kubedeck_authnone).
+
 ## 5. Deploy
 
 ```sh

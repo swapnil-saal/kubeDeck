@@ -5,7 +5,8 @@
  * Web mode offers the desktop app's features. A shared host cannot trust "whoever is at this
  * machine", so it adds:
  *  - an identity gate: every request must come through the proxy (shared secret, or an explicit
- *    "the network only lets the proxy reach me" declaration) and carry a user;
+ *    "the network only lets the proxy reach me" declaration) and carry a user. KUBEDECK_AUTH=none
+ *    drops the gate for private test clusters: everyone who reaches the URL is "anonymous";
  *  - an optional group allow-list;
  *  - switches to turn writes, the AI assistant and pod files off (KUBEDECK_READ_ONLY,
  *    KUBEDECK_AI, KUBEDECK_POD_FILES); all are on unless turned off;
@@ -39,7 +40,12 @@ export interface WebConfig {
   trustProxyNetwork: boolean;
   /** if set, the user must belong to at least one of these groups */
   allowedGroups: string[];
+  /** no login proxy at all (KUBEDECK_AUTH=none): every request is the anonymous user */
+  authNone: boolean;
 }
+
+/** Who a request is when KUBEDECK_AUTH=none. */
+export const ANONYMOUS: WebUser = { name: "anonymous", email: "", groups: [] };
 
 export interface WebUser {
   name: string;
@@ -65,6 +71,7 @@ export function loadWebConfig(env: NodeJS.ProcessEnv = process.env): WebConfig {
     proxySecret: env.KUBEDECK_PROXY_SECRET ?? "",
     trustProxyNetwork: truthy(env.KUBEDECK_TRUST_PROXY_NETWORK),
     allowedGroups: list(env.KUBEDECK_ALLOWED_GROUPS),
+    authNone: (env.KUBEDECK_AUTH ?? "").trim().toLowerCase() === "none",
   };
 }
 
@@ -72,7 +79,10 @@ export function loadWebConfig(env: NodeJS.ProcessEnv = process.env): WebConfig {
 export function validateWebConfig(c: WebConfig): string[] {
   if (!c.enabled) return [];
   const problems: string[] = [];
-  if (!c.proxySecret && !c.trustProxyNetwork) {
+  if (c.authNone) {
+    // nothing signs anyone in, so there are no groups to check
+    if (c.allowedGroups.length > 0) problems.push("KUBEDECK_ALLOWED_GROUPS needs a login proxy: remove it, or remove KUBEDECK_AUTH=none.");
+  } else if (!c.proxySecret && !c.trustProxyNetwork) {
     problems.push(
       "Web mode needs a way to know requests came through your login proxy: set KUBEDECK_PROXY_SECRET " +
         "(and have the proxy send it as X-KubeDeck-Proxy-Secret), or set KUBEDECK_TRUST_PROXY_NETWORK=1 if a " +
@@ -113,6 +123,8 @@ export type GateResult =
 
 /** Pure decision, so it can be tested without a server. */
 export function checkRequest(headers: IncomingMessage["headers"], c: WebConfig = active): GateResult {
+  // no login proxy: headers could be typed by anyone, so they name nobody
+  if (c.authNone) return { ok: true, user: ANONYMOUS };
   // A configured secret is always required; without one, the operator vouched for the network instead.
   const viaProxy = c.proxySecret ? secretMatches(first(headers["x-kubedeck-proxy-secret"]), c.proxySecret) : c.trustProxyNetwork;
   if (!viaProxy) {
@@ -183,6 +195,8 @@ export function auditLog(req: Request, res: Response, next: NextFunction): void 
   res.on("finish", () => {
     console.log(JSON.stringify({
       audit: true, at: new Date().toISOString(), user: user?.email || user?.name || "unknown",
+      // with no login, the caller's address is the only trace of who it was
+      ...(active.authNone ? { ip: req.socket.remoteAddress ?? "" } : {}),
       method: req.method, path: req.path, status: res.statusCode,
     }));
   });
@@ -243,7 +257,8 @@ export function describeMode(req: Request) {
   return {
     mode: "web" as const,
     readOnly: c.readOnly,
-    user: req.kubedeckUser ? { name: req.kubedeckUser.name, email: req.kubedeckUser.email } : null,
+    auth: c.authNone ? ("none" as const) : ("proxy" as const),
+    user: !c.authNone && req.kubedeckUser ? { name: req.kubedeckUser.name, email: req.kubedeckUser.email } : null,
     // settings come from the server's environment; a forwarded port would open on the server
     features: { portForward: false, settingsEdit: false, ai: c.ai, podFiles: c.podFiles },
   };

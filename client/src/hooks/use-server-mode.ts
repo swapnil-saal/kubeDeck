@@ -4,6 +4,8 @@ export interface ServerMode {
   mode: "desktop" | "web";
   /** a shared KubeDeck refuses scale / restart / edit / delete */
   readOnly: boolean;
+  /** web mode: "proxy" = users sign in through the login proxy; "none" = no sign-in (KUBEDECK_AUTH=none) */
+  auth?: "proxy" | "none";
   user?: { name: string; email: string } | null;
   /** podFiles: browse and search a container's files (kubectl exec); desktop only */
   features: { portForward: boolean; settingsEdit: boolean; ai: boolean; podFiles?: boolean };

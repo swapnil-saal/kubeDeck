@@ -11,7 +11,7 @@ import {
 const SECRET = "s3cret-s3cret-s3cret";
 const cfg = (over: Partial<WebConfig> = {}): WebConfig => ({
   enabled: true, readOnly: true, ai: true, podFiles: true, hosts: ["kube.example.com"], proxySecret: SECRET, trustProxyNetwork: false,
-  allowedGroups: [], ...over,
+  allowedGroups: [], authNone: false, ...over,
 });
 const ok = { "x-kubedeck-proxy-secret": SECRET, "x-forwarded-email": "dev@example.com", "x-forwarded-preferred-username": "dev" };
 
@@ -31,6 +31,14 @@ describe("loadWebConfig / validateWebConfig", () => {
     const weak = validateWebConfig(loadWebConfig({ KUBEDECK_MODE: "web", KUBEDECK_PUBLIC_URL: "https://k.example.com", KUBEDECK_PROXY_SECRET: "short" }));
     expect(weak.join(" ")).toMatch(/16 characters/);
     expect(validateWebConfig(loadWebConfig({ KUBEDECK_MODE: "web", KUBEDECK_PUBLIC_URL: "https://k.example.com", KUBEDECK_TRUST_PROXY_NETWORK: "1" }))).toEqual([]);
+  });
+  it("with KUBEDECK_AUTH=none needs no proxy setting, still needs the public URL, and refuses a group list", () => {
+    const none = { KUBEDECK_MODE: "web", KUBEDECK_AUTH: "none" };
+    expect(loadWebConfig(none).authNone).toBe(true);
+    expect(validateWebConfig(loadWebConfig(none)).join(" ")).toMatch(/KUBEDECK_PUBLIC_URL/);
+    expect(validateWebConfig(loadWebConfig({ ...none, KUBEDECK_PUBLIC_URL: "http://10.0.0.5:30080" }))).toEqual([]);
+    expect(validateWebConfig(loadWebConfig({ ...none, KUBEDECK_PUBLIC_URL: "http://10.0.0.5", KUBEDECK_ALLOWED_GROUPS: "sre" })).join(" "))
+      .toMatch(/ALLOWED_GROUPS needs a login proxy/);
   });
   it("takes the public hostname from the URL", () => {
     expect(loadWebConfig({ KUBEDECK_MODE: "web", KUBEDECK_PUBLIC_URL: "https://E2-K8S.saal.ai/x" }).hosts).toEqual(["e2-k8s.saal.ai"]);
@@ -183,6 +191,15 @@ describe("web mode over HTTP (real middleware)", () => {
     const files = await call("/api/k8s/pods/web-1/files/list?path=/", ok);
     expect(files.status).toBe(403);
     expect((await files.json()).message).toMatch(/pod files is turned off/);
+  });
+  it("with KUBEDECK_AUTH=none serves everyone as anonymous, ignores identity headers, and still checks the host", async () => {
+    setWebConfig(cfg({ authNone: true, proxySecret: "", trustProxyNetwork: false }));
+    expect((await call("/api/k8s/pods")).status).toBe(200);
+    const mode = await (await call("/api/mode", { "x-forwarded-email": "boss@example.com" })).json();
+    expect(mode).toMatchObject({ mode: "web", auth: "none", user: null });
+    expect((await send("/api/k8s/pods", { host: "evil.example.net" })).status).toBe(403);
+    // read-only still applies
+    expect((await call("/api/k8s/deployments/scale", {}, "POST")).status).toBe(403);
   });
   it("never starts a port-forward on the server, but listing stays a read", async () => {
     setWebConfig(cfg({ readOnly: false }));

@@ -15,6 +15,12 @@ if (webProblems.length > 0) {
   process.exit(1);
 }
 setWebConfig(webCfg);
+if (webCfg.enabled && webCfg.authNone) {
+  console.warn(
+    "[kubedeck] KUBEDECK_AUTH=none: no sign-in. Anyone who can reach this server can use it with its cluster access" +
+      (webCfg.readOnly ? " (read-only)." : ", including changes. Set KUBEDECK_READ_ONLY=true or restrict the network."),
+  );
+}
 if (webCfg.enabled) {
   const kc = ensureInClusterKubeconfig();
   if (kc) console.log(`[kubedeck] running in a pod: using the service account via ${kc}`);

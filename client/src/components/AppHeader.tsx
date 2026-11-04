@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect } from "react";
 import { useLocation } from "wouter";
-import { ChevronRight, LogOut, SquareTerminal } from "lucide-react";
+import { ChevronRight, LogOut, ShieldOff, SquareTerminal } from "lucide-react";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
 import { useK8sContexts } from "@/hooks/use-k8s";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -82,6 +82,15 @@ export function AppHeader({ breadcrumbs = [], rightSlot, showSelectors = true }:
           <kbd className="hidden rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-medium lg:inline">⌘K</kbd>
         </button>
         <AlertBell />
+        {serverMode.mode === "web" && serverMode.auth === "none" && (
+          <span
+            title="No sign-in on this KubeDeck: anyone who can reach it can use it"
+            className="flex h-9 items-center gap-1.5 rounded-lg border border-warning/40 bg-warning/10 px-2.5 text-xs font-medium text-warning"
+          >
+            <ShieldOff size={14} className="shrink-0" />
+            <span className="hidden lg:inline">No sign-in</span>
+          </span>
+        )}
         {serverMode.mode === "web" && serverMode.user && (
           <a
             href="/oauth2/sign_out"

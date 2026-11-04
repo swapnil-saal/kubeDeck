@@ -32,6 +32,7 @@ KubeDeck never sees passwords. It trusts the identity headers only when the requ
 | `KUBEDECK_PROXY_SECRET` | ≥16 chars; the proxy must send it as `X-KubeDeck-Proxy-Secret` |
 | `KUBEDECK_TRUST_PROXY_NETWORK=1` | alternative to the secret when only the proxy can reach the server (e.g. sidecar, KubeDeck on `127.0.0.1`) |
 | `KUBEDECK_ALLOWED_GROUPS` | comma list; the user must be in one (groups come from `X-Forwarded-Groups`) |
+| `KUBEDECK_AUTH=none` | **no login at all**, for private test clusters: no proxy needed, everyone who reaches the URL is `anonymous`. See below |
 | `KUBEDECK_READ_ONLY` | `false` (default) or `true`: refuse every change, from the UI, the palette and the assistant |
 | `KUBEDECK_AI` | `on` (default) or `off` |
 | `KUBEDECK_POD_FILES` | `on` (default) or `off` |
@@ -42,7 +43,13 @@ KubeDeck never sees passwords. It trusts the identity headers only when the requ
 | `HOST` | bind address (default `0.0.0.0` in web mode) |
 | `KUBECONFIG` | optional; with no kubeconfig inside a pod, KubeDeck builds one context, `in-cluster`, from the pod's service account |
 
-KubeDeck **refuses to start** in web mode unless it has a proxy secret or network-trust flag, a public URL, and (if a secret is set) one of ≥16 characters.
+KubeDeck **refuses to start** in web mode unless it has a proxy secret or network-trust flag (or `KUBEDECK_AUTH=none`), a public URL, and (if a secret is set) one of ≥16 characters.
+
+### No sign-in (`KUBEDECK_AUTH=none`)
+
+For a private test cluster where you do not want a login yet: run KubeDeck alone (no oauth2-proxy), with `HOST=0.0.0.0`, `KUBEDECK_AUTH=none` and `KUBEDECK_PUBLIC_URL` set to the address people open (an IP is fine). Every request is the user `anonymous`; identity headers are ignored; the host check still applies; audit lines carry the caller's IP. The header shows a **No sign-in** badge and the server logs a warning at startup.
+
+Anyone who can reach the URL gets the cluster access of KubeDeck's kubeconfig or service account, including changes and pod files unless you turn them off. Prefer `KUBEDECK_READ_ONLY=true`, keep it on a network only your team reaches, and switch to a login proxy before wider use. `KUBEDECK_ALLOWED_GROUPS` cannot be used with it.
 
 ## Deploy
 
