@@ -101,7 +101,7 @@ This creates the namespace, a service account with a read cluster role (no secre
 ## 6. Check it works
 
 1. Open `https://<your-host>`. You should be sent to Keycloak, then land on the Overview with your name and a sign-out icon in the header.
-2. Look at what is turned off, by design: no Ask Deck, no pod file browsing, no scale / restart / delete / port-forward buttons, and Settings shows only Appearance and About.
+2. Check the features: Ask Deck answers (if the `kubedeck-ai` Secret exists; otherwise its avatar shows offline), a pod's **Files** tab lists the container's files, and a deployment's actions offer scale / restart. Port-forward is absent by design, and Settings shows only Appearance and About.
 3. Logs and live updates: open a pod's **Logs** tab; lines should stream.
 4. From the command line:
 
@@ -125,7 +125,7 @@ In a pod KubeDeck shows **one** cluster: the one it runs in (context `in-cluster
 
 ## Operations
 
-**Audit trail.** Every write attempt and every kubectl palette command is logged to stdout as one JSON line with the user's email:
+**Audit trail.** Every write attempt, kubectl palette command and assistant request is logged to stdout as one JSON line with the user's email; the assistant's approvals and changes are logged as `[kubedeck:agent]` lines naming the user:
 
 ```sh
 kubectl -n kubedeck logs deploy/kubedeck -c kubedeck | grep '"audit":true'
