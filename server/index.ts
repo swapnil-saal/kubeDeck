@@ -32,7 +32,7 @@ declare module "http" {
   }
 }
 
-// Every API call (kubectl exec, terminal, AI, settings…) must come from this app's own origin.
+// Every API call (kubectl, file browsing, AI, settings…) must come from this app's own origin.
 app.use("/api", requireTrustedRequest);
 // Web mode: pages and API alike need the login proxy's identity; writes are refused when read-only.
 app.use(webGate);

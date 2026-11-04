@@ -86,7 +86,7 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
 export function alertHref(a: Pick<StoredAlert, "resource" | "context" | "namespace">): string {
   const ns = a.resource.namespace || a.namespace;
   const q = `context=${encodeURIComponent(a.context)}&namespace=${encodeURIComponent(ns)}`;
-  if (a.resource.type === "node") return `#/?${q}`;
+  if (a.resource.type === "node") return `#/resources/nodes?${q}`;
   const tab = a.resource.type === "pod" ? "&tab=logs" : "";
   return `#/resource/${a.resource.type}/${encodeURIComponent(a.resource.name)}?${q}${tab}`;
 }

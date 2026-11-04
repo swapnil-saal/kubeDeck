@@ -21,6 +21,7 @@ ENV NODE_ENV=production \
     KUBEDECK_MODE=web \
     PORT=5000
 COPY --from=build /app/dist ./dist
-USER node
+# numeric uid (the image's `node` user): Kubernetes can only verify runAsNonRoot for a number
+USER 1000:1000
 EXPOSE 5000
 CMD ["node", "dist/index.cjs"]

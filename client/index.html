@@ -8,6 +8,18 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
     <link rel="apple-touch-icon" href="/favicon.png" />
     <title>kubedeck.</title>
+    <script>
+      // Apply the saved colour palette before the first paint (see client/src/lib/themes.ts).
+      (function () {
+        try {
+          var mode = localStorage.getItem("kubedeck-theme") || "dark";
+          if (mode === "system") mode = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+          // defaults must match DEFAULT_PALETTE in lib/themes.ts
+          var palette = localStorage.getItem("kubedeck-palette-" + mode) || (mode === "light" ? "paper" : "oled");
+          document.documentElement.setAttribute("data-palette", palette);
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

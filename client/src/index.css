@@ -3,13 +3,13 @@
 @tailwind utilities;
 
 /*
- * Two themes, toggled by next-themes via the `.dark` class on <html>
- * (default dark, storage key `kubedeck-theme`). Brand is the logo cyan
- * (#4FD1D9); light mode uses a deeper teal of the same hue so text and
- * buttons keep contrast on white. Neutrals are blue-tinted (hue 240) per
- * DESIGN_GUIDELINES.md.
+ * Themes = a mode (light / dark, the `.dark` class set by next-themes, key `kubedeck-theme`)
+ * plus a palette (`data-palette` on <html>, see lib/themes.ts and themes.css).
+ * The tokens below are the default palettes: Paper (light) and Charcoal (dark).
+ * `.light` repeats the light tokens so a light preview renders inside the dark app.
+ * Brand is the logo cyan (#4FD1D9); light uses a deeper teal of the same hue for contrast.
  */
-:root {
+:root, .light {
   --font-sans: 'Outfit Variable', 'Outfit', ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
 
@@ -169,13 +169,6 @@
     font-family: var(--font-mono);
   }
 
-  /* Let xterm keep the Nerd Font stack set via Terminal options (do not force JetBrains) */
-  .xterm {
-    font-variant-ligatures: none;
-  }
-  .xterm .xterm-rows span {
-    font-family: inherit;
-  }
 
   ::selection {
     @apply bg-primary/30 text-foreground;
@@ -220,27 +213,6 @@
   }
 }
 
-/* xterm.js overrides */
-.xterm {
-  height: 100%;
-  padding: 2px;
-}
-.xterm-viewport {
-  overflow-y: auto !important;
-}
-.xterm-viewport::-webkit-scrollbar {
-  width: 6px;
-}
-.xterm-viewport::-webkit-scrollbar-track {
-  background: transparent;
-}
-.xterm-viewport::-webkit-scrollbar-thumb {
-  background: hsl(var(--primary) / 0.25);
-  border-radius: 3px;
-}
-.xterm-viewport::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--primary) / 0.4);
-}
 
 /*
  * Light-mode contrast fixes. Status text written for dark backgrounds
@@ -291,4 +263,9 @@
   outline: 2px solid hsl(var(--primary));
   outline-offset: 2px;
   border-radius: 0.5rem;
+}
+/* A field inside a frame that shows its own focus (focus-within:border-…): the frame is the
+   focus indicator, so the input inside it must not draw a second ring. */
+.focus-frame :where(input, textarea):focus-visible {
+  outline: none;
 }

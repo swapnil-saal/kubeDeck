@@ -27,10 +27,28 @@ const TONE: Record<TileTone, string> = {
 };
 
 /** Status tiles: what is the state of each thing, not just how many there are. */
-export const StatTiles: FC<{ tiles: Tile[] }> = ({ tiles }) => (
-  <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
+export const StatTiles: FC<{ tiles: Tile[]; compact?: boolean }> = ({ tiles, compact }) => (
+  <div className={cn("grid gap-3", compact ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-5" : "grid-cols-2 md:grid-cols-3 lg:grid-cols-5")}>
     {tiles.map((t) => {
-      const body = (
+      const body = compact ? (
+        // label above value, small icon: fits five across inside the hero
+        <div className="min-w-0 px-3 py-2.5 text-left">
+          <p className="flex items-center gap-1.5 truncate text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            {t.state === "forbidden" ? <Lock className="h-3 w-3 shrink-0" /> : <t.icon className={cn("h-3 w-3 shrink-0", t.tone === "bad" ? "text-destructive" : "text-primary")} />}
+            {t.label}
+          </p>
+          {t.state === "loading" && <p className="text-xl font-bold leading-tight text-muted-foreground/50">···</p>}
+          {t.state === "forbidden" && <p className="text-sm font-medium leading-tight text-muted-foreground">No access</p>}
+          {t.state === "offline" && <p className="text-sm font-medium leading-tight text-destructive">Offline</p>}
+          {t.state === "error" && <p className="text-sm font-medium leading-tight text-destructive">Unavailable</p>}
+          {t.state === "ok" && (
+            <>
+              <p className="text-xl font-bold tabular-nums leading-tight tracking-tight text-foreground">{t.value}</p>
+              {t.sub && <p className={cn("truncate text-[11px] font-medium", TONE[t.tone ?? "neutral"])}>{t.sub}</p>}
+            </>
+          )}
+        </div>
+      ) : (
         <div className="flex items-center gap-3 px-4 py-3.5">
           <div className={cn(
             "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",

@@ -69,10 +69,12 @@ spec:
       serviceAccountName: kubedeck
       securityContext:
         runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: kubedeck
-          image: swapnilsaal/kubedeck:1.12.2-web   # or your own registry: see docs/DEPLOYMENT.md
+          image: swapnilsaal/kubedeck:1.13.0-web   # or your own registry: see docs/DEPLOYMENT.md
           env:
             - { name: KUBEDECK_MODE, value: web }
             - { name: HOST, value: 127.0.0.1 }            # only the sidecar can reach it

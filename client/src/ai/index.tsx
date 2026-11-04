@@ -30,9 +30,6 @@ type MarkdownModule = typeof import("./chat/Markdown");
 /** The chat page; routes have their own Suspense boundary. */
 export const AiChatPage = lazy(() => import("./AiChatPage"));
 
-export const AiTroubleshootButton = deferred<ComponentProps<TaskDialogs["AiTroubleshootButton"]>>(() =>
-  import("./components/AiTaskDialog").then((m) => ({ default: m.AiTroubleshootButton })),
-);
 export const AiExplainButton = deferred<ComponentProps<TaskDialogs["AiExplainButton"]>>(() =>
   import("./components/AiTaskDialog").then((m) => ({ default: m.AiExplainButton })),
 );

@@ -1,6 +1,6 @@
 {
   "name": "kubedeck",
-  "version": "1.12.2",
+  "version": "1.13.0",
   "description": "KubeDeck — A native macOS Kubernetes navigator. Browse clusters, namespaces, and resources with a built-in terminal.",
   "author": "Swapnil Saal <swapnil-saal>",
   "homepage": "https://github.com/swapnil-saal/kube-navigator",
@@ -42,9 +42,6 @@
     "@radix-ui/react-toast": "^1.2.7",
     "@radix-ui/react-tooltip": "^1.2.0",
     "@tanstack/react-query": "^5.60.5",
-    "@xterm/addon-fit": "^0.11.0",
-    "@xterm/addon-web-links": "^0.12.0",
-    "@xterm/xterm": "^6.0.0",
     "ai": "^7.0.127",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -62,7 +59,6 @@
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "wouter": "^3.3.5",
-    "ws": "^8.18.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {
@@ -72,7 +68,6 @@
     "@types/node": "20.19.27",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",
-    "@types/ws": "^8.5.13",
     "@vitejs/plugin-react": "^4.7.0",
     "autoprefixer": "^10.4.20",
     "electron": "^40.6.0",

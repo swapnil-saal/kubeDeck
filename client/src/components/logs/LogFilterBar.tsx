@@ -82,7 +82,7 @@ export const LogFilterBar: FC<LogFilterBarProps> = (p) => {
     <div className="space-y-2 border-x border-border bg-card/60 px-3 py-2">
       {/* query */}
       <div className="flex flex-wrap items-center gap-2">
-        <label className={cn("flex min-w-[16rem] flex-1 items-center gap-2 rounded-lg border bg-background px-2.5 focus-within:border-primary/50", p.queryError ? "border-destructive/50" : "border-border")}>
+        <label className={cn("focus-frame flex min-w-[16rem] flex-1 items-center gap-2 rounded-lg border bg-background px-2.5 focus-within:border-primary/50", p.queryError ? "border-destructive/50" : "border-border")}>
           <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <input
             ref={inputRef}

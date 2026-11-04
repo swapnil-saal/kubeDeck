@@ -1,5 +1,5 @@
 import { useServerMode } from "@/hooks/use-server-mode";
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from "react";
 import { useParams, useLocation, useSearch } from "wouter";
 import { useHashParams } from "@/hooks/use-hash-params";
 import {
@@ -12,7 +12,7 @@ import {
   FileText, Code, ScrollText, Search,
   Terminal, Variable, Wifi, WifiOff, Copy, Check, GitBranch,
   Box, Layers, Network, Share2, Square, ExternalLink, Save, Pencil,
-  Sparkles, Loader2,
+  Sparkles, Loader2, FolderTree, History,
 } from "lucide-react";
 import { m as motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
@@ -23,12 +23,15 @@ import { LogExplorer } from "@/components/logs/LogExplorer";
 import type { LogKind } from "@/hooks/use-log-stream";
 import { CommandBar, buildDetailCommands } from "@/components/CommandBar";
 import {
-  AiTroubleshootButton,
   AiExplainButton,
   ResourceAiInsight,
   useAiConfig,
   useAiTask,
 } from "@/ai";
+import { kindByType, listHref } from "@/lib/resource-kinds";
+
+/** Loaded when the Files tab is first opened. */
+const PodFileBrowser = lazy(() => import("@/components/files/PodFileBrowser"));
 
 const TYPE_META: Record<string, { label: string }> = {
   pod: { label: "POD" }, deployment: { label: "DEPLOYMENT" }, service: { label: "SERVICE" },
@@ -49,7 +52,7 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-function TerminalPane({ content, isLoading, emptyMsg = "No data" }: {
+function OutputPane({ content, isLoading, emptyMsg = "No data" }: {
   content?: string; isLoading: boolean; emptyMsg?: string;
 }) {
   return (
@@ -410,7 +413,7 @@ function EventsPane({ content, isLoading }: { content?: string; isLoading: boole
         </div>
       )}
       <div className="flex-1 min-h-0">
-        <TerminalPane content={content} isLoading={isLoading} emptyMsg="No events found" />
+        <OutputPane content={content} isLoading={isLoading} emptyMsg="No events found" />
       </div>
     </div>
   );
@@ -436,6 +439,7 @@ export default function ResourceDetail() {
 
   const { get: getParam, set: setParam } = useHashParams();
   const activeTab = getParam("tab") || "describe";
+  const [insightOpen, setInsightOpen] = useState(false);
   const setActiveTab = useCallback((tab: string) => setParam("tab", tab === "describe" ? null : tab), [setParam]);
   const grepFilter = getParam("grep") || "";
   const setGrepFilter = useCallback((g: string) => setParam("grep", g || null), [setParam]);
@@ -485,18 +489,19 @@ export default function ResourceDetail() {
   };
 
   const tabs = [
-    { id: "describe", label: "DESCRIBE", icon: FileText },
+    { id: "describe", label: "Describe", icon: FileText },
     { id: "yaml", label: "YAML", icon: Code },
-    ...(serverMode.canWrite ? [{ id: "edit", label: "EDIT", icon: Pencil }] : []),
+    ...(serverMode.canWrite ? [{ id: "edit", label: "Edit", icon: Pencil }] : []),
     ...(isPod ? [
-      { id: "logs", label: "LOGS", icon: Terminal },
-      { id: "env", label: "ENV", icon: Variable },
+      { id: "logs", label: "Logs", icon: ScrollText },
+      { id: "env", label: "Environment", icon: Variable },
+      ...(serverMode.features.podFiles ? [{ id: "files", label: "Files", icon: FolderTree }] : []),
     ] : []),
     ...(hasLogs && !isPod ? [
-      { id: "logs", label: "LOGS", icon: Terminal },
+      { id: "logs", label: "Logs", icon: ScrollText },
     ] : []),
-    { id: "events", label: "EVENTS", icon: ScrollText },
-    { id: "related", label: "CONNECTED", icon: GitBranch },
+    { id: "events", label: "Events", icon: History },
+    { id: "related", label: "Connected", icon: GitBranch },
   ];
 
   return (
@@ -504,37 +509,28 @@ export default function ResourceDetail() {
       <AppHeader
         showSelectors={false}
         breadcrumbs={[
-          { label: "Dashboard", href: "/" },
-          { label: context },
-          { label: namespace },
-          { label: meta.label },
+          { label: "Overview", href: "/" },
+          {
+            label: kindByType(type)?.label ?? meta.label,
+            // back to the list this resource lives in, in its own scope
+            href: kindByType(type) ? `${listHref(kindByType(type)!.key)}?context=${encodeURIComponent(context)}&namespace=${encodeURIComponent(namespace)}` : undefined,
+          },
           { label: name },
         ]}
       />
 
-      {/* on the Logs tab every pixel of height belongs to the log lines */}
-      {activeTab !== "logs" && serverMode.aiEnabled && (
-        <ResourceAiInsight
-          resourceType={type}
-          name={name}
-          namespace={namespace}
-          context={context}
-          describe={describeData?.content}
-          events={eventsData?.content}
-          autoRun={false}
-        />
-      )}
-
       {/* ══════ CONTENT ══════ */}
       <div className="flex-1 overflow-hidden flex flex-col">
         <div className="px-7 pt-4 pb-0">
+          {/* the tab row never moves: the AI button lives in it, and its panel opens below */}
+          <div className="flex flex-wrap items-center gap-3">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="bg-secondary/50 border border-border/50 p-1 h-auto rounded-xl gap-1">
               {tabs.map(tab => (
                 <TabsTrigger
                   key={tab.id}
                   value={tab.id}
-                  className="text-[11px] font-semibold rounded-lg px-4 py-1.5 transition-colors gap-1.5
+                  className="text-xs font-medium rounded-lg px-3.5 py-1.5 transition-colors gap-1.5
                     data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground data-[state=inactive]:hover:bg-background/60
                     data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-none"
                 >
@@ -544,25 +540,29 @@ export default function ResourceDetail() {
               ))}
             </TabsList>
           </Tabs>
+          {serverMode.aiEnabled && (
+            <button
+              type="button"
+              onClick={() => setInsightOpen((v) => !v)}
+              aria-expanded={insightOpen}
+              className={`ml-auto inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${insightOpen ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:border-primary/40 hover:text-primary"}`}
+            >
+              <Sparkles className="h-3.5 w-3.5" />Diagnose with AI
+            </button>
+          )}
+          </div>
+          {insightOpen && serverMode.aiEnabled && (
+            <ResourceAiInsight resourceType={type} name={name} namespace={namespace} context={context} onClose={() => setInsightOpen(false)} />
+          )}
         </div>
 
-        <div className={activeTab === "logs" ? "flex-1 overflow-auto p-3 pt-2" : "flex-1 overflow-hidden p-7 pt-3"}>
+        <div className={activeTab === "logs" || activeTab === "files" ? "flex-1 overflow-auto p-3 pt-2" : "flex-1 overflow-hidden p-7 pt-3"}>
           <AnimatePresence mode="wait">
             <motion.div key={activeTab} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }} className="h-full" style={activeTab === "logs" ? { minHeight: "26rem" } : undefined}>
               {activeTab === "describe" && (
                 <div className="h-full flex flex-col">
-                  {serverMode.aiEnabled && <div className="flex items-center justify-end gap-2 mb-2 shrink-0">
-                    <AiTroubleshootButton
-                      resourceType={type}
-                      name={name}
-                      namespace={namespace}
-                      context={context}
-                      describe={describeData?.content}
-                      events={eventsData?.content}
-                    />
-                  </div>}
                   <div className="flex-1 min-h-0">
-                    <TerminalPane content={describeData?.content} isLoading={describeLoading}
+                    <OutputPane content={describeData?.content} isLoading={describeLoading}
                       emptyMsg={describeError ? (describeErrorObj?.message || "Failed to describe") : "No data"} />
                   </div>
                 </div>
@@ -588,6 +588,11 @@ export default function ResourceDetail() {
                   aiEnabled={serverMode.aiEnabled}
                   workloadLink={ownerLink}
                 />
+              )}
+              {activeTab === "files" && isPod && serverMode.features.podFiles && (
+                <Suspense fallback={null}>
+                  <PodFileBrowser pod={name} context={context} namespace={namespace} />
+                </Suspense>
               )}
               {activeTab === "env" && isPod && (
                 <EnvViewer content={envData?.env} isLoading={envLoading} />

@@ -40,7 +40,6 @@
 | 🔌 **Port forwarding** | Start, test, and stop `kubectl port-forward` sessions from the UI |
 | ⌘K **kubectl palette** | Run kubectl or describe what you want in plain English |
 | 🗂️ **Multiple kubeconfigs** | Point KubeDeck at several kubeconfig files in Settings |
-| 💻 **Built-in terminal** | Full xterm.js terminal running your default shell |
 | 🌙 **Dark / Light theme** | System-aware theme with manual toggle |
 | ⚡ **Fast** | Electron + Vite + React, no cloud dependency — everything runs locally |
 
@@ -72,7 +71,6 @@ KubeDeck reads your full shell environment (including `KUBECONFIG` set in `.zshr
 - **React 18 + Vite** — frontend
 - **Vercel AI SDK + assistant-ui** — the AI chat and agent
 - **Express 5** — local API server (bundled inside the app)
-- **xterm.js** — terminal emulator
 - **Tailwind CSS + shadcn/ui** — UI components
 - **kubectl CLI** — all K8s operations (shell out, no SDK dependency)
 
@@ -123,7 +121,7 @@ npm run package:win          # Windows NSIS installer + portable (also built by 
 │       └── ai/      # AI chat, cluster pulse and inline AI actions (import via "@/ai")
 ├── server/          # Express API server
 │   ├── routes.ts    # kubectl-backed REST routes
-│   ├── security.ts  # loopback / same-origin guard for the API and terminal
+│   ├── security.ts  # loopback / same-origin guard for the API
 │   └── ai/          # providers, one-shot endpoints and the streaming agent (entry: registerAiRoutes)
 ├── electron/
 │   └── main.cjs     # Electron main process

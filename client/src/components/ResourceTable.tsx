@@ -207,7 +207,7 @@ export function ResourceTable<T extends { name: string; status?: string }>({
         <div className="relative w-80 max-w-[50%]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
           <input
-            placeholder="Filter resources..."
+            placeholder={`Filter ${emptyLabel ?? "resources"}…`}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full h-8 pl-9 pr-3 bg-secondary/50 border border-border/50 rounded-lg text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-colors"
@@ -279,9 +279,12 @@ export function ResourceTable<T extends { name: string; status?: string }>({
                 <AlertTriangle size={13} /> Fetch error
               </span>
             ) : (
-              <span className="bg-primary/10 text-primary border border-primary/20 px-2.5 py-1 rounded-full text-[10px] font-semibold">
-                {filteredData?.length ?? 0} resources
-              </span>
+              // the page heading shows the total; only a filter needs its own count
+              search && data && (filteredData?.length ?? 0) !== data.length ? (
+                <span className="bg-primary/10 text-primary border border-primary/20 px-2.5 py-1 rounded-full text-[10px] font-semibold">
+                  {filteredData?.length ?? 0} of {data.length} match
+                </span>
+              ) : null
             )}
           </div>
         </div>

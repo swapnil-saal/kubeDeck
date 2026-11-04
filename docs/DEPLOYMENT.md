@@ -17,7 +17,7 @@ Both containers run in **one pod**. Only oauth2-proxy is reachable from outside;
 | A hostname | e.g. `kubedeck.yourcompany.com`, pointing at the ingress |
 | Keycloak admin access | to create one OIDC client |
 | `kubectl` access | able to create a namespace, RBAC and a Deployment |
-| The image | `swapnilsaal/kubedeck:1.12.2-web` on Docker Hub, or build your own (below) |
+| The image | `swapnilsaal/kubedeck:1.13.0-web` on Docker Hub, or build your own (below) |
 
 ## 1. The image
 
@@ -89,7 +89,7 @@ This creates the namespace, a service account with a **read-only** cluster role 
 ## 6. Check it works
 
 1. Open `https://<your-host>`. You should be sent to Keycloak, then land on the Overview with your name and a sign-out icon in the header.
-2. Look at what is turned off, by design: no Terminal bar, no Settings tab, no Ask Deck, no scale / restart / delete / port-forward buttons.
+2. Look at what is turned off, by design: no Ask Deck, no pod file browsing, no scale / restart / delete / port-forward buttons, and Settings shows only Appearance and About.
 3. Logs and live updates: open a pod's **Logs** tab; lines should stream.
 4. From the command line:
 

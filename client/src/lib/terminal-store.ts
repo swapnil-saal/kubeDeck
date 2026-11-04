@@ -1,7 +1,6 @@
 /**
- * Lightweight global store for terminal + active k8s context/namespace.
- * Uses a simple pub-sub pattern so the TerminalPanel can live in App.tsx
- * while Dashboard/ResourceDetail can read/write the same state.
+ * The selected cluster context and namespace, shared by every page (a tiny pub-sub store,
+ * persisted in localStorage). Historically named after the terminal it once also served.
  */
 
 const STORAGE_KEY = "kubedeck-defaults";
@@ -9,7 +8,6 @@ const STORAGE_KEY = "kubedeck-defaults";
 interface KubeState {
   context: string;
   namespace: string;
-  terminalOpen: boolean;
   /** last namespace used in each context, so switching clusters comes back to where you were */
   namespaceByContext: Record<string, string>;
 }
@@ -30,12 +28,11 @@ function loadFromStorage(): KubeState {
     return {
       context,
       namespace,
-      terminalOpen: parsed.terminalOpen ?? false,
       // older versions did not remember per context; seed it from the current pair
       namespaceByContext: context && !remembered[context] ? { ...remembered, [context]: namespace } : remembered,
     };
   } catch {
-    return { context: "", namespace: "default", terminalOpen: false, namespaceByContext: {} };
+    return { context: "", namespace: "default", namespaceByContext: {} };
   }
 }
 
@@ -73,12 +70,6 @@ export function setNamespace(ns: string) {
 /** Apply a cluster + namespace together (deep links, "switch to a namespace you can read"). */
 export function setScope(ctx: string, ns: string) {
   state = { ...state, context: ctx, namespace: ns, namespaceByContext: { ...state.namespaceByContext, [ctx]: ns } };
-  persist();
-  notify();
-}
-
-export function toggleTerminal() {
-  state = { ...state, terminalOpen: !state.terminalOpen };
   persist();
   notify();
 }

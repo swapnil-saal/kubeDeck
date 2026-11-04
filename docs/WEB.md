@@ -16,7 +16,7 @@ KubeDeck never sees passwords. It trusts the identity headers only when the requ
 | Who is allowed | whoever is at the machine | users the proxy signed in (optionally limited to groups) |
 | Cluster identity | your kubeconfig | the server's: a service account (in a pod) or the server's `KUBECONFIG` |
 | Writes (scale, restart, edit, delete) | allowed | **off by default** (`KUBEDECK_READ_ONLY=false` to allow) |
-| Terminal | yes | **never** (a shell would hand every user the server's cluster identity) |
+| Browse pod files (kubectl exec) | yes | **never** (exec would hand every user the server's cluster identity) |
 | Port-forward | yes | no |
 | Settings | edited in the app | none: configuration comes from the environment |
 | kubectl palette | any verb | read-only verbs; no `config`, `exec`, `cp`, `port-forward`, `auth`, and no `--token/--server/--kubeconfig/--as` flags |

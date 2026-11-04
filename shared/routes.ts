@@ -190,10 +190,6 @@ export const api = {
       path: '/api/k8s/resource/:type/:name/related' as const,
       responses: { 200: relatedResourceSchema, 500: errorSchemas.internal },
     },
-    // Terminal (WebSocket-based, path used for WS upgrade)
-    terminal: {
-      path: '/api/terminal' as const,
-    },
   },
   settings: {
     get: {

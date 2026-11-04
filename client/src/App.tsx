@@ -9,18 +9,21 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Loader2 } from "lucide-react";
 import Dashboard from "@/pages/Dashboard";
 import { AiChatPage } from "@/ai";
-import { TerminalPanel } from "@/components/TerminalPanel";
+import { AppSidebar } from "@/components/AppSidebar";
+import { PortForwardBar } from "@/components/PortForwardBar";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
 import { useAppHashLocation, useAppHashSearch } from "@/lib/hash-router";
 import { useAlertWatcher } from "@/hooks/use-alerts";
 import { useServerMode } from "@/hooks/use-server-mode";
 import { alertHref, setToastHandler } from "@/lib/alert-store";
 import { toast } from "@/hooks/use-toast";
+import { useApplyPalette } from "@/lib/themes";
 
 /** framer-motion's animation engine arrives after first paint (see lib/motion-features.ts). */
 const loadMotionFeatures = () => import("@/lib/motion-features").then((m) => m.default);
 
 // The overview is the landing page and loads with the app; everything else loads when first used.
+const ResourceList = lazy(() => import("@/pages/ResourceList"));
 const ResourceDetail = lazy(() => import("@/pages/ResourceDetail"));
 const Settings = lazy(() => import("@/pages/Settings"));
 const NotFound = lazy(() => import("@/pages/not-found"));
@@ -40,6 +43,7 @@ function Routes() {
     <Switch>
       <Route path="/" component={Dashboard} />
       {aiEnabled && <Route path="/ai" component={AiChatPage} />}
+      <Route path="/resources/:kind" component={ResourceList} />
       <Route path="/resource/:type/:name" component={ResourceDetail} />
       <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
@@ -48,12 +52,10 @@ function Routes() {
 }
 
 function AppShell() {
-  const { context, namespace, terminalOpen, toggleTerminal } = useTerminalStore();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const closePalette = useCallback(() => setPaletteOpen(false), []);
-  const serverMode = useServerMode();
-  const terminalAllowed = serverMode.features.terminal;
 
+  useApplyPalette();
   // new failures in the selected namespace: bell + desktop notification (+ a toast when the window is in front)
   useAlertWatcher();
   useEffect(() => {
@@ -70,10 +72,6 @@ function AppShell() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key === "`" && terminalAllowed) {
-        e.preventDefault();
-        toggleTerminal();
-      }
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
         setPaletteOpen((prev) => !prev);
@@ -81,38 +79,31 @@ function AppShell() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [toggleTerminal, terminalAllowed]);
+  }, []);
 
   return (
-    <div className="flex flex-col h-screen bg-background text-foreground overflow-hidden">
-      <div className="flex-1 overflow-hidden min-h-0 relative flex flex-col">
-        <WouterRouter
-          // Custom hash location keeps query inside the hash only
-          hook={useAppHashLocation as never}
-          searchHook={useAppHashSearch as never}
-        >
-          <Suspense fallback={<PageLoading />}>
-            <Routes />
+    // Custom hash location keeps the query inside the hash only
+    <WouterRouter hook={useAppHashLocation as never} searchHook={useAppHashSearch as never}>
+      <div className="flex h-screen overflow-hidden bg-background text-foreground">
+        <AppSidebar />
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+            <Suspense fallback={<PageLoading />}>
+              <Routes />
+            </Suspense>
+          </div>
+
+          <PortForwardBar />
+        </div>
+
+        {/* mounted only while open: its resource queries do not run in the background */}
+        {paletteOpen && (
+          <Suspense fallback={null}>
+            <KubectlPalette open onClose={closePalette} />
           </Suspense>
-        </WouterRouter>
+        )}
       </div>
-
-      {terminalAllowed && (
-        <TerminalPanel
-          context={context}
-          namespace={namespace}
-          isOpen={terminalOpen}
-          onToggle={toggleTerminal}
-        />
-      )}
-
-      {/* mounted only while open: its resource queries do not run in the background */}
-      {paletteOpen && (
-        <Suspense fallback={null}>
-          <KubectlPalette open onClose={closePalette} />
-        </Suspense>
-      )}
-    </div>
+    </WouterRouter>
   );
 }
 
@@ -121,7 +112,7 @@ function App() {
     <ThemeProvider
       attribute="class"
       defaultTheme="dark"
-      enableSystem={false}
+      enableSystem
       disableTransitionOnChange
       storageKey="kubedeck-theme"
     >

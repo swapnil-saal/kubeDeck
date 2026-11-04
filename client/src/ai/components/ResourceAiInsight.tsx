@@ -1,167 +1,96 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
-import { Sparkles, RefreshCw, Loader2, MessageSquare, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { AlertCircle, Check, Copy, Loader2, MessageSquare, RefreshCw, Sparkles, X } from "lucide-react";
 import { Markdown } from "@/ai/chat/Markdown";
+import { useAiTask } from "@/ai/hooks/use-ai-task";
+import { useResourceDescribe, useResourceEvents } from "@/hooks/use-k8s";
 
 interface Props {
   resourceType: string;
   name: string;
   namespace: string;
   context: string;
-  describe?: string;
-  events?: string;
-  logs?: string;
-  /**
-   * If false, the panel stays collapsed until the user expands it; AI is not
-   * fetched until first expansion. Defaults to true (auto-fetch on mount).
-   */
-  autoRun?: boolean;
+  onClose: () => void;
 }
 
+const iconButton = "rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground";
+
 /**
- * Compact AI insight strip shown above the resource tabs. Auto-streams a brief
- * SRE-style diagnosis when describe/events are present, and offers a deep-link
- * to open the chat seeded with the resource's full context for follow-up.
+ * The resource page's AI diagnosis. Opened by the user (never on page load): it reads the
+ * resource's describe output and events itself, whichever tab is open, and streams a diagnosis.
  */
-export function ResourceAiInsight({
-  resourceType, name, namespace, context, describe, events, logs, autoRun = true,
-}: Props) {
+export function ResourceAiInsight({ resourceType, name, namespace, context, onClose }: Props) {
   const [, navigate] = useLocation();
-  const [open, setOpen] = useState(autoRun);
-  const [content, setContent] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const ranKeyRef = useRef<string>("");
-  const abortRef = useRef<AbortController | null>(null);
+  const describe = useResourceDescribe(resourceType, name, context, namespace);
+  const events = useResourceEvents(resourceType, name, context, namespace);
+  const task = useAiTask("troubleshoot");
+  const [copied, setCopied] = useState(false);
+  const started = useRef(false);
 
-  // Re-run when the resource's data signature changes meaningfully
-  const dataKey = `${context}|${namespace}|${resourceType}|${name}|${(describe ?? "").length}|${(events ?? "").length}|${(logs ?? "").length}`;
+  const gathering = describe.isLoading || events.isLoading;
+  const run = () =>
+    void task.run({
+      resourceType, name, namespace, context,
+      describe: describe.data?.content,
+      events: events.data?.content,
+    });
 
-  const run = async () => {
-    if (!name) return;
-    abortRef.current?.abort();
-    const ac = new AbortController();
-    abortRef.current = ac;
-    setLoading(true);
-    setError(null);
-    setContent("");
-    try {
-      const res = await fetch("/api/ai/troubleshoot", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resourceType, name, namespace, context, describe, events, logs }),
-        signal: ac.signal,
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({ message: "Failed" }));
-        throw new Error(body.message || `HTTP ${res.status}`);
-      }
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-      let full = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split("\n");
-        buf = lines.pop() || "";
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const payload = line.slice(6).trim();
-          if (!payload || payload === "[DONE]") continue;
-          try {
-            const j = JSON.parse(payload);
-            if (j.error) { setError(j.error); break; }
-            if (j.text) { full += j.text; setContent(full); }
-          } catch { /* ignore */ }
-        }
-      }
-      ranKeyRef.current = dataKey;
-    } catch (err: any) {
-      if (err?.name !== "AbortError") setError(err?.message || "Failed");
-    } finally {
-      setLoading(false);
-      abortRef.current = null;
-    }
-  };
-
+  // start once the resource's own data has arrived (or failed: the model still gets what there is)
   useEffect(() => {
-    if (!open) return;
-    if (!autoRun) return;
-    if (!name) return;
-    if (!describe && !events && !logs) return;
-    if (ranKeyRef.current === dataKey) return;
-    void run();
+    if (started.current || gathering) return;
+    started.current = true;
+    run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, dataKey, autoRun, name]);
+  }, [gathering]);
 
-  useEffect(() => () => abortRef.current?.abort(), []);
-
-  const handleDiscuss = () => {
+  const discuss = () => {
     const prompt = `Continue investigating ${resourceType}/${name} in namespace ${namespace}. Look at logs, events, and dependent resources to identify the root cause and propose fixes.`;
     navigate(`/ai?prompt=${encodeURIComponent(prompt)}&context=${encodeURIComponent(context)}&namespace=${encodeURIComponent(namespace)}`);
   };
 
   return (
-    <div className="mx-7 mt-3 rounded-xl border border-primary/20 bg-primary/5 overflow-hidden">
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-2 px-4 py-2 text-left hover:bg-primary/10 transition-colors"
-      >
-        <Sparkles size={14} className="text-primary shrink-0" />
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-primary">AI Insight</span>
-        <span className="text-xs text-muted-foreground truncate">
-          {loading ? "Analyzing…" : error ? "Failed to analyze" : content ? "Diagnosis ready" : "Click to analyze this resource"}
+    <section aria-label="AI diagnosis" className="mt-3 overflow-hidden rounded-xl border border-primary/25 bg-primary/[0.04]">
+      <header className="flex items-center gap-2 border-b border-primary/15 px-4 py-2">
+        <Sparkles className="h-4 w-4 shrink-0 text-primary" />
+        <h2 className="text-[13px] font-semibold text-foreground">AI diagnosis</h2>
+        <span className="truncate text-xs text-muted-foreground">
+          {gathering ? "Reading the resource…" : task.loading ? "Analyzing…" : task.error ? "Couldn't finish" : "Based on describe output and events"}
         </span>
-        <div className="ml-auto flex items-center gap-2">
-          {content && !loading && (
-            <button
-              onClick={(e) => { e.stopPropagation(); void run(); }}
-              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-              title="Re-analyze"
-            >
-              <RefreshCw size={12} />
-            </button>
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          {!task.loading && task.text && (
+            <>
+              <button type="button" onClick={run} className={iconButton} title="Analyze again" aria-label="Analyze again"><RefreshCw className="h-3.5 w-3.5" /></button>
+              <button
+                type="button"
+                onClick={() => { void navigator.clipboard?.writeText(task.text); setCopied(true); setTimeout(() => setCopied(false), 1200); }}
+                className={iconButton}
+                title="Copy"
+                aria-label="Copy the diagnosis"
+              >
+                {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+              </button>
+            </>
           )}
           <button
-            onClick={(e) => { e.stopPropagation(); handleDiscuss(); }}
-            className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold text-primary bg-primary/10 hover:bg-primary/20 border border-primary/20 rounded-full transition-colors"
-            title="Open in chat for follow-up investigation"
+            type="button"
+            onClick={discuss}
+            className="flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/20"
+            title="Continue in Ask Deck"
           >
-            <MessageSquare size={12} />
-            Discuss in chat
+            <MessageSquare className="h-3 w-3" />Discuss in chat
           </button>
-          {open ? <ChevronUp size={14} className="text-muted-foreground" /> : <ChevronDown size={14} className="text-muted-foreground" />}
+          <button type="button" onClick={() => { task.stop(); onClose(); }} className={iconButton} title="Close" aria-label="Close the diagnosis"><X className="h-3.5 w-3.5" /></button>
         </div>
-      </button>
-
-      {open && (
-        <div className="border-t border-primary/15 px-4 py-3 bg-background/40">
-          {loading && !content && (
-            <div className="flex items-center gap-2 text-muted-foreground text-xs">
-              <Loader2 className="w-3 h-3 animate-spin text-primary" />
-              Streaming diagnosis…
-            </div>
-          )}
-          {error && (
-            <div className="flex items-start gap-2 text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded px-2 py-1.5">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-              <span>{error}</span>
-            </div>
-          )}
-          {content && (
-            <div className="text-xs">
-              <Markdown text={content} />
-            </div>
-          )}
-          {!content && !loading && !error && !describe && !events && !logs && (
-            <div className="text-xs text-muted-foreground italic">
-              Open the Describe or Events tab — the AI will analyze them automatically next time.
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+      </header>
+      <div className="max-h-[45vh] overflow-y-auto px-4 py-3 text-sm">
+        {(gathering || (task.loading && !task.text)) && (
+          <p className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />{gathering ? "Reading describe output and events…" : "Streaming the diagnosis…"}</p>
+        )}
+        {task.error && (
+          <p className="flex items-start gap-2 text-xs text-destructive"><AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{task.error}</p>
+        )}
+        {task.text && <Markdown text={task.text} />}
+      </div>
+    </section>
   );
 }

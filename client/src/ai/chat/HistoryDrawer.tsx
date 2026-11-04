@@ -152,7 +152,7 @@ export const HistoryDrawer: FC<{
               </button>
             </div>
 
-            <label className="mx-3 mb-2 flex items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-1.5 focus-within:border-primary/50">
+            <label className="focus-frame mx-3 mb-2 flex items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-1.5 focus-within:border-primary/50">
               <Search className="h-3.5 w-3.5 text-muted-foreground" />
               <input
                 ref={searchRef}

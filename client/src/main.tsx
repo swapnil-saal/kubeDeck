@@ -4,6 +4,7 @@ import "@fontsource-variable/outfit/wght.css";
 import "@fontsource-variable/jetbrains-mono/wght.css";
 import App from "./App";
 import "./index.css";
+import "./themes.css";
 import { migrateSearchIntoHash } from "./lib/hash-router";
 
 // Hash-router SPA: real path `/ai?prompt=…` → `/#/ai?prompt=…`

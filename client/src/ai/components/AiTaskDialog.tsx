@@ -110,20 +110,6 @@ function AiTaskDialog<T extends AiTaskName>({
   );
 }
 
-/** "AI Diagnose": root cause and next steps for one resource. */
-export function AiTroubleshootButton(props: AiTaskInputs["troubleshoot"]) {
-  return (
-    <AiTaskDialog
-      task="troubleshoot"
-      input={props}
-      buttonLabel="AI Diagnose"
-      buttonTitle="AI Troubleshoot"
-      dialogTitle={`AI Diagnosis — ${props.resourceType}/${props.name}`}
-      busyText="Analyzing resource..."
-    />
-  );
-}
-
 /** "Explain": a plain-language walk through a manifest. */
 export function AiExplainButton({ yaml, resourceType }: { yaml: string; resourceType: string }) {
   return (

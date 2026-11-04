@@ -1,24 +1,11 @@
 import { useMemo } from "react";
 import { useSettings } from "@/hooks/use-settings";
 
-const FAST_MODELS = new Set([
-  "qwen3.5:0.8b",
-  "qwen3.5:2b",
-  "gpt-4o-mini",
-  "gpt-3.5-turbo",
-  "phi3",
-  "gemma2",
-  "gemma4:e2b",
-  "llama3.2",
-]);
-
-function isFastModelName(model: string): boolean {
-  if (FAST_MODELS.has(model)) return true;
-  if (model.startsWith("claude-3-5-haiku")) return true;
-  if (model.startsWith("qwen3.5")) return true;
-  const sizeSuffix = model.match(/:(\d+(?:\.\d+)?)b$/i);
-  if (sizeSuffix && parseFloat(sizeSuffix[1]) <= 8) return true;
-  return false;
+/** A small, cheap model by its name: haiku / mini / nano / flash / small, or ≤ 8B parameters. */
+export function isFastModelName(model: string): boolean {
+  if (/(^|[-:._])(haiku|mini|nano|flash|small|lite)([-:._]|$)/i.test(model)) return true;
+  const size = model.match(/[:-](\d+(?:\.\d+)?)b\b/i);
+  return !!size && Number.parseFloat(size[1]) <= 8;
 }
 
 export function useAiConfig() {
@@ -31,8 +18,10 @@ export function useAiConfig() {
     const isConfigured = !!(
       settings?.ai?.apiKey || provider === "ollama"
     );
-    const isFast = isConfigured && isFastModelName(model);
     const hasFastModel = isConfigured && !!fastModel;
+    // quick features (event summaries, status hints) run on the fast model: on once one is set,
+    // or when the main model is itself a small one
+    const isFast = hasFastModel || (isConfigured && isFastModelName(model));
 
     return { provider, model, fastModel, isFastModel: isFast, hasFastModel, isConfigured };
   }, [settings?.ai]);

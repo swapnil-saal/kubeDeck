@@ -7,21 +7,20 @@ import { registerExecRoutes } from "./exec-routes";
 import { registerHomeRoutes } from "./home-routes";
 import { runKubectl, runKubectlRaw } from "./kubectl-run";
 import { registerLogRoutes } from "./log-routes";
+import { registerPodFilesRoutes } from "./pod-files-routes";
 import { registerPortForwardRoutes } from "./port-forward-routes";
 import { registerResourceRoutes } from "./resource-routes";
 import { registerSettingsRoutes } from "./settings-routes";
-import { registerTerminalWebSocket } from "./terminal-ws";
 import { isWebMode } from "./web-mode";
 
-/** Mounts every HTTP route and the terminal WebSocket. Each area lives in its own module. */
+/** Mounts every HTTP route. Each area lives in its own module. */
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
   registerResourceRoutes(app);
   registerActionRoutes(app);
   registerPortForwardRoutes(app);
   registerDetailRoutes(app);
-  // ── Interactive terminal (WebSocket ↔ stdin/stdout) ─
-  // a shell on a shared host would hand every user the server's cluster identity
-  if (!isWebMode()) registerTerminalWebSocket(httpServer);
+  // file browsing runs kubectl exec: never on a shared host
+  if (!isWebMode()) registerPodFilesRoutes(app);
 
   registerSettingsRoutes(app);
   registerExecRoutes(app);

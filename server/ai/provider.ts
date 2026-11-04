@@ -6,7 +6,7 @@ import { loadSettings, type AiProviderSettings } from "../settings";
 
 export const DEFAULTS: Record<string, { baseUrl: string; defaultModel: string; defaultFastModel: string }> = {
   openai: { baseUrl: "https://api.openai.com/v1", defaultModel: "gpt-4o-mini", defaultFastModel: "gpt-4o-mini" },
-  anthropic: { baseUrl: "https://api.anthropic.com/v1", defaultModel: "claude-3-5-haiku-20241022", defaultFastModel: "claude-3-5-haiku-20241022" },
+  anthropic: { baseUrl: "https://api.anthropic.com/v1", defaultModel: "claude-sonnet-5-5", defaultFastModel: "claude-haiku-5-5" },
   ollama: { baseUrl: "http://localhost:11434", defaultModel: "llama3.2", defaultFastModel: "qwen3.5:0.8b" },
   custom: { baseUrl: "", defaultModel: "", defaultFastModel: "" },
 };

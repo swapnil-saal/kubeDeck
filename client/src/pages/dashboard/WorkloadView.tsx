@@ -1,5 +1,6 @@
 import { useMemo, useState, type FC } from "react";
-import { ChevronDown, ChevronRight, Pin, RotateCw, ScrollText, Scaling, Sparkles } from "lucide-react";
+import { ChevronDown, ChevronRight, Pin, PinOff, RotateCw, ScrollText, Scaling, Sparkles } from "lucide-react";
+import { RowActions } from "@/components/RowActions";
 import { formatDistanceToNow } from "date-fns";
 import { parseCpuMilli, type UsageLike } from "@/lib/cluster-health";
 import { cn } from "@/lib/utils";
@@ -128,16 +129,25 @@ export const WorkloadView: FC<WorkloadViewProps> = ({ pods, usage, showNamespace
               <span className={cn("hidden w-14 shrink-0 text-right text-xs tabular-nums md:inline", restartTone(w.restarts))} title="Restarts across pods">{w.restarts}↻</span>
               <span className="hidden w-16 shrink-0 text-right text-xs tabular-nums text-muted-foreground lg:inline" title={usage ? "CPU in use" : "CPU requested"}>{w.cpuMilli > 0 ? `${Math.round(w.cpuMilli)}m` : "–"}</span>
               <span className="hidden w-12 shrink-0 text-right text-[11px] text-muted-foreground lg:inline">{age(w.newest)}</span>
-              <div className="flex shrink-0 items-center gap-0.5 opacity-60 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-                <button type="button" title={w.pods.length > 1 ? `Logs of all ${w.pods.length} pods` : "Logs"} aria-label={`Logs of ${w.name}`} onClick={() => onLogs(type, w.name, w.namespace)} className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"><ScrollText className="h-3.5 w-3.5" /></button>
-                {onAsk && <button type="button" title="Diagnose with AI" aria-label={`Diagnose ${w.name} with AI`} onClick={() => onAsk(`Diagnose ${w.kind.toLowerCase()} ${w.name} in namespace ${w.namespace}: ${w.pods.length} pods, ${w.readyPods} ready, ${w.restarts} restarts. Check pod status, recent logs and events and tell me if anything is wrong.`)} className="rounded p-1.5 text-muted-foreground hover:bg-primary/10 hover:text-primary"><Sparkles className="h-3.5 w-3.5" /></button>}
-                <button type="button" title={pinned ? "Unpin" : "Pin"} aria-label={pinned ? `Unpin ${w.name}` : `Pin ${w.name}`} aria-pressed={pinned} onClick={() => onPin(type, w.name, w.namespace)} className={cn("rounded p-1.5 hover:bg-muted", pinned ? "text-primary" : "text-muted-foreground hover:text-foreground")}><Pin className="h-3.5 w-3.5" /></button>
-                {canWrite && w.kind === "Deployment" && (
-                  <>
-                    <button type="button" title="Scale" aria-label={`Scale ${w.name}`} onClick={() => onScale(w.name, w.pods.length)} className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"><Scaling className="h-3.5 w-3.5" /></button>
-                    <button type="button" title="Rolling restart" aria-label={`Restart ${w.name}`} onClick={() => onRestart(w.name)} className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"><RotateCw className="h-3.5 w-3.5" /></button>
-                  </>
-                )}
+              <div className="shrink-0">
+                <RowActions
+                  subject={`${w.kind.toLowerCase()} ${w.name}`}
+                  primary={{ label: w.pods.length > 1 ? `Logs (${w.pods.length} pods)` : "Logs", icon: ScrollText, onClick: () => onLogs(type, w.name, w.namespace) }}
+                  actions={[
+                    ...(onAsk ? [{
+                      id: "ai", label: "Diagnose with AI", icon: Sparkles, description: "The assistant checks pods, events and logs",
+                      onSelect: () => onAsk(`Diagnose ${w.kind.toLowerCase()} ${w.name} in namespace ${w.namespace}: ${w.pods.length} pods, ${w.readyPods} ready, ${w.restarts} restarts. Check pod status, recent logs and events and tell me if anything is wrong.`),
+                    }] : []),
+                    ...(canWrite && w.kind === "Deployment" ? [
+                      { id: "scale", label: "Scale…", icon: Scaling, description: `Change the replica count (now ${w.pods.length})`, onSelect: () => onScale(w.name, w.pods.length) },
+                      { id: "restart", label: "Rolling restart…", icon: RotateCw, description: "Replace its pods one by one", onSelect: () => onRestart(w.name) },
+                    ] : []),
+                    {
+                      id: "pin", label: pinned ? "Unpin" : "Pin", icon: pinned ? PinOff : Pin, description: pinned ? "Remove it from the Overview" : "Keep it at the top of the Overview",
+                      onSelect: () => onPin(type, w.name, w.namespace),
+                    },
+                  ]}
+                />
               </div>
             </div>
             {expanded && (
@@ -145,7 +155,7 @@ export const WorkloadView: FC<WorkloadViewProps> = ({ pods, usage, showNamespace
                 {w.pods.map((p) => (
                   <li key={p.name} className="flex items-center gap-3 py-1.5 pl-[4.75rem] pr-4 text-xs hover:bg-muted/30">
                     <button type="button" onClick={() => onOpen("pod", p.name, p.namespace)} className="min-w-0 flex-1 truncate text-left font-mono text-foreground/80 hover:text-foreground hover:underline underline-offset-2">{p.name}</button>
-                    <button type="button" onClick={() => onLogs("pod", p.name, p.namespace)} aria-label={`Logs of ${p.name}`} title="Logs" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"><ScrollText className="h-3 w-3" /></button>
+                    <button type="button" onClick={() => onLogs("pod", p.name, p.namespace)} aria-label={`Logs of ${p.name}`} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"><ScrollText className="h-3 w-3" />Logs</button>
                     <Chip status={p.status} />
                     <span className={cn("w-12 shrink-0 text-right tabular-nums", restartTone(p.restarts))}>{p.restarts}↻</span>
                     <span className="hidden w-40 shrink-0 truncate text-[11px] text-muted-foreground lg:inline" title={p.node}>{p.node}</span>

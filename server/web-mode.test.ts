@@ -127,7 +127,7 @@ describe("web mode over HTTP (real middleware)", () => {
   it("serves reads to a signed-in user and reports who they are", async () => {
     expect((await call("/api/k8s/pods", ok)).status).toBe(200);
     const mode = await (await call("/api/mode", ok)).json();
-    expect(mode).toMatchObject({ mode: "web", readOnly: true, user: { email: "dev@example.com" }, features: { terminal: false, portForward: false, settingsEdit: false, ai: false } });
+    expect(mode).toMatchObject({ mode: "web", readOnly: true, user: { email: "dev@example.com" }, features: { portForward: false, settingsEdit: false, ai: false, podFiles: false } });
   });
   it("blocks writes when read-only", async () => {
     expect((await call("/api/k8s/deployments/scale", ok, "POST")).status).toBe(403);

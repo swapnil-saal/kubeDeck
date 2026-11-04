@@ -1,21 +1,20 @@
-import { m as motion } from "framer-motion";
-import { TabsContent } from "@/components/ui/tabs";
 import { ResourceTable } from "@/components/ResourceTable";
 
-/** What each simple resource tab needs from its query. */
-export interface TabQuery {
+/** What a resource list needs from its query. */
+export interface ListQuery {
   data?: any[];
   isLoading: boolean;
   isError: boolean;
   error: Error | null;
 }
 
-export type SimpleTabKey =
+export type SimpleKindKey =
   | "services" | "statefulsets" | "daemonsets" | "jobs" | "cronjobs"
   | "configmaps" | "secrets" | "ingresses" | "nodes" | "hpa" | "pvcs";
 
-export interface SimpleResourceTabsProps {
-  q: Record<SimpleTabKey, TabQuery>;
+export interface SimpleResourceListProps {
+  kind: SimpleKindKey;
+  query: ListQuery;
   search: string;
   onSearchChange: (value: string) => void;
   /** one namespace selected — the Namespace column is redundant */
@@ -23,14 +22,12 @@ export interface SimpleResourceTabsProps {
   goToDetail: (type: string, name: string, ns?: string) => void;
 }
 
-/** The read-only resource tabs: a table per kind, each fed by one query. */
-export function SimpleResourceTabs({ q, search, onSearchChange, nsScoped, goToDetail }: SimpleResourceTabsProps) {
-  return (
-    <>
-        {/* ── SERVICES ── */}
-          <TabsContent value="services" className="mt-0 outline-none">
-          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-            <ResourceTable
+/** The table for one read-only resource kind (pods and deployments have richer lists of their own). */
+export function SimpleResourceList({ kind, query, search, onSearchChange, nsScoped, goToDetail }: SimpleResourceListProps) {
+  switch (kind) {
+    case "services":
+      return (
+        <ResourceTable
               tableId="services"
 
               hideNamespace={nsScoped}
@@ -38,10 +35,10 @@ export function SimpleResourceTabs({ q, search, onSearchChange, nsScoped, goToDe
               emptyLabel="services"
               search={search}
               onSearchChange={onSearchChange}
-              data={q.services.data}
-              isLoading={q.services.isLoading}
-              isError={q.services.isError}
-              error={q.services.error}
+              data={query.data}
+              isLoading={query.isLoading}
+              isError={query.isError}
+              error={query.error}
               accentColor="emerald"
               columns={[
                 { header: "Service", accessorKey: "name", cell: (item) => (
@@ -54,13 +51,10 @@ export function SimpleResourceTabs({ q, search, onSearchChange, nsScoped, goToDe
                 { header: "Age", accessorKey: "age" },
               ]}
             />
-          </motion.div>
-        </TabsContent>
-
-        {/* ── STATEFULSETS ── */}
-        <TabsContent value="statefulsets" className="mt-0 outline-none">
-          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-            <ResourceTable
+      );
+    case "statefulsets":
+      return (
+        <ResourceTable
               tableId="statefulsets"
 
               hideNamespace={nsScoped}
@@ -68,10 +62,10 @@ export function SimpleResourceTabs({ q, search, onSearchChange, nsScoped, goToDe
               emptyLabel="StatefulSets"
               search={search}
               onSearchChange={onSearchChange}
-              data={q.statefulsets.data}
-              isLoading={q.statefulsets.isLoading}
-              isError={q.statefulsets.isError}
-              error={q.statefulsets.error}
+              data={query.data}
+              isLoading={query.isLoading}
+              isError={query.isError}
+              error={query.error}
               accentColor="cyan"
               columns={[
                 { header: "StatefulSet", accessorKey: "name", cell: (item) => (
@@ -100,13 +94,10 @@ export function SimpleResourceTabs({ q, search, onSearchChange, nsScoped, goToDe
                 { header: "Age", accessorKey: "age" },
               ]}
             />
-          </motion.div>
-        </TabsContent>
-
-        {/* ── DAEMONSETS ── */}
-        <TabsContent value="daemonsets" className="mt-0 outline-none">
-          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-            <ResourceTable
+      );
+    case "daemonsets":
+      return (
+        <ResourceTable
               tableId="daemonsets"
 
               hideNamespace={nsScoped}
@@ -114,10 +105,10 @@ export function SimpleResourceTabs({ q, search, onSearchChange, nsScoped, goToDe
               emptyLabel="DaemonSets"
               search={search}
               onSearchChange={onSearchChange}
-              data={q.daemonsets.data}
-              isLoading={q.daemonsets.isLoading}
-              isError={q.daemonsets.isError}
-              error={q.daemonsets.error}
+              data={query.data}
+              isLoading={query.isLoading}
+              isError={query.isError}
+              error={query.error}
               accentColor="violet"
               columns={[
                 { header: "DaemonSet", accessorKey: "name", cell: (item) => (
@@ -131,13 +122,10 @@ export function SimpleResourceTabs({ q, search, onSearchChange, nsScoped, goToDe
                 { header: "Age", accessorKey: "age" },
               ]}
             />
-          </motion.div>
-        </TabsContent>
-
-        {/* ── JOBS ── */}
-        <TabsContent value="jobs" className="mt-0 outline-none">
-          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-            <ResourceTable
+      );
+    case "jobs":
+      return (
+        <ResourceTable
               tableId="jobs"
 
               hideNamespace={nsScoped}
@@ -145,10 +133,10 @@ export function SimpleResourceTabs({ q, search, onSearchChange, nsScoped, goToDe
               emptyLabel="jobs"
               search={search}
               onSearchChange={onSearchChange}
-              data={q.jobs.data}
-              isLoading={q.jobs.isLoading}
-              isError={q.jobs.isError}
-              error={q.jobs.error}
+              data={query.data}
+              isLoading={query.isLoading}
+              isError={query.isError}
+              error={query.error}
               accentColor="amber"
               columns={[
                 { header: "Job", accessorKey: "name", cell: (item) => (
@@ -161,13 +149,10 @@ export function SimpleResourceTabs({ q, search, onSearchChange, nsScoped, goToDe
                 { header: "Age", accessorKey: "age" },
               ]}
             />
-          </motion.div>
-        </TabsContent>
-
-        {/* ── CRONJOBS ── */}
-        <TabsContent value="cronjobs" className="mt-0 outline-none">
-          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-            <ResourceTable
+      );
+    case "cronjobs":
+      return (
+        <ResourceTable
               tableId="cronjobs"
 
               hideNamespace={nsScoped}
@@ -175,10 +160,10 @@ export function SimpleResourceTabs({ q, search, onSearchChange, nsScoped, goToDe
               emptyLabel="CronJobs"
               search={search}
               onSearchChange={onSearchChange}
-              data={q.cronjobs.data}
-              isLoading={q.cronjobs.isLoading}
-              isError={q.cronjobs.isError}
-              error={q.cronjobs.error}
+              data={query.data}
+              isLoading={query.isLoading}
+              isError={query.isError}
+              error={query.error}
               accentColor="violet"
               columns={[
                 { header: "CronJob", accessorKey: "name", cell: (item) => (
@@ -194,13 +179,10 @@ export function SimpleResourceTabs({ q, search, onSearchChange, nsScoped, goToDe
                 { header: "Age", accessorKey: "age" },
               ]}
             />
-          </motion.div>
-        </TabsContent>
-
-        {/* ── CONFIGMAPS ── */}
-        <TabsContent value="configmaps" className="mt-0 outline-none">
-          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-            <ResourceTable
+      );
+    case "configmaps":
+      return (
+        <ResourceTable
               tableId="configmaps"
 
               hideNamespace={nsScoped}
@@ -208,10 +190,10 @@ export function SimpleResourceTabs({ q, search, onSearchChange, nsScoped, goToDe
               emptyLabel="ConfigMaps"
               search={search}
               onSearchChange={onSearchChange}
-              data={q.configmaps.data}
-              isLoading={q.configmaps.isLoading}
-              isError={q.configmaps.isError}
-              error={q.configmaps.error}
+              data={query.data}
+              isLoading={query.isLoading}
+              isError={query.isError}
+              error={query.error}
               accentColor="cyan"
               columns={[
                 { header: "ConfigMap", accessorKey: "name", cell: (item) => (
@@ -222,13 +204,10 @@ export function SimpleResourceTabs({ q, search, onSearchChange, nsScoped, goToDe
                 { header: "Age", accessorKey: "age" },
               ]}
             />
-          </motion.div>
-        </TabsContent>
-
-        {/* ── SECRETS ── */}
-        <TabsContent value="secrets" className="mt-0 outline-none">
-          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-            <ResourceTable
+      );
+    case "secrets":
+      return (
+        <ResourceTable
               tableId="secrets"
 
               hideNamespace={nsScoped}
@@ -236,10 +215,10 @@ export function SimpleResourceTabs({ q, search, onSearchChange, nsScoped, goToDe
               emptyLabel="secrets"
               search={search}
               onSearchChange={onSearchChange}
-              data={q.secrets.data}
-              isLoading={q.secrets.isLoading}
-              isError={q.secrets.isError}
-              error={q.secrets.error}
+              data={query.data}
+              isLoading={query.isLoading}
+              isError={query.isError}
+              error={query.error}
               accentColor="violet"
               columns={[
                 { header: "Secret", accessorKey: "name", cell: (item) => (
@@ -251,13 +230,10 @@ export function SimpleResourceTabs({ q, search, onSearchChange, nsScoped, goToDe
                 { header: "Age", accessorKey: "age" },
               ]}
             />
-          </motion.div>
-        </TabsContent>
-
-        {/* ── INGRESSES ── */}
-        <TabsContent value="ingresses" className="mt-0 outline-none">
-          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-            <ResourceTable
+      );
+    case "ingresses":
+      return (
+        <ResourceTable
               tableId="ingresses"
 
               hideNamespace={nsScoped}
@@ -265,10 +241,10 @@ export function SimpleResourceTabs({ q, search, onSearchChange, nsScoped, goToDe
               emptyLabel="ingresses"
               search={search}
               onSearchChange={onSearchChange}
-              data={q.ingresses.data}
-              isLoading={q.ingresses.isLoading}
-              isError={q.ingresses.isError}
-              error={q.ingresses.error}
+              data={query.data}
+              isLoading={query.isLoading}
+              isError={query.isError}
+              error={query.error}
               accentColor="pink"
               columns={[
                 { header: "Ingress", accessorKey: "name", cell: (item) => (
@@ -281,13 +257,10 @@ export function SimpleResourceTabs({ q, search, onSearchChange, nsScoped, goToDe
                 { header: "Age", accessorKey: "age" },
               ]}
             />
-          </motion.div>
-        </TabsContent>
-
-        {/* ── NODES ── */}
-        <TabsContent value="nodes" className="mt-0 outline-none">
-          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-            <ResourceTable
+      );
+    case "nodes":
+      return (
+        <ResourceTable
               tableId="nodes"
 
               hideNamespace={nsScoped}
@@ -295,10 +268,10 @@ export function SimpleResourceTabs({ q, search, onSearchChange, nsScoped, goToDe
               emptyLabel="nodes"
               search={search}
               onSearchChange={onSearchChange}
-              data={q.nodes.data}
-              isLoading={q.nodes.isLoading}
-              isError={q.nodes.isError}
-              error={q.nodes.error}
+              data={query.data}
+              isLoading={query.isLoading}
+              isError={query.isError}
+              error={query.error}
               accentColor="amber"
               columns={[
                 { header: "Node", accessorKey: "name", cell: (item) => (
@@ -313,13 +286,10 @@ export function SimpleResourceTabs({ q, search, onSearchChange, nsScoped, goToDe
                 { header: "Age", accessorKey: "age" },
               ]}
             />
-          </motion.div>
-        </TabsContent>
-
-        {/* ── HPA ── */}
-        <TabsContent value="hpa" className="mt-0 outline-none">
-          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-            <ResourceTable
+      );
+    case "hpa":
+      return (
+        <ResourceTable
               tableId="hpa"
 
               hideNamespace={nsScoped}
@@ -327,10 +297,10 @@ export function SimpleResourceTabs({ q, search, onSearchChange, nsScoped, goToDe
               emptyLabel="HPAs"
               search={search}
               onSearchChange={onSearchChange}
-              data={q.hpa.data}
-              isLoading={q.hpa.isLoading}
-              isError={q.hpa.isError}
-              error={q.hpa.error}
+              data={query.data}
+              isLoading={query.isLoading}
+              isError={query.isError}
+              error={query.error}
               accentColor="emerald"
               columns={[
                 { header: "HPA", accessorKey: "name", cell: (item) => (
@@ -345,13 +315,10 @@ export function SimpleResourceTabs({ q, search, onSearchChange, nsScoped, goToDe
                 { header: "Age", accessorKey: "age" },
               ]}
             />
-          </motion.div>
-        </TabsContent>
-
-        {/* ── PVCs ── */}
-        <TabsContent value="pvcs" className="mt-0 outline-none">
-          <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-            <ResourceTable
+      );
+    case "pvcs":
+      return (
+        <ResourceTable
               tableId="pvcs"
 
               hideNamespace={nsScoped}
@@ -359,10 +326,10 @@ export function SimpleResourceTabs({ q, search, onSearchChange, nsScoped, goToDe
               emptyLabel="PVCs"
               search={search}
               onSearchChange={onSearchChange}
-              data={q.pvcs.data}
-              isLoading={q.pvcs.isLoading}
-              isError={q.pvcs.isError}
-              error={q.pvcs.error}
+              data={query.data}
+              isLoading={query.isLoading}
+              isError={query.isError}
+              error={query.error}
               accentColor="violet"
               columns={[
                 { header: "PVC", accessorKey: "name", cell: (item) => (
@@ -377,8 +344,6 @@ export function SimpleResourceTabs({ q, search, onSearchChange, nsScoped, goToDe
                 { header: "Age", accessorKey: "age" },
               ]}
             />
-          </motion.div>
-          </TabsContent>
-    </>
-  );
+      );
+  }
 }

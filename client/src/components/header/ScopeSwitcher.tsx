@@ -145,7 +145,7 @@ export function ScopeSwitcher({ className }: { className?: string }) {
 
 function SearchBox({ value, onChange, placeholder, autoFocus }: { value: string; onChange: (v: string) => void; placeholder: string; autoFocus?: boolean }) {
   return (
-    <label className="mb-1 flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5 focus-within:border-primary/50">
+    <label className="focus-frame mb-1 flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5 focus-within:border-primary/50">
       <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
       <input
         value={value}

@@ -175,11 +175,12 @@ export function webExecAllowed(raw: string): { ok: true } | { ok: false; message
 /** Public description of the running mode, for the browser (never includes secrets). */
 export function describeMode(req: Request) {
   const c = active;
-  if (!c.enabled) return { mode: "desktop" as const, readOnly: false, features: { terminal: true, portForward: true, settingsEdit: true, ai: true } };
+  if (!c.enabled) return { mode: "desktop" as const, readOnly: false, features: { portForward: true, settingsEdit: true, ai: true, podFiles: true } };
   return {
     mode: "web" as const,
     readOnly: c.readOnly,
     user: req.kubedeckUser ? { name: req.kubedeckUser.name, email: req.kubedeckUser.email } : null,
-    features: { terminal: false, portForward: false, settingsEdit: false, ai: false },
+    // podFiles runs kubectl exec: on a shared host that would hand every user the server's identity
+    features: { portForward: false, settingsEdit: false, ai: false, podFiles: false },
   };
 }

@@ -491,7 +491,7 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
     <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[10vh]" onClick={() => { if (!execState) onClose(); }}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div
-        className="relative w-full max-w-2xl bg-card/95 backdrop-blur border border-border/50 rounded-xl shadow-xl overflow-hidden font-mono"
+        className="relative w-full max-w-2xl bg-card/95 backdrop-blur border border-border/50 rounded-xl shadow-xl overflow-hidden font-sans"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Search input */}

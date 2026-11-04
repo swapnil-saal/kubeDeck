@@ -218,7 +218,7 @@ export default function AiChatPage() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
-      <AppHeader />
+      <AppHeader breadcrumbs={[{ label: "Ask Deck" }]} />
       <main className="relative min-h-0 flex-1" aria-label="Ask Deck">
         {session && (
           <ChatSession

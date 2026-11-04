@@ -51,6 +51,8 @@ export interface Issue {
   meta: string;
   /** prompt that hands this finding to the agent */
   prompt: string;
+  /** epoch ms of the latest occurrence (warning events), for timelines */
+  at?: number;
 }
 
 export interface PodBuckets {
@@ -290,6 +292,7 @@ function eventIssues(events: EventLike[], now: number): Issue[] {
       title: e.objectName ?? "",
       reason: `${e.reason ?? "Warning"}${e.n > 1 ? ` ×${e.n}` : ""}`,
       meta: [e.lastTimestamp ? `${ago(e.lastTimestamp, now)} ago` : "", e.message ?? ""].filter(Boolean).join(" · "),
+      at: e.lastTimestamp ? Date.parse(e.lastTimestamp) : undefined,
       prompt:
         `Explain this Kubernetes warning event and what I should do: ${e.reason} on ${(e.objectKind ?? "object").toLowerCase()} ${e.objectName} ` +
         `(${scopeLabel(e.namespace)}) — "${(e.message ?? "").slice(0, 300)}". Inspect the resource if needed and give the root cause and fix.`,
