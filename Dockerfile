@@ -1,7 +1,8 @@
 # KubeDeck web mode — the shared-service build. See docs/WEB.md.
 # (No HEALTHCHECK on purpose: liveness/readiness belong to the pod spec in deploy/kubernetes.)
 
-FROM node:22-alpine AS build
+# the bundle is plain JavaScript: build it once on the host's own platform, even for a multi-arch image
+FROM --platform=$BUILDPLATFORM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
