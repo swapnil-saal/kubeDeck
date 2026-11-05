@@ -2,12 +2,30 @@
  * Actions that change the cluster from the UI: scale, restart, apply, delete pod; plus a pod's environment.
  */
 import type { Express } from "express";
-import { writeFileSync } from "fs";
+import { unlinkSync, writeFileSync } from "fs";
 import * as path from "path";
 import * as os from "os";
 import { randomUUID } from "crypto";
 import { api } from "@shared/routes";
-import { handleForbidden, runKubectlRaw } from "./kubectl-run";
+import { parseAllDocuments } from "yaml";
+import { getKubeconfigEnv } from "./settings";
+import { handleForbidden, runKubectlRaw, spawnCommand } from "./kubectl-run";
+
+/**
+ * `-n <ns>` for objects that name no namespace, unless one names another: kubectl refuses a
+ * file whose objects disagree with -n, so those keep their own (and the rest get the context's default).
+ */
+export function namespaceArgs(yamlText: string, namespace: string | undefined): string[] {
+  if (!namespace || namespace === "all") return [];
+  try {
+    for (const doc of parseAllDocuments(yamlText)) {
+      if ("errors" in doc && doc.errors.length) return ["-n", namespace];
+      const ns = (doc.toJS() as { metadata?: { namespace?: string } } | null)?.metadata?.namespace;
+      if (ns && ns !== namespace) return [];
+    }
+  } catch { /* kubectl reports the YAML problem itself */ }
+  return ["-n", namespace];
+}
 
 export function registerActionRoutes(app: Express): void {
   // ── Scale Deployment ───────────────────────────────
@@ -36,19 +54,37 @@ export function registerActionRoutes(app: Express): void {
   });
 
   // ── Apply YAML ─────────────────────────────────────
+  // Apply YAML: ?mode=preview runs a server-side dry run and a diff (nothing changes); otherwise it applies.
   app.post(api.k8s.resourceApply.path, async (req, res) => {
+    const parsed = api.k8s.resourceApply.input.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Send the YAML as { yaml }." });
+    const { yaml } = parsed.data;
+    const ctx = typeof req.query.context === "string" && req.query.context ? [`--context=${req.query.context}`] : [];
+    const ns = namespaceArgs(yaml, typeof req.query.namespace === "string" ? req.query.namespace : undefined);
+    const tmpFile = path.join(os.tmpdir(), `kubedeck-apply-${randomUUID()}.yaml`);
+    writeFileSync(tmpFile, yaml, { mode: 0o600 });
+    const kubectl = (args: string[]) => spawnCommand("kubectl", [...args, "-f", tmpFile, ...ctx, ...ns, "--request-timeout=30s"], getKubeconfigEnv());
     try {
-      const { yaml } = api.k8s.resourceApply.input.parse(req.body);
-      const context = req.query.context ? `--context=${req.query.context}` : "";
-      // Write yaml to temp file and apply
-      const tmpFile = path.join(os.tmpdir(), `kubedeck-apply-${randomUUID()}.yaml`);
-      writeFileSync(tmpFile, yaml);
-      const result = await runKubectlRaw(`apply -f ${tmpFile} ${context}`);
-      // Clean up
-      try { require("fs").unlinkSync(tmpFile); } catch {}
+      if (req.query.mode === "preview") {
+        const dry = await kubectl(["apply", "--dry-run=server"]);
+        if (dry.code !== 0) return handleForbidden(res, dry.stderr, "The cluster would reject this");
+        // kubectl diff: 0 = no change, 1 = differences, anything else = an error
+        const diff = await kubectl(["diff"]);
+        const objects = dry.stdout.split("\n").map((l) => l.trim()).filter(Boolean);
+        return res.json({
+          message: diff.code > 1 ? `Dry run passed; the diff could not be computed (${diff.stderr.trim().slice(0, 200)})` : "Dry run passed",
+          objects,
+          diff: diff.code === 1 ? diff.stdout : "",
+        });
+      }
+      const result = await kubectl(["apply"]);
       if (result.code !== 0) return handleForbidden(res, result.stderr, "Apply failed");
-      res.json({ message: result.stdout || "Applied successfully" });
-    } catch (err) { res.status(500).json({ message: String(err) }); }
+      res.json({ message: result.stdout.trim() || "Applied", objects: result.stdout.split("\n").map((l) => l.trim()).filter(Boolean) });
+    } catch (err) {
+      res.status(500).json({ message: String(err) });
+    } finally {
+      try { unlinkSync(tmpFile); } catch { /* already gone */ }
+    }
   });
 
   // ── Delete Pod ────────────────────────────────────

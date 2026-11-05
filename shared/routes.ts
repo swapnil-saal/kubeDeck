@@ -41,6 +41,28 @@ export const genericListSchema = z.object({
 });
 export type GenericList = z.infer<typeof genericListSchema>;
 
+/** `kubectl explain` for one field, parsed. */
+export const explainSchema = z.object({
+  kind: z.string(),
+  version: z.string(),
+  /** the field explained, e.g. "replicas"; absent for the kind itself */
+  field: z.string().optional(),
+  type: z.string().optional(),
+  description: z.string(),
+  fields: z.array(z.object({ name: z.string(), type: z.string(), required: z.boolean(), description: z.string() })),
+});
+export type ExplainResult = z.infer<typeof explainSchema>;
+
+/** What an apply would do (dry run + diff), or what it did. */
+export const applyResultSchema = z.object({
+  message: z.string(),
+  /** dry run: one line per object, e.g. "deployment.apps/web created (server dry run)" */
+  objects: z.array(z.string()).optional(),
+  /** unified diff against the live objects; "" when nothing would change */
+  diff: z.string().optional(),
+});
+export type ApplyResult = z.infer<typeof applyResultSchema>;
+
 const portForwardEntrySchema = z.object({
   id: z.string(),
   pod: z.string(),
@@ -172,9 +194,15 @@ export const api = {
     },
     resourceApply: {
       method: 'POST' as const,
+      /** ?mode=preview (server dry run + diff, changes nothing) or apply (default); ?namespace= for objects that name none */
       path: '/api/k8s/apply' as const,
-      input: z.object({ yaml: z.string() }),
-      responses: { 200: z.object({ message: z.string() }), 500: errorSchemas.internal },
+      input: z.object({ yaml: z.string().max(1_000_000) }),
+      responses: { 200: applyResultSchema, 500: errorSchemas.internal },
+    },
+    explain: {
+      method: 'GET' as const,
+      path: '/api/k8s/explain' as const,
+      responses: { 200: explainSchema, 500: errorSchemas.internal },
     },
     resourceDescribe: {
       method: 'GET' as const,

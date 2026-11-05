@@ -1,7 +1,7 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { api, buildUrl } from "@shared/routes";
-import type { RelatedResources, PortForwardEntry } from "@shared/routes";
+import type { ApplyResult, RelatedResources, PortForwardEntry } from "@shared/routes";
 import { queryClient } from "@/lib/queryClient";
 
 const LIST_REFETCH_MS = 10_000;
@@ -219,14 +219,34 @@ export function useRestartDeployment() {
   });
 }
 
+/**
+ * Apply YAML, or preview it (`mode: "preview"`: a server-side dry run and a diff; nothing changes).
+ * `namespace` is where objects that name none go.
+ */
 export function useApplyYaml() {
   return useMutation({
-    mutationFn: async ({ yaml, context }: { yaml: string; context: string }) => {
-      const url = buildUrl(api.k8s.resourceApply.path, { context });
+    mutationFn: async ({ yaml, context, namespace, mode }: { yaml: string; context: string; namespace?: string; mode?: "preview" | "apply" }) => {
+      const url = buildUrl(api.k8s.resourceApply.path, {
+        context,
+        ...(namespace && namespace !== "all" ? { namespace } : {}),
+        ...(mode === "preview" ? { mode } : {}),
+      });
       const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ yaml }) });
       if (!res.ok) { const body = await res.json().catch(() => ({})); throw new K8sError(body.message || "Failed", res.status); }
-      return res.json() as Promise<{ message: string }>;
+      return res.json() as Promise<ApplyResult>;
     },
+  });
+}
+
+/** `kubectl explain` for a field path ("deployment.spec.replicas"), from the cluster's own schema. */
+export function useExplain(path: string | null, apiVersion: string | undefined, context?: string) {
+  return useQuery({
+    queryKey: [api.k8s.explain.path, context, apiVersion, path],
+    queryFn: () =>
+      k8sFetch(buildUrl(api.k8s.explain.path, { context: context || "", path: path!, ...(apiVersion ? { apiVersion } : {}) }), api.k8s.explain.responses[200]),
+    enabled: !!path && !!context,
+    staleTime: Number.POSITIVE_INFINITY,
+    retry: false,
   });
 }
 

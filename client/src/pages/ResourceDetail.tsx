@@ -11,13 +11,15 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   FileText, Code, ScrollText, Search,
   Terminal, Variable, Wifi, WifiOff, Copy, Check, GitBranch,
-  Box, Layers, Network, Share2, Square, ExternalLink, Save, Pencil,
+  Box, Layers, Network, Share2, Square, ExternalLink, Save, Pencil, Eye,
   Sparkles, Loader2, FolderTree, History,
 } from "lucide-react";
 import { m as motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { AppHeader } from "@/components/AppHeader";
+import { ApplyPreview } from "@/components/yaml/ApplyPreview";
+import { YamlWorkbench } from "@/components/yaml/YamlWorkbench";
 import { Topology } from "@/components/Topology";
 import { LogExplorer } from "@/components/logs/LogExplorer";
 import type { LogKind } from "@/hooks/use-log-stream";
@@ -452,6 +454,7 @@ export default function ResourceDetail() {
   const [editYaml, setEditYaml] = useState("");
   const { toast } = useToast();
   const applyMutation = useApplyYaml();
+  const previewMutation = useApplyYaml();
   const serverMode = useServerMode();
 
   const goToResource = (rType: string, rName: string, rNs: string) => {
@@ -482,8 +485,9 @@ export default function ResourceDetail() {
 
   const handleApply = async () => {
     try {
-      const result = await applyMutation.mutateAsync({ yaml: editYaml, context });
+      const result = await applyMutation.mutateAsync({ yaml: editYaml, context, namespace });
       toast({ title: "Applied", description: result.message });
+      previewMutation.reset();
       setEditing(false);
       setActiveTab("yaml");
       refetchYaml();
@@ -613,8 +617,17 @@ export default function ResourceDetail() {
                       <Button
                         variant="ghost"
                         className="text-xs h-9 px-4 text-muted-foreground hover:text-foreground rounded-lg"
-                        onClick={() => { setEditing(false); setActiveTab("yaml"); }}
+                        onClick={() => { setEditing(false); previewMutation.reset(); setActiveTab("yaml"); }}
                       >Cancel</Button>
+                      <Button
+                        variant="outline"
+                        className="text-xs h-9 px-4 rounded-lg gap-1.5"
+                        onClick={() => previewMutation.mutate({ yaml: editYaml, context, namespace, mode: "preview" })}
+                        disabled={previewMutation.isPending || !editYaml.trim()}
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        Preview changes
+                      </Button>
                       <Button
                         className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-medium h-9 px-5 rounded-lg gap-1.5 shadow-sm"
                         onClick={handleApply}
@@ -625,15 +638,21 @@ export default function ResourceDetail() {
                       </Button>
                     </div>
                   </div>
-                  <div className="flex-1 overflow-hidden rounded border border-border bg-surface-inset">
-                    <textarea
+                  {yamlLoading && !editYaml ? (
+                    <p className="text-xs text-muted-foreground">Loading YAML…</p>
+                  ) : (
+                    <YamlWorkbench
                       value={editYaml}
-                      onChange={(e) => setEditYaml(e.target.value)}
-                      className="w-full h-full resize-none bg-transparent p-4 font-mono text-[11px] leading-relaxed text-foreground/70 focus:outline-none"
-                      spellCheck={false}
-                      placeholder={yamlLoading ? "Loading YAML..." : "Paste or edit YAML here..."}
+                      onChange={(v) => { setEditYaml(v); if (previewMutation.data || previewMutation.error) previewMutation.reset(); }}
+                      context={context}
+                      className="min-h-0 flex-1"
                     />
-                  </div>
+                  )}
+                  {(previewMutation.isPending || previewMutation.data || previewMutation.error || applyMutation.error) && (
+                    <div className="max-h-[40%] shrink-0 overflow-y-auto rounded-lg border border-border bg-card">
+                      <ApplyPreview pending={previewMutation.isPending} result={previewMutation.data} error={(applyMutation.error ?? previewMutation.error)?.message} />
+                    </div>
+                  )}
                 </div>
               )}
               {activeTab === "events" && (

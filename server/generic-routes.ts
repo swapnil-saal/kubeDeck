@@ -4,7 +4,7 @@
  * Detail views (describe, YAML, events) already accept any type: see detail-routes.ts.
  */
 import type { Express } from "express";
-import { api, type ApiResource, type GenericList } from "@shared/routes";
+import { api, type ApiResource, type ExplainResult, type GenericList } from "@shared/routes";
 import { parseTable } from "./ai/chat/kubectl";
 import { spawnCommand } from "./kubectl-run";
 import { getKubeconfigEnv } from "./settings";
@@ -42,7 +42,70 @@ export function toGenericList(stdout: string): GenericList {
   return { columns, rows: rows.map((r) => columns.map((c) => r[c] ?? "")) };
 }
 
+/** `kubectl explain` plain text → kind, the field's type and description, and its sub-fields. */
+export function parseExplain(text: string): ExplainResult {
+  const lines = text.replace(/\r/g, "").split("\n");
+  const header = (key: string) => lines.find((l) => l.startsWith(`${key}:`))?.slice(key.length + 1).trim() ?? "";
+  const fieldLine = header("FIELD").match(/^(\S+)\s+<(.+)>$/);
+  const descStart = lines.findIndex((l) => l.trim() === "DESCRIPTION:");
+  const fieldsStart = lines.findIndex((l) => l.trim() === "FIELDS:");
+  const description = descStart < 0 ? "" : lines
+    .slice(descStart + 1, fieldsStart < 0 ? undefined : fieldsStart)
+    .map((l) => l.trim())
+    .join("\n")
+    // kubectl wraps at ~80 columns: rejoin lines into paragraphs (blank lines separate them)
+    .split(/\n{2,}/)
+    .map((para) => para.replace(/\n/g, " "))
+    .join("\n\n")
+    .trim();
+  const fields: ExplainResult["fields"] = [];
+  if (fieldsStart >= 0) {
+    for (const line of lines.slice(fieldsStart + 1)) {
+      const m = line.match(/^ {2}(\S+)\s+<([^>]+)>(\s+-required-)?\s*$/);
+      if (m) fields.push({ name: m[1], type: m[2], required: !!m[3], description: "" });
+      else if (fields.length && line.startsWith("    ")) {
+        const last = fields[fields.length - 1];
+        last.description += (last.description ? " " : "") + line.trim();
+      }
+    }
+  }
+  return {
+    kind: header("KIND"),
+    version: [header("GROUP"), header("VERSION")].filter(Boolean).join("/"),
+    field: fieldLine?.[1],
+    type: fieldLine?.[2],
+    description,
+    fields,
+  };
+}
+
+const EXPLAIN_PATH = /^[A-Za-z][\w-]*(\.[A-Za-z][\w-]*)*$/;
+const API_VERSION = /^[a-z0-9.-]+(\/[a-z0-9]+)?$/i;
+const explainCache = new Map<string, ExplainResult>();
+const MAX_EXPLAIN_CACHE = 500;
+
 export function registerGenericRoutes(app: Express): void {
+  // field documentation from the cluster's own OpenAPI schema (custom resources included)
+  app.get(api.k8s.explain.path, async (req, res) => {
+    const path = String(req.query.path ?? "");
+    const apiVersion = String(req.query.apiVersion ?? "");
+    if (!EXPLAIN_PATH.test(path) || path.length > 300) return res.status(400).json({ message: "Invalid field path" });
+    if (apiVersion && !API_VERSION.test(apiVersion)) return res.status(400).json({ message: "Invalid apiVersion" });
+    const key = `${req.query.context ?? ""}|${apiVersion}|${path}`;
+    const hit = explainCache.get(key);
+    if (hit) return res.json(hit);
+    const r = await spawnCommand(
+      "kubectl",
+      ["explain", path, ...(apiVersion ? [`--api-version=${apiVersion}`] : []), "--request-timeout=20s", ...contextArgs(req.query.context)],
+      getKubeconfigEnv(),
+    );
+    if (r.code !== 0) return res.status(404).json({ message: r.stderr.trim().split("\n")[0]?.slice(0, 200) || `No documentation for ${path}` });
+    const parsed = parseExplain(r.stdout);
+    if (explainCache.size >= MAX_EXPLAIN_CACHE) explainCache.delete(explainCache.keys().next().value!);
+    explainCache.set(key, parsed);
+    res.json(parsed);
+  });
+
   app.get(api.k8s.apiResources.path, async (req, res) => {
     const key = String(req.query.context ?? "");
     const hit = discoveryCache.get(key);

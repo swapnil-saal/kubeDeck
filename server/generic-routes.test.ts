@@ -42,3 +42,28 @@ describe("missingPermission", () => {
     expect(missingPermission("connection refused")).toBeNull();
   });
 });
+
+import { parseExplain } from "./generic-routes";
+
+describe("parseExplain", () => {
+  const text = [
+    "GROUP:      apps", "KIND:       Deployment", "VERSION:    v1", "", "FIELD: containers <[]Container>", "", "",
+    "DESCRIPTION:", "    List of containers belonging to the pod. Containers cannot currently be", "    added or removed.",
+    "    ", "    A single application container.", "    ", "FIELDS:",
+    "  args\t<[]string>", "    Arguments to the entrypoint. The image's CMD is used if this is", "    not provided.", "",
+    "  name\t<string> -required-", "    Name of the container.", "",
+  ].join("\n");
+  it("reads the header, joins wrapped description lines, and lists fields with required flags", () => {
+    expect(parseExplain(text)).toEqual({
+      kind: "Deployment",
+      version: "apps/v1",
+      field: "containers",
+      type: "[]Container",
+      description: "List of containers belonging to the pod. Containers cannot currently be added or removed.\n\nA single application container.",
+      fields: [
+        { name: "args", type: "[]string", required: false, description: "Arguments to the entrypoint. The image's CMD is used if this is not provided." },
+        { name: "name", type: "string", required: true, description: "Name of the container." },
+      ],
+    });
+  });
+});

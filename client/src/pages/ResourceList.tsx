@@ -1,5 +1,9 @@
-import { useEffect, useMemo } from "react";
-import { Puzzle } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Plus, Puzzle } from "lucide-react";
+import type { ApiResource } from "@shared/routes";
+import { CreateResourceDialog } from "@/components/yaml/CreateResourceDialog";
+import { useServerMode } from "@/hooks/use-server-mode";
+import { skeletonFor, templateFor, YAML_TEMPLATES } from "@/lib/yaml-templates";
 import { useLocation, useRoute } from "wouter";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { AppHeader } from "@/components/AppHeader";
@@ -61,17 +65,19 @@ function SimpleKind({ kind, context, namespace }: { kind: SimpleKindKey; context
 }
 
 /** A kind from the registry, or any listable kind the cluster serves (custom resources included). */
-function useKind(key: string, context: string): { kind?: ResourceKind; group?: string; unknown: boolean } {
+function useKind(key: string, context: string): { kind?: ResourceKind; group?: string; api?: ApiResource; unknown: boolean } {
   const known = kindByKey(key);
-  const discovery = useApiResources(known ? undefined : context);
+  // discovery is cached; it also tells "Create" the apiVersion of kinds without a template
+  const discovery = useApiResources(context);
   return useMemo(() => {
-    if (known) return { kind: known, unknown: false };
-    const r = discovery.data?.find((d) => d.id === key || d.name === key);
+    const r = discovery.data?.find((d) => d.id === key || d.name === key || (known && (d.name === known.kubectl || d.shortNames.includes(known.kubectl))));
+    if (known) return { kind: known, api: r, unknown: false };
     if (!r) return { unknown: discovery.isSuccess || discovery.isError };
     const label = r.name.charAt(0).toUpperCase() + r.name.slice(1);
     return {
       kind: { key: r.id, label, type: r.id, kubectl: r.id, icon: Puzzle, group: "Cluster", clusterScoped: !r.namespaced, generic: true },
       group: r.group || "core",
+      api: r,
       unknown: false,
     };
   }, [known, key, discovery.data, discovery.isSuccess, discovery.isError]);
@@ -83,7 +89,12 @@ export default function ResourceList() {
   const [, navigate] = useLocation();
   useScopeFromUrl();
   const { context, namespace } = useTerminalStore();
-  const { kind, group, unknown } = useKind(decodeURIComponent(params?.kind ?? ""), context);
+  const { kind, group, api, unknown } = useKind(decodeURIComponent(params?.kind ?? ""), context);
+  const { canWrite } = useServerMode();
+  const [creating, setCreating] = useState(false);
+  const starter =
+    templateFor(kind?.key)?.yaml ??
+    (api ? skeletonFor(api.kind, api.group ? `${api.group}/${api.version}` : api.version, api.namespaced) : YAML_TEMPLATES[0].yaml);
   const actions = useResourceActions({ context, namespace });
   const count = useCount(kind?.key ?? "", context, namespace);
 
@@ -114,7 +125,18 @@ export default function ResourceList() {
             <span className="text-xs text-muted-foreground">
               {context || "…"} · {scope}{group ? ` · ${group}` : ""}
             </span>
-            <div className="ml-auto">{kind.key === "pods" && <PodViewToggle />}</div>
+            <div className="ml-auto flex items-center gap-2">
+              {kind.key === "pods" && <PodViewToggle />}
+              {canWrite && kind.key !== "events" && (
+                <button
+                  type="button"
+                  onClick={() => setCreating(true)}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-3 text-xs font-semibold text-primary transition-colors hover:bg-primary/15"
+                >
+                  <Plus className="h-3.5 w-3.5" />Create
+                </button>
+              )}
+            </div>
           </div>
 
           {/* keyed by kind: switching kinds starts fresh, and hooks stay in a fixed order */}
@@ -131,6 +153,15 @@ export default function ResourceList() {
       </main>
       <CommandBar commands={buildListCommands(kind.kubectl, context, namespace)} />
       {actions.dialogs}
+      {canWrite && (
+        <CreateResourceDialog
+          open={creating}
+          onClose={() => setCreating(false)}
+          context={context}
+          namespace={kind.clusterScoped ? "" : namespace}
+          initialYaml={starter}
+        />
+      )}
     </div>
   );
 }
