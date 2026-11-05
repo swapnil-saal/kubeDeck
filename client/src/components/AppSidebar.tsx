@@ -1,6 +1,6 @@
 import { useEffect, useMemo, type FC, type ReactNode } from "react";
 import { useLocation } from "wouter";
-import { Gauge, PanelLeftClose, PanelLeftOpen, SlidersHorizontal } from "lucide-react";
+import { ChevronDown, Gauge, LayoutGrid, PanelLeftClose, PanelLeftOpen, SlidersHorizontal } from "lucide-react";
 import { AiAvatar } from "@/ai";
 import { KubeDeckLogo, KubeDeckMark } from "@/components/KubeDeckLogo";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -109,6 +109,10 @@ const NavItem: FC<{
 export function AppSidebar() {
   const [location, navigate] = useLocation();
   const [expanded, setExpanded] = usePersistedState("kubedeck.sidebar.expanded", true);
+  // groups the user folded away (Access and Storage are rarely needed day to day, so they start folded)
+  const [folded, setFolded] = usePersistedState<string[]>("kubedeck.sidebar.folded", ["Access"]);
+  const toggleGroup = (group: string) =>
+    setFolded((f) => (f.includes(group) ? f.filter((x) => x !== group) : [...f, group]));
   const serverMode = useServerMode();
   const badges = useHealthBadges();
 
@@ -160,14 +164,30 @@ export function AppSidebar() {
           />
         )}
 
-        {RESOURCE_GROUPS.map((group) => (
+        {RESOURCE_GROUPS.map((group) => {
+          const kinds = RESOURCE_KINDS.filter((k) => k.group === group);
+          // a folded group still shows the kind you are on
+          const isFolded = !collapsed && folded.includes(group);
+          const shown = isFolded ? kinds.filter((k) => isKindActive(k.key, k.type)) : kinds;
+          return (
           <section key={group} aria-label={group} className="mt-3">
             {collapsed ? (
               <div aria-hidden className="mx-2 mb-1.5 h-px bg-border" />
             ) : (
-              <h2 className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">{group}</h2>
+              <h2 className="mb-1">
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(group)}
+                  aria-expanded={!isFolded}
+                  className="flex w-full items-center gap-1 rounded px-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70 transition-colors hover:text-foreground"
+                >
+                  {group}
+                  <ChevronDown className={cn("h-3 w-3 transition-transform", isFolded && "-rotate-90")} />
+                  {isFolded && <span className="ml-auto font-normal normal-case tracking-normal tabular-nums">{kinds.length}</span>}
+                </button>
+              </h2>
             )}
-            {RESOURCE_KINDS.filter((k) => k.group === group).map((k) => (
+            {shown.map((k) => (
               <NavItem
                 key={k.key}
                 label={k.label}
@@ -179,7 +199,17 @@ export function AppSidebar() {
               />
             ))}
           </section>
-        ))}
+          );
+        })}
+        <div className="mt-3">
+          <NavItem
+            label="All resources"
+            icon={<LayoutGrid className="h-4 w-4" />}
+            active={path === "/resources" || (!!activeKind && !RESOURCE_KINDS.some((k) => k.key === activeKind))}
+            collapsed={collapsed}
+            onClick={() => navigate("/resources")}
+          />
+        </div>
       </nav>
 
       <div className="flex shrink-0 flex-col gap-0.5 border-t border-border px-2 py-2">

@@ -62,9 +62,18 @@ export function getNamespaceFlag(ns: string | undefined): string {
   return `-n ${ns}`;
 }
 
+/** "cannot list resource "resourcequotas" in … namespace "e2"" → what the account is missing, in words. */
+export function missingPermission(stderr: string): string | null {
+  const m = stderr.match(/cannot (\w+) resource "([^"]+)"(?: in API group "([^"]*)")?(?: in the namespace "([^"]+)")?/);
+  if (!m) return null;
+  const [, verb, resource, group, ns] = m;
+  return `this account cannot ${verb} ${group ? `${resource}.${group}` : resource}${ns ? ` in namespace ${ns}` : ""}`;
+}
+
 export function handleForbidden(res: Response, stderr: string, fallbackMsg: string) {
   if (stderr.toLowerCase().includes("forbidden")) {
-    return res.status(403).json({ message: fallbackMsg });
+    const missing = missingPermission(stderr);
+    return res.status(403).json({ message: missing ? `${fallbackMsg}: ${missing}` : fallbackMsg });
   }
   return res.status(500).json({ message: stderr || fallbackMsg });
 }

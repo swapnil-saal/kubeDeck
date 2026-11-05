@@ -1,5 +1,6 @@
 import {
-  Box, Boxes, CalendarClock, Database, FileText, Gauge, Globe, HardDrive, KeyRound, Layers, ListChecks, Network, Server,
+  Archive, BadgeCheck, Box, Boxes, CalendarClock, Copy, Cylinder, Database, FileText, Folders, Gauge, Globe, HardDrive, History,
+  KeyRound, Layers, Link, Link2, ListChecks, Network, Puzzle, Ruler, Scale, Server, Shield, ShieldCheck, ShieldHalf, UserCog,
   type LucideIcon,
 } from "lucide-react";
 
@@ -17,10 +18,18 @@ export interface ResourceKind {
   /** kubectl resource for the command bar, e.g. "pvc" */
   kubectl: string;
   icon: LucideIcon;
-  group: "Workloads" | "Network" | "Config" | "Storage" | "Cluster";
+  group: (typeof RESOURCE_GROUPS)[number];
   /** cluster-scoped: never filtered by namespace */
   clusterScoped?: boolean;
+  /** listed by the generic list (the columns kubectl prints); `type` and `key` are the api-resource id */
+  generic?: boolean;
 }
+
+export const RESOURCE_GROUPS = ["Workloads", "Network", "Config", "Storage", "Access", "Cluster"] as const;
+
+/** A kind with no list of its own: shown with kubectl's columns, linked by its api-resource id. */
+const g = (key: string, label: string, icon: LucideIcon, group: ResourceKind["group"], clusterScoped = false): ResourceKind =>
+  ({ key, label, type: key, kubectl: key, icon, group, clusterScoped, generic: true });
 
 export const RESOURCE_KINDS: readonly ResourceKind[] = [
   { key: "pods", label: "Pods", type: "pod", kubectl: "pods", icon: Box, group: "Workloads" },
@@ -30,15 +39,28 @@ export const RESOURCE_KINDS: readonly ResourceKind[] = [
   { key: "jobs", label: "Jobs", type: "job", kubectl: "jobs", icon: ListChecks, group: "Workloads" },
   { key: "cronjobs", label: "CronJobs", type: "cronjob", kubectl: "cronjobs", icon: CalendarClock, group: "Workloads" },
   { key: "hpa", label: "Autoscalers", type: "hpa", kubectl: "hpa", icon: Gauge, group: "Workloads" },
+  g("replicasets", "ReplicaSets", Copy, "Workloads"),
+  g("poddisruptionbudgets", "Disruption budgets", ShieldCheck, "Workloads"),
   { key: "services", label: "Services", type: "service", kubectl: "services", icon: Network, group: "Network" },
   { key: "ingresses", label: "Ingresses", type: "ingress", kubectl: "ingresses", icon: Globe, group: "Network" },
+  g("networkpolicies", "Network policies", ShieldHalf, "Network"),
   { key: "configmaps", label: "ConfigMaps", type: "configmap", kubectl: "configmaps", icon: FileText, group: "Config" },
   { key: "secrets", label: "Secrets", type: "secret", kubectl: "secrets", icon: KeyRound, group: "Config" },
+  g("resourcequotas", "Resource quotas", Scale, "Config"),
+  g("limitranges", "Limit ranges", Ruler, "Config"),
   { key: "pvcs", label: "Volume claims", type: "pvc", kubectl: "pvc", icon: HardDrive, group: "Storage" },
+  g("persistentvolumes", "Volumes", Cylinder, "Storage", true),
+  g("storageclasses", "Storage classes", Archive, "Storage", true),
+  g("serviceaccounts", "Service accounts", UserCog, "Access"),
+  g("roles", "Roles", Shield, "Access"),
+  g("rolebindings", "Role bindings", Link2, "Access"),
+  g("clusterroles", "Cluster roles", BadgeCheck, "Access", true),
+  g("clusterrolebindings", "Cluster role bindings", Link, "Access", true),
   { key: "nodes", label: "Nodes", type: "node", kubectl: "nodes", icon: Server, group: "Cluster", clusterScoped: true },
+  g("namespaces", "Namespaces", Folders, "Cluster", true),
+  g("events", "Events", History, "Cluster"),
+  g("customresourcedefinitions", "Custom resource definitions", Puzzle, "Cluster", true),
 ];
-
-export const RESOURCE_GROUPS = ["Workloads", "Network", "Config", "Storage", "Cluster"] as const;
 
 const BY_KEY = new Map(RESOURCE_KINDS.map((k) => [k.key, k]));
 const BY_TYPE = new Map(RESOURCE_KINDS.map((k) => [k.type, k]));

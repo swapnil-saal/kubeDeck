@@ -55,6 +55,9 @@ interface ResourceTableProps<T> {
   emptyLabel?: string;
 }
 
+/** Rows rendered at a time; the rest arrive with "Show more". */
+const ROW_PAGE = 200;
+
 function formatAge(timestamp: string): string {
   try {
     const date = new Date(timestamp);
@@ -199,6 +202,12 @@ export function ResourceTable<T extends { name: string; status?: string }>({
 
   const colCount = visibleCols.length;
   const hiddenCount = columnMeta.length - visibleCols.length;
+
+  // big lists (hundreds of ReplicaSets, events…) render in pages; search and sort still see every row
+  const [rowLimit, setRowLimit] = useState(ROW_PAGE);
+  useEffect(() => setRowLimit(ROW_PAGE), [search, tableId]);
+  const shownRows = filteredData?.slice(0, rowLimit);
+  const moreRows = (filteredData?.length ?? 0) - (shownRows?.length ?? 0);
 
   return (
     <div className="card-elevated overflow-hidden">
@@ -375,7 +384,7 @@ export function ResourceTable<T extends { name: string; status?: string }>({
                   </td>
                 </tr>
               ) : (
-                filteredData?.map((item, i) => (
+                shownRows?.map((item, i) => (
                   <motion.tr
                     key={item.name + String(i)}
                     initial={{ opacity: 0 }}
@@ -404,6 +413,17 @@ export function ResourceTable<T extends { name: string; status?: string }>({
               )}
             </tbody>
           </table>
+        )}
+        {!isLoading && moreRows > 0 && (
+          <div className="flex items-center justify-center gap-2 border-t border-border/50 px-4 py-2.5 text-xs text-muted-foreground">
+            <span className="tabular-nums">Showing {shownRows?.length} of {filteredData?.length}</span>
+            <button type="button" onClick={() => setRowLimit((n) => n + ROW_PAGE)} className="rounded-md border border-border px-2.5 py-1 font-medium text-foreground transition-colors hover:bg-muted">
+              Show {Math.min(ROW_PAGE, moreRows)} more
+            </button>
+            <button type="button" onClick={() => setRowLimit(Number.POSITIVE_INFINITY)} className="rounded-md px-2 py-1 font-medium text-muted-foreground transition-colors hover:text-foreground">
+              Show all
+            </button>
+          </div>
         )}
       </div>
     </div>

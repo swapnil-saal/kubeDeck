@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
+import { Puzzle } from "lucide-react";
 import { useLocation, useRoute } from "wouter";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { AppHeader } from "@/components/AppHeader";
@@ -6,15 +7,16 @@ import { CommandBar, buildListCommands } from "@/components/CommandBar";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import {
   useK8sConfigMaps, useK8sCronJobs, useK8sDaemonSets, useK8sDeployments, useK8sHpa, useK8sIngresses, useK8sJobs,
-  useK8sNodes, useK8sPods, useK8sPvcs, useK8sSecrets, useK8sServices, useK8sStatefulSets,
+  useApiResources, useK8sNodes, useK8sPods, useK8sPvcs, useK8sSecrets, useK8sServices, useK8sStatefulSets,
 } from "@/hooks/use-k8s";
 import { useHashParams } from "@/hooks/use-hash-params";
 import { useResourceNav } from "@/hooks/use-resource-nav";
 import { useScopeFromUrl } from "@/hooks/use-scope-from-url";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
-import { kindByKey, listHref } from "@/lib/resource-kinds";
+import { kindByKey, type ResourceKind } from "@/lib/resource-kinds";
 import { SimpleResourceList, type SimpleKindKey } from "@/pages/dashboard/SimpleResourceList";
 import { DeploymentList } from "@/pages/resources/DeploymentList";
+import { GenericList } from "@/pages/resources/GenericList";
 import { PodList, PodViewToggle } from "@/pages/resources/PodList";
 import { useResourceActions } from "@/pages/resources/resource-actions";
 
@@ -58,26 +60,46 @@ function SimpleKind({ kind, context, namespace }: { kind: SimpleKindKey; context
   );
 }
 
+/** A kind from the registry, or any listable kind the cluster serves (custom resources included). */
+function useKind(key: string, context: string): { kind?: ResourceKind; group?: string; unknown: boolean } {
+  const known = kindByKey(key);
+  const discovery = useApiResources(known ? undefined : context);
+  return useMemo(() => {
+    if (known) return { kind: known, unknown: false };
+    const r = discovery.data?.find((d) => d.id === key || d.name === key);
+    if (!r) return { unknown: discovery.isSuccess || discovery.isError };
+    const label = r.name.charAt(0).toUpperCase() + r.name.slice(1);
+    return {
+      kind: { key: r.id, label, type: r.id, kubectl: r.id, icon: Puzzle, group: "Cluster", clusterScoped: !r.namespaced, generic: true },
+      group: r.group || "core",
+      unknown: false,
+    };
+  }, [known, key, discovery.data, discovery.isSuccess, discovery.isError]);
+}
+
 /** `/resources/:kind` — one resource kind in the current scope. */
 export default function ResourceList() {
   const [, params] = useRoute("/resources/:kind");
   const [, navigate] = useLocation();
-  const kind = kindByKey(params?.kind ?? "");
   useScopeFromUrl();
   const { context, namespace } = useTerminalStore();
+  const { kind, group, unknown } = useKind(decodeURIComponent(params?.kind ?? ""), context);
   const actions = useResourceActions({ context, namespace });
   const count = useCount(kind?.key ?? "", context, namespace);
 
   useEffect(() => {
-    if (!kind) navigate(listHref("pods"), { replace: true });
-  }, [kind, navigate]);
+    if (unknown) navigate("/resources", { replace: true });
+  }, [unknown, navigate]);
   if (!kind) return null;
 
   const scope = kind.clusterScoped ? "whole cluster" : namespace === "all" ? "all namespaces" : namespace;
 
   return (
     <div className="flex h-full flex-col overflow-hidden text-foreground">
-      <AppHeader breadcrumbs={[{ label: "Overview", href: "/" }, { label: kind.label }]} rightSlot={<LiveRefresh />} />
+      <AppHeader
+        breadcrumbs={[{ label: "Overview", href: "/" }, ...(group ? [{ label: "All resources", href: "/resources" }] : []), { label: kind.label }]}
+        rightSlot={<LiveRefresh />}
+      />
       <main className="relative flex-1 overflow-y-auto">
         <div className="mx-auto max-w-7xl space-y-3 px-5 py-4 sm:px-7">
           {/* one row: what this is, how many, where; kind-specific controls on the right */}
@@ -90,7 +112,7 @@ export default function ResourceList() {
               {count !== undefined && <span className="text-sm font-medium tabular-nums text-muted-foreground">{count}</span>}
             </h1>
             <span className="text-xs text-muted-foreground">
-              {context || "…"} · {scope}
+              {context || "…"} · {scope}{group ? ` · ${group}` : ""}
             </span>
             <div className="ml-auto">{kind.key === "pods" && <PodViewToggle />}</div>
           </div>
@@ -100,6 +122,8 @@ export default function ResourceList() {
             <PodList key="pods" context={context} namespace={namespace} actions={actions} />
           ) : kind.key === "deployments" ? (
             <DeploymentList key="deployments" context={context} namespace={namespace} actions={actions} />
+          ) : kind.generic ? (
+            <GenericList key={kind.key} type={kind.type} label={kind.label} context={context} namespace={namespace} clusterScoped={kind.clusterScoped} />
           ) : (
             <SimpleKind key={kind.key} kind={kind.key as SimpleKindKey} context={context} namespace={namespace} />
           )}

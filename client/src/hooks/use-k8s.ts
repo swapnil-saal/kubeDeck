@@ -368,3 +368,29 @@ export function useResourceRelated(type: string, name: string, context: string, 
 // ── Streaming logs hook (SSE) ───────────────────────
 
 export { K8sError, k8sFetchJson, LIST_REFETCH_MS };
+
+/** Every resource kind the cluster can list, built-in and custom (cached on the server for 5 minutes). */
+export function useApiResources(context?: string) {
+  return useQuery({
+    queryKey: [api.k8s.apiResources.path, context],
+    queryFn: () => k8sFetch(buildUrl(api.k8s.apiResources.path, { context: context || "" }), api.k8s.apiResources.responses[200]),
+    enabled: !!context,
+    staleTime: 5 * 60_000,
+    retry: retryUnlessFinal,
+  });
+}
+
+/** Any kind's list with the columns kubectl prints for it; `type` is an api-resource id (`certificates.cert-manager.io`). */
+export function useGenericList(type: string, context?: string, namespace?: string) {
+  return useQuery({
+    queryKey: [api.k8s.genericList.path, type, context, namespace],
+    queryFn: () =>
+      k8sFetch(
+        buildUrl(api.k8s.genericList.path, { type: encodeURIComponent(type), context: context || "", namespace: namespace || "" }),
+        api.k8s.genericList.responses[200],
+      ),
+    enabled: !!context && !!type,
+    refetchInterval: LIST_REFETCH_MS,
+    retry: retryUnlessFinal,
+  });
+}

@@ -430,9 +430,13 @@ export default function ResourceDetail() {
   const name = decodeURIComponent(params.name || "");
   const sp = new URLSearchParams(searchString);
   const context = sp.get("context") || "";
-  const namespace = sp.get("namespace") || "e2";
+  // empty for cluster-scoped kinds (nodes, namespaces, cluster roles…)
+  const namespace = sp.get("namespace") || "";
 
-  const meta = TYPE_META[type] || TYPE_META.pod;
+  const kindInfo = kindByType(type);
+  // the list this resource belongs to: a sidebar kind, or the generic list for any other kind
+  const listKey = kindInfo?.key ?? type;
+  const listLabel = kindInfo?.label ?? type.split(".")[0].charAt(0).toUpperCase() + type.split(".")[0].slice(1);
   const isPod = type === "pod";
   const isDeployment = type === "deployment";
   const hasLogs = (LOG_TYPES as readonly string[]).includes(type);
@@ -501,7 +505,8 @@ export default function ResourceDetail() {
       { id: "logs", label: "Logs", icon: ScrollText },
     ] : []),
     { id: "events", label: "Events", icon: History },
-    { id: "related", label: "Connected", icon: GitBranch },
+    // the related lookup knows workloads, services and ingresses; other kinds have nothing to show there
+    ...(TYPE_META[type] ? [{ id: "related", label: "Connected", icon: GitBranch }] : []),
   ];
 
   return (
@@ -511,9 +516,9 @@ export default function ResourceDetail() {
         breadcrumbs={[
           { label: "Overview", href: "/" },
           {
-            label: kindByType(type)?.label ?? meta.label,
+            label: listLabel,
             // back to the list this resource lives in, in its own scope
-            href: kindByType(type) ? `${listHref(kindByType(type)!.key)}?context=${encodeURIComponent(context)}&namespace=${encodeURIComponent(namespace)}` : undefined,
+            href: `${listHref(listKey)}?context=${encodeURIComponent(context)}${namespace ? `&namespace=${encodeURIComponent(namespace)}` : ""}`,
           },
           { label: name },
         ]}

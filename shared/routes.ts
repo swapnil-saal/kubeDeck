@@ -17,6 +17,30 @@ const relatedResourceSchema = z.object({
   ingresses: z.array(z.object({ name: z.string(), namespace: z.string(), hosts: z.string() })).default([]),
 });
 
+/** One listable resource kind from API discovery (`kubectl api-resources`). */
+export const apiResourceSchema = z.object({
+  /** what kubectl and the routes use: `deployments`, or `certificates.cert-manager.io` for a non-core group */
+  id: z.string(),
+  /** plural, e.g. "certificates" */
+  name: z.string(),
+  kind: z.string(),
+  /** "" for the core group */
+  group: z.string(),
+  version: z.string(),
+  namespaced: z.boolean(),
+  shortNames: z.array(z.string()),
+  verbs: z.array(z.string()),
+  categories: z.array(z.string()),
+});
+export type ApiResource = z.infer<typeof apiResourceSchema>;
+
+/** A list of any kind, with the columns `kubectl get -o wide` prints for it (CRDs' own columns included). */
+export const genericListSchema = z.object({
+  columns: z.array(z.string()),
+  rows: z.array(z.array(z.string())),
+});
+export type GenericList = z.infer<typeof genericListSchema>;
+
 const portForwardEntrySchema = z.object({
   id: z.string(),
   pod: z.string(),
@@ -189,6 +213,17 @@ export const api = {
       method: 'GET' as const,
       path: '/api/k8s/resource/:type/:name/related' as const,
       responses: { 200: relatedResourceSchema, 500: errorSchemas.internal },
+    },
+    // ── Any resource kind (built-in or custom), from API discovery ──
+    apiResources: {
+      method: 'GET' as const,
+      path: '/api/k8s/api-resources' as const,
+      responses: { 200: z.array(apiResourceSchema), 500: errorSchemas.internal },
+    },
+    genericList: {
+      method: 'GET' as const,
+      path: '/api/k8s/list/:type' as const,
+      responses: { 200: genericListSchema, 500: errorSchemas.internal },
     },
   },
   settings: {
