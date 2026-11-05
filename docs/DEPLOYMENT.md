@@ -119,7 +119,7 @@ kubectl -n kubedeck logs deploy/kubedeck -c oauth2-proxy  # login activity
 
 **Everyone who signs in can do whatever the service account can do.** The login decides who may *enter*; Kubernetes RBAC on the `kubedeck` service account decides what they can *read* and *change*, from the UI and through the assistant. `kubedeck-reader` covers pods, logs, events, namespaces, nodes, services, workloads, jobs, ingresses and metrics, and deliberately **not secrets**. `kubedeck-operator` adds changes to those workloads and `pods/exec` for pod files; delete it (and set `KUBEDECK_READ_ONLY=true`) for a look-only KubeDeck.
 
-To show a team less, run a separate KubeDeck per team with its own service account and a narrower role. Per-person limits (impersonation by Keycloak group) are not built yet.
+To give each person their own permissions instead, turn on impersonation (`KUBEDECK_ACCESS=impersonate`, see [WEB.md](WEB.md#per-user-permissions-kubedeck_accessimpersonate)): KubeDeck then acts as the signed-in user and their Keycloak groups, and the service account needs only the `kubedeck-impersonator` role from the manifest. Bind your existing roles to those users and groups first.
 
 ### Several clusters
 

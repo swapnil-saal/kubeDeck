@@ -5,6 +5,7 @@
 import type { Response } from "express";
 import { spawn } from "child_process";
 import { getKubeconfigEnv } from "./settings";
+import { asUser } from "./identity";
 
 // ═══════════════════════════════════════════════════
 //  KUBECTL HELPERS
@@ -19,7 +20,7 @@ export interface KubectlResult {
 
 export function spawnCommand(cmd: string, args: string[], envOverride?: Record<string, string>): Promise<{ stdout: string; stderr: string; code: number }> {
   return new Promise((resolve) => {
-    const proc = spawn(cmd, args, envOverride ? { env: { ...process.env, ...envOverride } } : undefined);
+    const proc = spawn(cmd, asUser(cmd, args), envOverride ? { env: { ...process.env, ...envOverride } } : undefined);
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
     proc.stdout.on("data", (chunk) => stdoutChunks.push(chunk));
@@ -40,7 +41,8 @@ export async function runKubectl(command: string): Promise<KubectlResult> {
   if (code !== 0) {
     const combined = `${stderr} ${stdout}`.toLowerCase();
     if (combined.includes("forbidden")) {
-      return { items: [], _forbidden: true, _error: `Access denied: kubectl ${command.split(" ").slice(0, 3).join(" ")}` };
+      const missing = missingPermission(stderr);
+      return { items: [], _forbidden: true, _error: `Access denied: ${missing ?? `kubectl ${command.split(" ").slice(0, 3).join(" ")}`}` };
     }
     if (combined.includes("no resources found") || combined.includes("not found")) {
       return { items: [] };

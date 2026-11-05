@@ -6,6 +6,8 @@ export interface ServerMode {
   readOnly: boolean;
   /** web mode: "proxy" = users sign in through the login proxy; "none" = no sign-in (KUBEDECK_AUTH=none) */
   auth?: "proxy" | "none";
+  /** web mode: "user" = each person's own RBAC (impersonation); "shared" = KubeDeck's service account */
+  access?: "user" | "shared";
   user?: { name: string; email: string } | null;
   /** podFiles: browse and search a container's files (kubectl exec); desktop only */
   features: { portForward: boolean; settingsEdit: boolean; ai: boolean; podFiles?: boolean };

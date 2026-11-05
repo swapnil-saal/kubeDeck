@@ -86,6 +86,25 @@ roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: kubedec
 subjects:
   - { kind: ServiceAccount, name: kubedeck, namespace: kubedeck }
 ---
+# Per-user permissions (optional, KUBEDECK_ACCESS=impersonate below): KubeDeck acts as each signed-in
+# user (kubectl --as), so their own RBAC applies and the two roles above stop mattering for users.
+# Bind roles to your Keycloak users / groups first, then give KubeDeck only this:
+# ---
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: ClusterRole
+# metadata: { name: kubedeck-impersonator }
+# rules:
+#   - apiGroups: [""]
+#     resources: [users, groups]
+#     verbs: [impersonate]
+# ---
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: ClusterRoleBinding
+# metadata: { name: kubedeck-impersonator }
+# roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: kubedeck-impersonator }
+# subjects:
+#   - { kind: ServiceAccount, name: kubedeck, namespace: kubedeck }
+---
 # The Keycloak client credentials live in a Secret named "kubedeck-oauth" that you create with kubectl
 # (docs/DEPLOYMENT.md, step 3) so no secret value is ever written into this file. The AI provider for the
 # assistant comes from an optional Secret "kubedeck-ai" (docs/DEPLOYMENT.md, step 3); without it the assistant shows as offline.
@@ -119,6 +138,11 @@ spec:
             - { name: KUBEDECK_PUBLIC_URL, value: "https://kubedeck.example.com" }
             # Every feature is on. Turn one off here: KUBEDECK_READ_ONLY=true, KUBEDECK_AI=off, KUBEDECK_POD_FILES=off
             # - { name: KUBEDECK_ALLOWED_GROUPS, value: "platform,sre" }   # restrict by Keycloak group
+            # Per-user permissions: act as each signed-in user (see kubedeck-impersonator above)
+            # - { name: KUBEDECK_ACCESS, value: impersonate }
+            # - { name: KUBEDECK_IMPERSONATE_USER, value: email }       # or "name" (preferred username)
+            # - { name: KUBEDECK_IMPERSONATE_PREFIX, value: "oidc:" }   # match the API server's --oidc-username-prefix
+            # - { name: KUBEDECK_IMPERSONATE_GROUP_PREFIX, value: "oidc:" }
             - name: KUBEDECK_AI_PROVIDER                  # openai | anthropic | ollama | custom
               valueFrom: { secretKeyRef: { name: kubedeck-ai, key: provider, optional: true } }
             - name: KUBEDECK_AI_API_KEY

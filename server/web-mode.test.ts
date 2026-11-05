@@ -11,7 +11,7 @@ import {
 const SECRET = "s3cret-s3cret-s3cret";
 const cfg = (over: Partial<WebConfig> = {}): WebConfig => ({
   enabled: true, readOnly: true, ai: true, podFiles: true, hosts: ["kube.example.com"], proxySecret: SECRET, trustProxyNetwork: false,
-  allowedGroups: [], authNone: false, ...over,
+  allowedGroups: [], authNone: false, impersonate: false, impersonateUser: "email", impersonatePrefix: "", impersonateGroupPrefix: "", ...over,
 });
 const ok = { "x-kubedeck-proxy-secret": SECRET, "x-forwarded-email": "dev@example.com", "x-forwarded-preferred-username": "dev" };
 
@@ -39,6 +39,12 @@ describe("loadWebConfig / validateWebConfig", () => {
     expect(validateWebConfig(loadWebConfig({ ...none, KUBEDECK_PUBLIC_URL: "http://10.0.0.5:30080" }))).toEqual([]);
     expect(validateWebConfig(loadWebConfig({ ...none, KUBEDECK_PUBLIC_URL: "http://10.0.0.5", KUBEDECK_ALLOWED_GROUPS: "sre" })).join(" "))
       .toMatch(/ALLOWED_GROUPS needs a login proxy/);
+  });
+  it("reads the impersonation settings, and refuses them without a login proxy", () => {
+    const c = loadWebConfig({ KUBEDECK_MODE: "web", KUBEDECK_ACCESS: "impersonate", KUBEDECK_IMPERSONATE_USER: "name", KUBEDECK_IMPERSONATE_PREFIX: "oidc:" });
+    expect(c).toMatchObject({ impersonate: true, impersonateUser: "name", impersonatePrefix: "oidc:", impersonateGroupPrefix: "" });
+    expect(validateWebConfig(loadWebConfig({ KUBEDECK_MODE: "web", KUBEDECK_AUTH: "none", KUBEDECK_ACCESS: "impersonate", KUBEDECK_PUBLIC_URL: "http://10.0.0.5" })).join(" "))
+      .toMatch(/impersonate needs a login proxy/);
   });
   it("takes the public hostname from the URL", () => {
     expect(loadWebConfig({ KUBEDECK_MODE: "web", KUBEDECK_PUBLIC_URL: "https://E2-K8S.saal.ai/x" }).hosts).toEqual(["e2-k8s.saal.ai"]);

@@ -32,6 +32,9 @@ KubeDeck never sees passwords. It trusts the identity headers only when the requ
 | `KUBEDECK_PROXY_SECRET` | ≥16 chars; the proxy must send it as `X-KubeDeck-Proxy-Secret` |
 | `KUBEDECK_TRUST_PROXY_NETWORK=1` | alternative to the secret when only the proxy can reach the server (e.g. sidecar, KubeDeck on `127.0.0.1`) |
 | `KUBEDECK_ALLOWED_GROUPS` | comma list; the user must be in one (groups come from `X-Forwarded-Groups`) |
+| `KUBEDECK_ACCESS=impersonate` | **per-user permissions**: act as each signed-in user (`kubectl --as`), so their own RBAC applies. See below |
+| `KUBEDECK_IMPERSONATE_USER` | `email` (default) or `name`: which proxy header becomes the Kubernetes user name |
+| `KUBEDECK_IMPERSONATE_PREFIX` / `KUBEDECK_IMPERSONATE_GROUP_PREFIX` | prepended to user / group names, to match the API server's OIDC prefixes (e.g. `oidc:`) |
 | `KUBEDECK_AUTH=none` | **no login at all**, for private test clusters: no proxy needed, everyone who reaches the URL is `anonymous`. See below |
 | `KUBEDECK_READ_ONLY` | `false` (default) or `true`: refuse every change, from the UI, the palette and the assistant |
 | `KUBEDECK_AI` | `on` (default) or `off` |
@@ -44,6 +47,15 @@ KubeDeck never sees passwords. It trusts the identity headers only when the requ
 | `KUBECONFIG` | optional; with no kubeconfig inside a pod, KubeDeck builds one context, `in-cluster`, from the pod's service account |
 
 KubeDeck **refuses to start** in web mode unless it has a proxy secret or network-trust flag (or `KUBEDECK_AUTH=none`), a public URL, and (if a secret is set) one of ≥16 characters.
+
+### Per-user permissions (`KUBEDECK_ACCESS=impersonate`)
+
+By default every signed-in user acts with KubeDeck's service account. With `KUBEDECK_ACCESS=impersonate`, KubeDeck adds `--as=<user> --as-group=<group>…` (plus `system:authenticated`) to every kubectl call it makes for a request, using the user and groups the login proxy reported. The API server then applies that person's RBAC to everything: lists, details, changes, pod files, the map and the assistant's commands. Buttons the person may not use are disabled with the reason.
+
+- Bind roles to your users and groups as the API server knows them. If the API server trusts Keycloak with `--oidc-username-prefix=oidc:`, set `KUBEDECK_IMPERSONATE_PREFIX=oidc:` (same for groups) so the names match.
+- Give KubeDeck's service account only `impersonate` on `users` and `groups` (the `kubedeck-impersonator` role, commented in the manifest) and remove `kubedeck-reader` / `kubedeck-operator`.
+- The API server does not need to trust Keycloak: KubeDeck vouches for the identity, so keep the login proxy in front (it cannot be combined with `KUBEDECK_AUTH=none`).
+- A kubectl call made outside a user's request runs as `system:anonymous`, never as the service account.
 
 ### No sign-in (`KUBEDECK_AUTH=none`)
 
@@ -63,7 +75,7 @@ The manifest runs oauth2-proxy as a sidecar and binds KubeDeck to `127.0.0.1`, s
 
 ### Who sees what
 
-With one service account, **every signed-in user sees what that account sees**. The proxy decides who may *enter*; Kubernetes RBAC for the service account decides what they can *read*. The same goes for changes and the assistant: what the account may do, every signed-in user may do. To limit people differently, run several KubeDeck instances with different service accounts, or ask for per-user impersonation (not built yet).
+With one service account, **every signed-in user sees what that account sees** (unless you turn on per-user permissions, above). The proxy decides who may *enter*; Kubernetes RBAC for the service account decides what they can *read*. The same goes for changes and the assistant: what the account may do, every signed-in user may do. To limit people differently, run several KubeDeck instances with different service accounts, or ask for per-user impersonation (not built yet).
 
 ## Limits to know
 

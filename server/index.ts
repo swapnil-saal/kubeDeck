@@ -5,6 +5,7 @@ import { createServer } from "http";
 import { registerParamValidators, requireTrustedRequest, validateK8sQuery } from "./security";
 import { reportUnreachableAs503 } from "./errors";
 import { ensureInClusterKubeconfig } from "./incluster";
+import { bindIdentity, setImpersonation } from "./identity";
 import { auditLog, describeMode, HEALTH_PATH, loadWebConfig, setWebConfig, validateWebConfig, webFeatureOff, webGate, webReadOnly } from "./web-mode";
 
 // Web (shared-service) mode is opt-in; refuse to start half-configured rather than serve cluster access to anyone.
@@ -15,6 +16,10 @@ if (webProblems.length > 0) {
   process.exit(1);
 }
 setWebConfig(webCfg);
+setImpersonation(webCfg.enabled ? webCfg : null);
+if (webCfg.enabled && webCfg.impersonate) {
+  console.log("[kubedeck] KUBEDECK_ACCESS=impersonate: each signed-in user acts with their own Kubernetes permissions (kubectl --as).");
+}
 if (webCfg.enabled && webCfg.authNone) {
   console.warn(
     "[kubedeck] KUBEDECK_AUTH=none: no sign-in. Anyone who can reach this server can use it with its cluster access" +
@@ -59,6 +64,8 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+// after body parsing: a parser resumes the chain from a stream event, which would lose the identity's async context
+app.use(bindIdentity);
 
 export function log(message: string, source = "express") {
   if (process.env.KUBEDECK_DEBUG !== "1") return;

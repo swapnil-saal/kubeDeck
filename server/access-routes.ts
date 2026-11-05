@@ -9,6 +9,7 @@ import * as os from "os";
 import * as path from "path";
 import { randomUUID } from "crypto";
 import { api, type Access } from "@shared/routes";
+import { currentIdentity } from "./identity";
 import { spawnCommand } from "./kubectl-run";
 import { getKubeconfigEnv } from "./settings";
 
@@ -35,7 +36,8 @@ export function registerAccessRoutes(app: Express): void {
     const raw = typeof req.query.namespace === "string" ? req.query.namespace : "";
     // "all namespaces" has no single answer; the default namespace stands in for cluster-wide grants
     const namespace = raw && raw !== "all" ? raw : "default";
-    const key = `${context}|${namespace}`;
+    // with impersonation every user has their own answer
+    const key = `${context}|${namespace}|${currentIdentity()?.user ?? ""}`;
     const hit = cache.get(key);
     if (hit && Date.now() - hit.at < TTL_MS) return res.json(hit.data);
 

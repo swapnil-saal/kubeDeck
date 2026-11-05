@@ -3,6 +3,7 @@ import type { Express, Request, Response } from "express";
 import { getKubeconfigEnv } from "./settings";
 import { resolveTargets } from "./log-fetch";
 import { LOG_KINDS, LineSplitter, logArgs, parseStreamOptions, planStreams, type LogKind } from "./log-stream";
+import { asUser } from "./identity";
 
 export interface LogRouteDeps {
   /** `kubectl get … -o json` with Forbidden mapped to `_forbidden` */
@@ -64,7 +65,7 @@ export function registerLogRoutes(app: Express, { runKubectl }: LogRouteDeps): v
       const key = `${pod}/${container}`;
       if (procs.has(key)) return;
       const env = { ...process.env, ...getKubeconfigEnv() };
-      const proc = spawn("kubectl", logArgs(pod, container, opts, { context, namespace }, tailOverride), { env });
+      const proc = spawn("kubectl", asUser("kubectl", logArgs(pod, container, opts, { context, namespace }, tailOverride)), { env });
       procs.set(key, proc);
       live++;
       const out = new LineSplitter();

@@ -1,5 +1,6 @@
 import { spawn } from "child_process";
 import { getKubeconfigEnv } from "./settings";
+import { asUser } from "./identity";
 
 /**
  * Read-only access to a container's files through `kubectl exec`: list a folder, read a file,
@@ -99,7 +100,7 @@ export function downloadName(path: string, folder: boolean): string {
 
 export function runInPod(target: ExecTarget, op: FileOp, args: string[]): Promise<ExecResult> {
   return new Promise((resolve) => {
-    const proc = spawn("kubectl", execArgs(target, op, args), { env: { ...process.env, ...getKubeconfigEnv() } });
+    const proc = spawn("kubectl", asUser("kubectl", execArgs(target, op, args)), { env: { ...process.env, ...getKubeconfigEnv() } });
     const out: Buffer[] = [];
     const err: Buffer[] = [];
     let outBytes = 0;

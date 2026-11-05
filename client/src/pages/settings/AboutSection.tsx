@@ -26,6 +26,9 @@ export function AboutSection() {
         <div className="mt-3 divide-y divide-border/60">
           <Row label="Version"><span className="font-mono tabular-nums">{__APP_VERSION__}</span></Row>
           <Row label="Running as">{mode.mode === "web" ? `shared web service${mode.readOnly ? " (read-only)" : ""}${mode.auth === "none" ? ", no sign-in" : ""}` : "desktop app"}</Row>
+          {mode.mode === "web" && (
+            <Row label="Permissions">{mode.access === "user" ? "your own Kubernetes permissions" : "shared: KubeDeck's service account"}</Row>
+          )}
           <Row label="Settings">
             {mode.mode === "web" ? "managed by the server's environment" : <span className="font-mono text-xs">~/.kubedeck/settings.json</span>}
           </Row>

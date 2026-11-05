@@ -42,6 +42,13 @@ export interface WebConfig {
   allowedGroups: string[];
   /** no login proxy at all (KUBEDECK_AUTH=none): every request is the anonymous user */
   authNone: boolean;
+  /** KUBEDECK_ACCESS=impersonate: act as each signed-in user (kubectl --as), so their own RBAC applies */
+  impersonate: boolean;
+  /** which header becomes the Kubernetes user name: "email" (default) or "name" */
+  impersonateUser: "email" | "name";
+  /** prepended to the user and group names, to match the API server's OIDC prefixes (e.g. "oidc:") */
+  impersonatePrefix: string;
+  impersonateGroupPrefix: string;
 }
 
 /** Who a request is when KUBEDECK_AUTH=none. */
@@ -72,6 +79,10 @@ export function loadWebConfig(env: NodeJS.ProcessEnv = process.env): WebConfig {
     trustProxyNetwork: truthy(env.KUBEDECK_TRUST_PROXY_NETWORK),
     allowedGroups: list(env.KUBEDECK_ALLOWED_GROUPS),
     authNone: (env.KUBEDECK_AUTH ?? "").trim().toLowerCase() === "none",
+    impersonate: (env.KUBEDECK_ACCESS ?? "").trim().toLowerCase() === "impersonate",
+    impersonateUser: (env.KUBEDECK_IMPERSONATE_USER ?? "").trim().toLowerCase() === "name" ? "name" : "email",
+    impersonatePrefix: env.KUBEDECK_IMPERSONATE_PREFIX ?? "",
+    impersonateGroupPrefix: env.KUBEDECK_IMPERSONATE_GROUP_PREFIX ?? "",
   };
 }
 
@@ -80,8 +91,9 @@ export function validateWebConfig(c: WebConfig): string[] {
   if (!c.enabled) return [];
   const problems: string[] = [];
   if (c.authNone) {
-    // nothing signs anyone in, so there are no groups to check
+    // nothing signs anyone in, so there are no groups to check and no one to act as
     if (c.allowedGroups.length > 0) problems.push("KUBEDECK_ALLOWED_GROUPS needs a login proxy: remove it, or remove KUBEDECK_AUTH=none.");
+    if (c.impersonate) problems.push("KUBEDECK_ACCESS=impersonate needs a login proxy to say who the user is: remove it, or remove KUBEDECK_AUTH=none.");
   } else if (!c.proxySecret && !c.trustProxyNetwork) {
     problems.push(
       "Web mode needs a way to know requests came through your login proxy: set KUBEDECK_PROXY_SECRET " +
@@ -258,6 +270,8 @@ export function describeMode(req: Request) {
     mode: "web" as const,
     readOnly: c.readOnly,
     auth: c.authNone ? ("none" as const) : ("proxy" as const),
+    // whose permissions apply: each user's own (impersonation) or KubeDeck's service account
+    access: c.impersonate ? ("user" as const) : ("shared" as const),
     user: !c.authNone && req.kubedeckUser ? { name: req.kubedeckUser.name, email: req.kubedeckUser.email } : null,
     // settings come from the server's environment; a forwarded port would open on the server
     features: { portForward: false, settingsEdit: false, ai: c.ai, podFiles: c.podFiles },

@@ -10,6 +10,7 @@ import {
   cleanPath, cleanQuery, downloadName, execArgs, explainExecError, parseGrep, parseListing, parseRead, runInPod, searchable,
   DOWNLOAD_TIMEOUT_MS, MAX_DOWNLOAD_BYTES, MAX_FILE_BYTES, MAX_RESULTS, type ExecTarget,
 } from "./pod-files";
+import { asUser } from "./identity";
 
 function target(req: Request): ExecTarget {
   const q = req.query as Record<string, string | undefined>;
@@ -97,7 +98,7 @@ export function registerPodFilesRoutes(app: Express): void {
     const folder = req.query.archive === "1";
     if (!path || (folder && path === "/")) return res.status(400).json({ message: folder ? "Pick a folder below /." : "Invalid path." });
 
-    const proc = spawn("kubectl", execArgs(target(req), folder ? "archive" : "download", [path]), {
+    const proc = spawn("kubectl", asUser("kubectl", execArgs(target(req), folder ? "archive" : "download", [path])), {
       env: { ...process.env, ...getKubeconfigEnv() },
     });
     let sent = 0;

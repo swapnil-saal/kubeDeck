@@ -7,6 +7,7 @@ import * as net from "net";
 import { randomUUID } from "crypto";
 import { api } from "@shared/routes";
 import { getKubeconfigEnv } from "./settings";
+import { asUser } from "./identity";
 
 /** Quick TCP connect test — resolves true if something is listening on host:port */
 function tcpProbe(host: string, port: number, timeoutMs = 2000): Promise<boolean> {
@@ -82,7 +83,7 @@ export function registerPortForwardRoutes(app: Express): void {
 
       const pfKubeconfigEnv = getKubeconfigEnv();
       const pfEnv = Object.keys(pfKubeconfigEnv).length > 0 ? { ...process.env, ...pfKubeconfigEnv } : undefined;
-      const proc = spawn("kubectl", spawnArgs, { stdio: ["pipe", "pipe", "pipe"], env: pfEnv });
+      const proc = spawn("kubectl", asUser("kubectl", spawnArgs), { stdio: ["pipe", "pipe", "pipe"], env: pfEnv });
       const id = randomUUID().slice(0, 8);
 
       // Create record immediately so we can track status

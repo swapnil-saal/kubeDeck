@@ -6,6 +6,7 @@
 import { spawn } from "child_process";
 import { getKubeconfigEnv } from "../../settings";
 import { splitArgs } from "../../kubectl-safety";
+import { asUser } from "../../identity";
 
 const MAX_OUTPUT_LENGTH = 6000;
 
@@ -92,7 +93,7 @@ export function execCommand(
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   return new Promise((resolve) => {
     if (signal?.aborted) return resolve({ stdout: "", stderr: "(cancelled)", code: 130 });
-    const proc = spawn(cmd, args, {
+    const proc = spawn(cmd, asUser(cmd, args), {
       env: env ? { ...process.env, ...env } : undefined,
       timeout: 30000,
       detached: true, // own process group so the abort can kill pipeline children too
@@ -297,7 +298,7 @@ export function executePipeline(command: string, signal?: AbortSignal, timeoutMs
   const env = { ...process.env, ...getKubeconfigEnv() };
 
   return new Promise((resolve) => {
-    const procs = stages.map(([cmd, ...args]) => spawn(cmd, args, { env }));
+    const procs = stages.map(([cmd, ...args]) => spawn(cmd, asUser(cmd, args), { env }));
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let done = false;

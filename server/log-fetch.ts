@@ -2,6 +2,7 @@ import { spawn } from "child_process";
 import { parseEntry, sortByTime, type LogEntry } from "@shared/logs";
 import { getKubeconfigEnv } from "./settings";
 import { logArgs, planStreams, podTarget, selectorFor, type LogKind, type PodTarget } from "./log-stream";
+import { asUser } from "./identity";
 
 /** `kubectl get … -o json` as the callers need it: Forbidden mapped to `_forbidden`, not-found to an empty object. */
 export type GetJson = (command: string) => Promise<any>;
@@ -38,7 +39,7 @@ const CONCURRENCY = 8;
 export const kubectlJson: GetJson = (command) =>
   new Promise((resolve, reject) => {
     const args = command.trim().split(/\s+/).concat("-o", "json", "--request-timeout=20s");
-    const proc = spawn("kubectl", args, { env: { ...process.env, ...getKubeconfigEnv() } });
+    const proc = spawn("kubectl", asUser("kubectl", args), { env: { ...process.env, ...getKubeconfigEnv() } });
     const out: Buffer[] = [];
     const err: Buffer[] = [];
     proc.stdout.on("data", (b: Buffer) => out.push(b));
@@ -77,7 +78,7 @@ function readOne(pod: string, container: string, o: FetchLogsOptions): Promise<{
   return new Promise((resolve) => {
     if (o.signal?.aborted) return resolve({ lines: [] });
     const args = logArgs(pod, container, { tail: o.tail, since: o.since, previous: !!o.previous, follow: false }, { context: o.context, namespace: o.namespace });
-    const proc = spawn("kubectl", args, { env: { ...process.env, ...getKubeconfigEnv() } });
+    const proc = spawn("kubectl", asUser("kubectl", args), { env: { ...process.env, ...getKubeconfigEnv() } });
     const out: Buffer[] = [];
     let size = 0;
     let stderr = "";
