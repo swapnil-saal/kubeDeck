@@ -26,6 +26,8 @@ const loadMotionFeatures = () => import("@/lib/motion-features").then((m) => m.d
 const ResourceList = lazy(() => import("@/pages/ResourceList"));
 const ApiBrowser = lazy(() => import("@/pages/ApiBrowser"));
 const MapPage = lazy(() => import("@/pages/MapPage"));
+const ProjectsPage = lazy(() => import("@/pages/projects/ProjectsPage"));
+const ProjectPage = lazy(() => import("@/pages/projects/ProjectPage"));
 const ResourceDetail = lazy(() => import("@/pages/ResourceDetail"));
 const Settings = lazy(() => import("@/pages/Settings"));
 const NotFound = lazy(() => import("@/pages/not-found"));
@@ -46,6 +48,8 @@ function Routes() {
       <Route path="/" component={Dashboard} />
       {aiEnabled && <Route path="/ai" component={AiChatPage} />}
       <Route path="/map" component={MapPage} />
+      <Route path="/projects" component={ProjectsPage} />
+      <Route path="/projects/:id" component={ProjectPage} />
       <Route path="/resources" component={ApiBrowser} />
       <Route path="/resources/:kind" component={ResourceList} />
       <Route path="/resource/:type/:name" component={ResourceDetail} />

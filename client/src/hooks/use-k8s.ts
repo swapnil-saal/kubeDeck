@@ -1,4 +1,4 @@
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useQueries, useMutation } from "@tanstack/react-query";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { api, buildUrl } from "@shared/routes";
 import type { ApplyResult, RelatedResources, PortForwardEntry } from "@shared/routes";
@@ -439,4 +439,34 @@ export function useNamespaceMap(context?: string, namespace?: string) {
     refetchInterval: 30_000,
     retry: retryUnlessFinal,
   });
+}
+
+/**
+ * Pods and deployments for several (cluster, namespace) scopes at once (a project), sharing the cache
+ * with the regular lists. Each result keeps its scope, so rows can link back with the right context.
+ */
+export function useAcrossScopes(scopes: { context: string; namespace: string }[]) {
+  const pods = useQueries({
+    queries: scopes.map(({ context, namespace }) => ({
+      queryKey: [api.k8s.pods.path, context, namespace],
+      queryFn: () => k8sFetch(buildUrl(api.k8s.pods.path, { context, namespace }), api.k8s.pods.responses[200]),
+      refetchInterval: LIST_REFETCH_MS,
+      retry: retryUnlessFinal,
+    })),
+  });
+  const deployments = useQueries({
+    queries: scopes.map(({ context, namespace }) => ({
+      queryKey: [api.k8s.deployments.path, context, namespace],
+      queryFn: () => k8sFetch(buildUrl(api.k8s.deployments.path, { context, namespace }), api.k8s.deployments.responses[200]),
+      refetchInterval: LIST_REFETCH_MS,
+      retry: retryUnlessFinal,
+    })),
+  });
+  return scopes.map((scope, i) => ({
+    scope,
+    pods: pods[i]?.data,
+    deployments: deployments[i]?.data,
+    loading: !!(pods[i]?.isLoading || deployments[i]?.isLoading),
+    error: (pods[i]?.error ?? deployments[i]?.error)?.message,
+  }));
 }

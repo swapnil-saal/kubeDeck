@@ -1,6 +1,6 @@
 import { useEffect, useMemo, type FC, type ReactNode } from "react";
 import { useLocation } from "wouter";
-import { ChevronDown, Gauge, LayoutGrid, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Workflow } from "lucide-react";
+import { ChevronDown, FolderKanban, Gauge, LayoutGrid, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Workflow } from "lucide-react";
 import { AiAvatar } from "@/ai";
 import { KubeDeckLogo, KubeDeckMark } from "@/components/KubeDeckLogo";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -154,6 +154,7 @@ export function AppSidebar() {
 
       <nav aria-label="Main" className="no-scrollbar flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2">
         <NavItem label="Overview" icon={<Gauge className="h-4 w-4" />} active={path === "/"} collapsed={collapsed} onClick={() => navigate("/")} />
+        <NavItem label="Projects" icon={<FolderKanban className="h-4 w-4" />} active={path.startsWith("/projects")} collapsed={collapsed} onClick={() => navigate("/projects")} />
         <NavItem label="Map" icon={<Workflow className="h-4 w-4" />} active={path === "/map"} collapsed={collapsed} onClick={() => navigate("/map")} />
         {serverMode.aiEnabled && (
           <NavItem

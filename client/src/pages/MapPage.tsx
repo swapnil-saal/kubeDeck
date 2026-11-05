@@ -23,9 +23,8 @@ const TONE_DOT = { good: "bg-success", warn: "bg-warning", bad: "bg-destructive"
 const TONE_RING = { good: "", warn: "border-warning/50", bad: "border-destructive/60", neutral: "" } as const;
 
 /** `/map` — the selected namespace as a graph: what routes to what, what runs, and what it reads. */
-export default function MapPage() {
-  useScopeFromUrl();
-  const { context, namespace, setNamespace } = useTerminalStore();
+/** One namespace's map with its search and filters; used by the Map page and by projects. */
+export function MapView({ context, namespace }: { context: string; namespace: string }) {
   const [, navigate] = useLocation();
   const { get, set } = useHashParams();
   const q = (get("q") || "").trim().toLowerCase();
@@ -33,7 +32,6 @@ export default function MapPage() {
   const hideConfig = get("config") === "0";
   const [focus, setFocus] = useState<string | null>(null);
   const map = useNamespaceMap(context, namespace);
-  const namespaces = useK8sNamespaces(namespace === "all" ? context : undefined);
 
   const adj = useMemo(() => adjacency(map.data ?? { edges: [] }), [map.data]);
 
@@ -57,41 +55,22 @@ export default function MapPage() {
   const open = (n: MapNode) => navigate(`/resource/${n.type}/${encodeURIComponent(n.name)}?context=${encodeURIComponent(context)}&namespace=${encodeURIComponent(namespace)}`);
 
   return (
-    <div className="flex h-full flex-col overflow-hidden text-foreground">
-      <AppHeader breadcrumbs={[{ label: "Overview", href: "/" }, { label: "Map" }]} rightSlot={<LiveRefresh />} />
-      <div className="flex flex-wrap items-center gap-3 border-b border-border/60 px-5 py-2.5 sm:px-7">
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary"><Workflow className="h-4 w-4" /></span>
-        <h1 className="text-lg font-bold tracking-tight">Map</h1>
-        <span className="text-xs text-muted-foreground">{context || "…"} · {namespace === "all" ? "pick a namespace" : namespace}</span>
-        {map.data && namespace !== "all" && (
-          <>
-            <label className="focus-frame ml-auto flex h-8 w-64 max-w-full items-center gap-2 rounded-lg border border-border bg-secondary/50 px-2.5 focus-within:border-primary/40">
-              <Search className="h-3.5 w-3.5 text-muted-foreground" />
-              <input value={get("q") || ""} onChange={(e) => set("q", e.target.value || null)} placeholder="Find a resource…" aria-label="Find a resource on the map" className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground/70" />
-            </label>
-            <Toggle on={problemsOnly} onClick={() => set("problems", problemsOnly ? null : "1")} icon={AlertTriangle}>
-              Problems{problems ? ` ${problems}` : ""}
-            </Toggle>
-            <Toggle on={!hideConfig} onClick={() => set("config", hideConfig ? null : "0")} icon={FileText}>Config & storage</Toggle>
-          </>
-        )}
-      </div>
-
-      <main className="relative min-h-0 flex-1 overflow-auto" onClick={() => setFocus(null)}>
-        {namespace === "all" ? (
-          <div className="mx-auto max-w-2xl px-6 py-12 text-center">
-            <Workflow className="mx-auto mb-3 h-8 w-8 text-primary" />
-            <p className="text-sm font-medium">The map shows one namespace at a time.</p>
-            <p className="mt-1 text-xs text-muted-foreground">Every namespace at once would be unreadable. Pick one:</p>
-            <div className="mt-4 flex flex-wrap justify-center gap-1.5">
-              {(namespaces.data ?? []).map((ns) => (
-                <button key={ns.name} type="button" onClick={() => setNamespace(ns.name)} className="rounded-full border border-border px-2.5 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground">
-                  {ns.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : map.isLoading ? (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {map.data && (
+        <div className="flex flex-wrap items-center gap-2 px-5 pt-3 sm:px-7">
+          <label className="focus-frame flex h-8 w-64 max-w-full items-center gap-2 rounded-lg border border-border bg-secondary/50 px-2.5 focus-within:border-primary/40">
+            <Search className="h-3.5 w-3.5 text-muted-foreground" />
+            <input value={get("q") || ""} onChange={(e) => set("q", e.target.value || null)} placeholder="Find a resource…" aria-label="Find a resource on the map" className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground/70" />
+          </label>
+          <Toggle on={problemsOnly} onClick={() => set("problems", problemsOnly ? null : "1")} icon={AlertTriangle}>
+            Problems{problems ? ` ${problems}` : ""}
+          </Toggle>
+          <Toggle on={!hideConfig} onClick={() => set("config", hideConfig ? null : "0")} icon={FileText}>Config & storage</Toggle>
+          <span className="ml-auto hidden text-[11px] text-muted-foreground lg:inline">Click to follow connections · double-click to open</span>
+        </div>
+      )}
+      <div className="relative min-h-0 flex-1 overflow-auto" onClick={() => setFocus(null)}>
+        {map.isLoading ? (
           <p className="flex items-center gap-2 px-7 py-10 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Reading {namespace}…</p>
         ) : map.isError ? (
           <p className="px-7 py-10 text-sm text-destructive">{map.error?.message}</p>
@@ -136,7 +115,41 @@ export default function MapPage() {
             )}
           </div>
         )}
-      </main>
+      </div>
+    </div>
+  );
+}
+
+/** `/map` — the selected namespace as a graph: what routes to what, what runs, and what it reads. */
+export default function MapPage() {
+  useScopeFromUrl();
+  const { context, namespace, setNamespace } = useTerminalStore();
+  const namespaces = useK8sNamespaces(namespace === "all" ? context : undefined);
+
+  return (
+    <div className="flex h-full flex-col overflow-hidden text-foreground">
+      <AppHeader breadcrumbs={[{ label: "Overview", href: "/" }, { label: "Map" }]} rightSlot={<LiveRefresh />} />
+      <div className="flex flex-wrap items-center gap-3 border-b border-border/60 px-5 py-2.5 sm:px-7">
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary"><Workflow className="h-4 w-4" /></span>
+        <h1 className="text-lg font-bold tracking-tight">Map</h1>
+        <span className="text-xs text-muted-foreground">{context || "…"} · {namespace === "all" ? "pick a namespace" : namespace}</span>
+      </div>
+      {namespace === "all" ? (
+        <div className="mx-auto max-w-2xl px-6 py-12 text-center">
+          <Workflow className="mx-auto mb-3 h-8 w-8 text-primary" />
+          <p className="text-sm font-medium">The map shows one namespace at a time.</p>
+          <p className="mt-1 text-xs text-muted-foreground">Every namespace at once would be unreadable. Pick one:</p>
+          <div className="mt-4 flex flex-wrap justify-center gap-1.5">
+            {(namespaces.data ?? []).map((ns) => (
+              <button key={ns.name} type="button" onClick={() => setNamespace(ns.name)} className="rounded-full border border-border px-2.5 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground">
+                {ns.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <MapView context={context} namespace={namespace} />
+      )}
     </div>
   );
 }
