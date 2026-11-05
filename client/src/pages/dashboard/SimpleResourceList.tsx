@@ -10,7 +10,7 @@ export interface ListQuery {
 
 export type SimpleKindKey =
   | "services" | "statefulsets" | "daemonsets" | "jobs" | "cronjobs"
-  | "configmaps" | "secrets" | "ingresses" | "nodes" | "hpa" | "pvcs";
+  | "configmaps" | "secrets" | "ingresses" | "hpa" | "pvcs";
 
 export interface SimpleResourceListProps {
   kind: SimpleKindKey;
@@ -254,35 +254,6 @@ export function SimpleResourceList({ kind, query, search, onSearchChange, nsScop
                 { header: "Hosts", accessorKey: "hosts", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.hosts}</span> },
                 { header: "Class", accessorKey: "className" as any, cell: (item: any) => <span className="text-muted-foreground text-[10px]">{item.className || "-"}</span> },
                 { header: "Ports", accessorKey: "ports" },
-                { header: "Age", accessorKey: "age" },
-              ]}
-            />
-      );
-    case "nodes":
-      return (
-        <ResourceTable
-              tableId="nodes"
-
-              hideNamespace={nsScoped}
-
-              emptyLabel="nodes"
-              search={search}
-              onSearchChange={onSearchChange}
-              data={query.data}
-              isLoading={query.isLoading}
-              isError={query.isError}
-              error={query.error}
-              accentColor="amber"
-              columns={[
-                { header: "Node", accessorKey: "name", cell: (item) => (
-                  <button onClick={() => goToDetail("node", item.name, "")} className="text-foreground/80 font-medium hover:text-foreground hover:underline underline-offset-2 transition-colors text-left">{item.name}</button>
-                )},
-                { header: "Status", accessorKey: "status" },
-                { header: "Roles", accessorKey: "roles", cell: (item) => <span className="text-[10px] text-muted-foreground">{item.roles}</span> },
-                { header: "Version", accessorKey: "version", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.version}</span> },
-                { header: "CPU", accessorKey: "cpu", cell: (item) => <span className="text-muted-foreground tabular-nums text-[10px]">{item.cpu}</span> },
-                { header: "Memory", accessorKey: "memory", cell: (item) => <span className="text-muted-foreground tabular-nums text-[10px]">{item.memory}</span> },
-                { header: "OS", accessorKey: "os", cell: (item) => <span className="text-muted-foreground text-[10px]">{item.os}</span> },
                 { header: "Age", accessorKey: "age" },
               ]}
             />

@@ -209,6 +209,18 @@ export const api = {
       path: '/api/k8s/deployments/:name/restart' as const,
       responses: { 200: z.object({ message: z.string() }), 500: errorSchemas.internal },
     },
+    nodeAction: {
+      method: 'POST' as const,
+      /** :action = cordon | uncordon | drain */
+      path: '/api/k8s/nodes/:name/:action' as const,
+      input: z.object({
+        /** drain: also evict pods that keep data in emptyDir volumes (the data is lost) */
+        deleteEmptyDirData: z.boolean().optional(),
+        /** drain: also evict pods no controller will recreate */
+        force: z.boolean().optional(),
+      }).default({}),
+      responses: { 200: z.object({ message: z.string(), output: z.string() }), 500: errorSchemas.internal },
+    },
     resourceApply: {
       method: 'POST' as const,
       /** ?mode=preview (server dry run + diff, changes nothing) or apply (default); ?namespace= for objects that name none */

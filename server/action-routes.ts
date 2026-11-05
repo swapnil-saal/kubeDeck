@@ -54,6 +54,27 @@ export function registerActionRoutes(app: Express): void {
   });
 
   // ── Apply YAML ─────────────────────────────────────
+  // ── Nodes: cordon / uncordon / drain ─────────────
+  app.post(api.k8s.nodeAction.path, async (req, res) => {
+    const { name, action } = req.params;
+    if (action !== "cordon" && action !== "uncordon" && action !== "drain") return res.status(404).json({ message: "Unknown node action" });
+    const opts = api.k8s.nodeAction.input.safeParse(req.body ?? {});
+    if (!opts.success) return res.status(400).json({ message: "Invalid drain options" });
+    const ctx = typeof req.query.context === "string" && req.query.context ? [`--context=${req.query.context}`] : [];
+    const args = [action, name, ...ctx];
+    if (action === "drain") {
+      // DaemonSet pods would come straight back; the timeout bounds pods that refuse to leave (PDBs)
+      args.push("--ignore-daemonsets", "--timeout=300s");
+      if (opts.data.deleteEmptyDirData) args.push("--delete-emptydir-data");
+      if (opts.data.force) args.push("--force");
+    }
+    const r = await spawnCommand("kubectl", args, getKubeconfigEnv());
+    const output = `${r.stdout}${r.stderr}`.trim();
+    if (r.code !== 0) return handleForbidden(res, r.stderr || r.stdout, `Could not ${action} node ${name}`);
+    const done = { cordon: "cordoned: no new pods will be scheduled there", uncordon: "schedulable again", drain: "drained: its pods were evicted and it is cordoned" }[action];
+    res.json({ message: `Node ${name} ${done}`, output });
+  });
+
   // Apply YAML: ?mode=preview runs a server-side dry run and a diff (nothing changes); otherwise it applies.
   app.post(api.k8s.resourceApply.path, async (req, res) => {
     const parsed = api.k8s.resourceApply.input.safeParse(req.body);

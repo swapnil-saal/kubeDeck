@@ -128,6 +128,8 @@ export const k8sNodeSchema = z.object({
   memory: z.string(),
   os: z.string(),
   age: z.string(),
+  /** false once cordoned: no new pods are scheduled there */
+  schedulable: z.boolean().default(true),
 });
 
 export const k8sHpaSchema = z.object({

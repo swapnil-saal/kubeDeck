@@ -414,3 +414,18 @@ export function useGenericList(type: string, context?: string, namespace?: strin
     retry: retryUnlessFinal,
   });
 }
+
+/** Cordon, uncordon or drain a node. */
+export function useNodeAction() {
+  return useMutation({
+    mutationFn: async ({ name, action, context, deleteEmptyDirData, force }: {
+      name: string; action: "cordon" | "uncordon" | "drain"; context: string; deleteEmptyDirData?: boolean; force?: boolean;
+    }) => {
+      const url = buildUrl(api.k8s.nodeAction.path, { name, action, context });
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deleteEmptyDirData, force }) });
+      if (!res.ok) { const body = await res.json().catch(() => ({})); throw new K8sError(body.message || "Failed", res.status); }
+      return res.json() as Promise<{ message: string; output: string }>;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [api.k8s.nodes.path] }),
+  });
+}

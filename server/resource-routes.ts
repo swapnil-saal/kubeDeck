@@ -262,6 +262,7 @@ export function registerResourceRoutes(app: Express): void {
           version: item.status?.nodeInfo?.kubeletVersion || "-",
           cpu: item.status?.capacity?.cpu || "-", memory: item.status?.capacity?.memory || "-",
           os: `${item.status?.nodeInfo?.osImage || "-"}`,
+          schedulable: !item.spec?.unschedulable,
           age: item.metadata?.creationTimestamp || "",
         };
       }));

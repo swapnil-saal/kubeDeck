@@ -12,7 +12,7 @@ import { CommandBar, buildListCommands } from "@/components/CommandBar";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import {
   useK8sConfigMaps, useK8sCronJobs, useK8sDaemonSets, useK8sDeployments, useK8sHpa, useK8sIngresses, useK8sJobs,
-  useApiResources, useK8sNodes, useK8sPods, useK8sPvcs, useK8sSecrets, useK8sServices, useK8sStatefulSets,
+  useApiResources, useK8sPods, useK8sPvcs, useK8sSecrets, useK8sServices, useK8sStatefulSets,
 } from "@/hooks/use-k8s";
 import { useHashParams } from "@/hooks/use-hash-params";
 import { useResourceNav } from "@/hooks/use-resource-nav";
@@ -22,6 +22,7 @@ import { kindByKey, type ResourceKind } from "@/lib/resource-kinds";
 import { SimpleResourceList, type SimpleKindKey } from "@/pages/dashboard/SimpleResourceList";
 import { DeploymentList } from "@/pages/resources/DeploymentList";
 import { GenericList } from "@/pages/resources/GenericList";
+import { NodeList } from "@/pages/resources/NodeList";
 import { PodList, PodViewToggle } from "@/pages/resources/PodList";
 import { useResourceActions } from "@/pages/resources/resource-actions";
 
@@ -37,7 +38,6 @@ const SIMPLE_QUERIES: Record<SimpleKindKey, ListHook> = {
   configmaps: useK8sConfigMaps as ListHook,
   secrets: useK8sSecrets as ListHook,
   ingresses: useK8sIngresses as ListHook,
-  nodes: ((context: string) => useK8sNodes(context)) as ListHook,
   hpa: useK8sHpa as ListHook,
   pvcs: useK8sPvcs as ListHook,
 };
@@ -148,6 +148,8 @@ export default function ResourceList() {
             <PodList key="pods" context={context} namespace={namespace} actions={actions} />
           ) : kind.key === "deployments" ? (
             <DeploymentList key="deployments" context={context} namespace={namespace} actions={actions} />
+          ) : kind.key === "nodes" ? (
+            <NodeList key="nodes" context={context} />
           ) : kind.generic ? (
             <GenericList key={kind.key} type={kind.type} label={kind.label} context={context} namespace={namespace} clusterScoped={kind.clusterScoped} />
           ) : (
