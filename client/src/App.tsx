@@ -25,6 +25,7 @@ const loadMotionFeatures = () => import("@/lib/motion-features").then((m) => m.d
 // The overview is the landing page and loads with the app; everything else loads when first used.
 const ResourceList = lazy(() => import("@/pages/ResourceList"));
 const ApiBrowser = lazy(() => import("@/pages/ApiBrowser"));
+const MapPage = lazy(() => import("@/pages/MapPage"));
 const ResourceDetail = lazy(() => import("@/pages/ResourceDetail"));
 const Settings = lazy(() => import("@/pages/Settings"));
 const NotFound = lazy(() => import("@/pages/not-found"));
@@ -44,6 +45,7 @@ function Routes() {
     <Switch>
       <Route path="/" component={Dashboard} />
       {aiEnabled && <Route path="/ai" component={AiChatPage} />}
+      <Route path="/map" component={MapPage} />
       <Route path="/resources" component={ApiBrowser} />
       <Route path="/resources/:kind" component={ResourceList} />
       <Route path="/resource/:type/:name" component={ResourceDetail} />

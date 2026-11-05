@@ -429,3 +429,14 @@ export function useNodeAction() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: [api.k8s.nodes.path] }),
   });
 }
+
+/** One namespace as a graph: ingress → service → workload → config and storage. */
+export function useNamespaceMap(context?: string, namespace?: string) {
+  return useQuery({
+    queryKey: [api.k8s.map.path, context, namespace],
+    queryFn: () => k8sFetch(buildUrl(api.k8s.map.path, { context: context || "", namespace: namespace || "" }), api.k8s.map.responses[200]),
+    enabled: !!context && !!namespace && namespace !== "all",
+    refetchInterval: 30_000,
+    retry: retryUnlessFinal,
+  });
+}

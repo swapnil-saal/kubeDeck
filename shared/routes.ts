@@ -43,6 +43,32 @@ export const genericListSchema = z.object({
 });
 export type GenericList = z.infer<typeof genericListSchema>;
 
+/** One box on the namespace map. */
+export const mapNodeSchema = z.object({
+  /** "Kind/name" */
+  id: z.string(),
+  kind: z.string(),
+  name: z.string(),
+  /** route type for the detail page */
+  type: z.string(),
+  /** 0 ingress · 1 service · 2 workload · 3 config & storage */
+  column: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
+  detail: z.string(),
+  tone: z.enum(["good", "warn", "bad", "neutral"]),
+  badge: z.string().optional(),
+  pods: z.object({ total: z.number(), ready: z.number(), bad: z.number() }).optional(),
+  /** desired replicas */
+  want: z.number().optional(),
+});
+export const mapGraphSchema = z.object({
+  nodes: z.array(mapNodeSchema),
+  edges: z.array(z.object({ from: z.string(), to: z.string() })),
+  /** kinds that could not be read (RBAC); the map is partial without them */
+  missing: z.array(z.string()).default([]),
+});
+export type MapNode = z.infer<typeof mapNodeSchema>;
+export type MapGraph = z.infer<typeof mapGraphSchema>;
+
 /** What the cluster identity KubeDeck uses may do in a namespace (a SelfSubjectRulesReview). */
 export const accessRuleSchema = z.object({
   verbs: z.array(z.string()),
@@ -227,6 +253,11 @@ export const api = {
       path: '/api/k8s/apply' as const,
       input: z.object({ yaml: z.string().max(1_000_000) }),
       responses: { 200: applyResultSchema, 500: errorSchemas.internal },
+    },
+    map: {
+      method: 'GET' as const,
+      path: '/api/k8s/map' as const,
+      responses: { 200: mapGraphSchema, 500: errorSchemas.internal },
     },
     access: {
       method: 'GET' as const,
