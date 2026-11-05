@@ -15,7 +15,7 @@ describe("parseApiResources", () => {
   it("keeps listable kinds, gives non-core ones a group-qualified id, and sorts by group", () => {
     const r = parseApiResources(json);
     expect(r.map((x) => x.id)).toEqual(["namespaces", "deployments.apps", "certificates.cert-manager.io"]);
-    expect(r[0]).toMatchObject({ group: "", namespaced: false, shortNames: ["ns"], categories: [] });
+    expect(r[0]).toMatchObject({ group: "", namespaced: false, shortNames: ["ns"], categories: [], singular: "" });
   });
 });
 

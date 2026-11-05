@@ -7,6 +7,7 @@ import { usePodMetrics } from "@/hooks/use-cluster-extras";
 import { useHashParams } from "@/hooks/use-hash-params";
 import { usePins } from "@/hooks/use-pins";
 import { useResourceNav } from "@/hooks/use-resource-nav";
+import { useAccess } from "@/hooks/use-access";
 import { useServerMode } from "@/hooks/use-server-mode";
 import { parseCpuMilli } from "@/lib/cluster-health";
 import type { ResourceRef } from "@/lib/pins";
@@ -40,6 +41,8 @@ export function PodList({ context, namespace, actions: actions_ }: {
   const nsScoped = namespace !== "all";
 
   const { data: pods, isLoading, isError, error } = useK8sPods(context, namespace);
+  // RBAC per namespace in view: actions the account cannot do are shown disabled with the reason
+  const { denied } = useAccess(context, namespace === "all" ? (pods ?? []).map((p) => p.namespace) : [namespace]);
   const metrics = usePodMetrics(context, namespace);
   const pins = usePins(context);
   const serverMode = useServerMode();
@@ -146,11 +149,16 @@ export function PodList({ context, namespace, actions: actions_ }: {
               if (serverMode.features.podFiles) actions.push({
                 id: "files", label: "Browse files", icon: FolderTree, description: "Explore, open and search the container's files",
                 onSelect: () => openDetail("pod", item.name, item.namespace, "files"),
+                disabledReason: denied(item.namespace, "create", "pods/exec"),
               });
-              actions.push({ id: "env", label: "Environment variables", icon: Braces, description: "The values the container runs with", onSelect: () => actions_.showEnv(item.name) });
+              actions.push({
+                id: "env", label: "Environment variables", icon: Braces, description: "The values the container runs with",
+                onSelect: () => actions_.showEnv(item.name), disabledReason: denied(item.namespace, "create", "pods/exec"),
+              });
               if (serverMode.features.portForward) actions.push({
                 id: "forward", label: "Port forward…", icon: Cable, description: "Reach a container port on localhost",
                 onSelect: () => actions_.openPortForward(item.name, item.containerPorts ?? []),
+                disabledReason: denied(item.namespace, "create", "pods/portforward"),
               });
               actions.push({
                 id: "pin", label: pinned ? "Unpin" : "Pin", icon: pinned ? PinOff : Pin, description: pinned ? "Remove it from the Overview" : "Keep it at the top of the Overview",
@@ -159,6 +167,7 @@ export function PodList({ context, namespace, actions: actions_ }: {
               if (serverMode.canWrite) actions.push({
                 id: "delete", label: "Delete pod…", icon: Trash2, danger: true, description: "Its controller will usually start a replacement",
                 onSelect: () => actions_.deletePod(item.name),
+                disabledReason: denied(item.namespace, "delete", "pods"),
               });
               return (
                 <RowActions

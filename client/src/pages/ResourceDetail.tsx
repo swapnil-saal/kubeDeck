@@ -5,7 +5,7 @@ import { useHashParams } from "@/hooks/use-hash-params";
 import {
   useResourceDescribe, useResourceYaml, useResourceEvents,
   usePodEnv, useResourceRelated,
-  usePortForward, usePortForwards, useStopPortForward, useApplyYaml,
+  usePortForward, usePortForwards, useStopPortForward, useApplyYaml, useApiResources,
 } from "@/hooks/use-k8s";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -31,6 +31,8 @@ import {
   useAiTask,
 } from "@/ai";
 import { kindByType, listHref } from "@/lib/resource-kinds";
+import { findApiResource } from "@/lib/access";
+import { useAccess } from "@/hooks/use-access";
 
 /** Loaded when the Files tab is first opened. */
 const PodFileBrowser = lazy(() => import("@/components/files/PodFileBrowser"));
@@ -456,6 +458,11 @@ export default function ResourceDetail() {
   const applyMutation = useApplyYaml();
   const previewMutation = useApplyYaml();
   const serverMode = useServerMode();
+  const apiRes = findApiResource(useApiResources(context).data, type);
+  const { denied } = useAccess(context, [namespace]);
+  // writes are on and RBAC (once known) allows them; unknown never hides anything
+  const canPatch = serverMode.canWrite && !(apiRes && denied(namespace, "patch", apiRes.name, apiRes.group));
+  const canExec = !denied(namespace, "create", "pods/exec");
 
   const goToResource = (rType: string, rName: string, rNs: string) => {
     navigate(`/resource/${rType}/${encodeURIComponent(rName)}?context=${encodeURIComponent(context)}&namespace=${encodeURIComponent(rNs)}`);
@@ -499,11 +506,11 @@ export default function ResourceDetail() {
   const tabs = [
     { id: "describe", label: "Describe", icon: FileText },
     { id: "yaml", label: "YAML", icon: Code },
-    ...(serverMode.canWrite ? [{ id: "edit", label: "Edit", icon: Pencil }] : []),
+    ...(canPatch ? [{ id: "edit", label: "Edit", icon: Pencil }] : []),
     ...(isPod ? [
       { id: "logs", label: "Logs", icon: ScrollText },
-      { id: "env", label: "Environment", icon: Variable },
-      ...(serverMode.features.podFiles ? [{ id: "files", label: "Files", icon: FolderTree }] : []),
+      ...(canExec ? [{ id: "env", label: "Environment", icon: Variable }] : []),
+      ...(serverMode.features.podFiles && canExec ? [{ id: "files", label: "Files", icon: FolderTree }] : []),
     ] : []),
     ...(hasLogs && !isPod ? [
       { id: "logs", label: "Logs", icon: ScrollText },

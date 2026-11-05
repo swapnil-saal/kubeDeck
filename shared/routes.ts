@@ -23,6 +23,8 @@ export const apiResourceSchema = z.object({
   id: z.string(),
   /** plural, e.g. "certificates" */
   name: z.string(),
+  /** singular, e.g. "certificate" ("" when the server does not say) */
+  singular: z.string().default(""),
   kind: z.string(),
   /** "" for the core group */
   group: z.string(),
@@ -40,6 +42,21 @@ export const genericListSchema = z.object({
   rows: z.array(z.array(z.string())),
 });
 export type GenericList = z.infer<typeof genericListSchema>;
+
+/** What the cluster identity KubeDeck uses may do in a namespace (a SelfSubjectRulesReview). */
+export const accessRuleSchema = z.object({
+  verbs: z.array(z.string()),
+  apiGroups: z.array(z.string()),
+  resources: z.array(z.string()),
+  resourceNames: z.array(z.string()),
+});
+export const accessSchema = z.object({
+  rules: z.array(accessRuleSchema),
+  /** the authorizer could not list everything (e.g. a webhook): a missing rule is not a "no" */
+  incomplete: z.boolean(),
+});
+export type AccessRule = z.infer<typeof accessRuleSchema>;
+export type Access = z.infer<typeof accessSchema>;
 
 /** `kubectl explain` for one field, parsed. */
 export const explainSchema = z.object({
@@ -198,6 +215,11 @@ export const api = {
       path: '/api/k8s/apply' as const,
       input: z.object({ yaml: z.string().max(1_000_000) }),
       responses: { 200: applyResultSchema, 500: errorSchemas.internal },
+    },
+    access: {
+      method: 'GET' as const,
+      path: '/api/k8s/access' as const,
+      responses: { 200: accessSchema, 500: errorSchemas.internal },
     },
     explain: {
       method: 'GET' as const,

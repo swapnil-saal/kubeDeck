@@ -24,6 +24,7 @@ export function parseApiResources(json: string): ApiResource[] {
       return {
         id: group ? `${r.name}.${group}` : r.name,
         name: r.name,
+        singular: r.singularName ?? "",
         kind: r.kind,
         group,
         version: r.version ?? "",

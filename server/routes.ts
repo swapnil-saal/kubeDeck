@@ -2,6 +2,7 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { registerAiRoutes } from "./ai";
 import { registerActionRoutes } from "./action-routes";
+import { registerAccessRoutes } from "./access-routes";
 import { registerGenericRoutes } from "./generic-routes";
 import { registerDetailRoutes } from "./detail-routes";
 import { registerExecRoutes } from "./exec-routes";
@@ -20,6 +21,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   registerPortForwardRoutes(app);
   registerDetailRoutes(app);
   registerGenericRoutes(app);
+  registerAccessRoutes(app);
   // web mode can switch pod files and AI off: see webFeatureOff
   registerPodFilesRoutes(app);
 

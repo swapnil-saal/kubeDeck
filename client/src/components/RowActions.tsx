@@ -14,6 +14,8 @@ export interface RowAction {
   onSelect: () => void;
   /** destructive: listed last, separated, in red */
   danger?: boolean;
+  /** shown but not clickable, with this reason (e.g. the account's RBAC does not allow it) */
+  disabledReason?: string;
 }
 
 /**
@@ -70,12 +72,17 @@ export const RowActions: FC<{
 const ActionItem: FC<{ action: RowAction }> = ({ action: a }) => (
   <DropdownMenuItem
     onSelect={a.onSelect}
-    className={cn("flex items-start gap-2.5 py-2", a.danger && "text-destructive focus:bg-destructive/10 focus:text-destructive")}
+    disabled={!!a.disabledReason}
+    className={cn("flex items-start gap-2.5 py-2", a.danger && !a.disabledReason && "text-destructive focus:bg-destructive/10 focus:text-destructive")}
   >
-    <a.icon className={cn("mt-0.5 h-4 w-4 shrink-0", a.danger ? "text-destructive" : "text-muted-foreground")} />
+    <a.icon className={cn("mt-0.5 h-4 w-4 shrink-0", a.danger && !a.disabledReason ? "text-destructive" : "text-muted-foreground")} />
     <span className="min-w-0">
       <span className="block text-[13px] font-medium">{a.label}</span>
-      {a.description && <span className={cn("block text-[11px] leading-snug", a.danger ? "text-destructive/80" : "text-muted-foreground")}>{a.description}</span>}
+      {a.disabledReason ? (
+        <span className="block text-[11px] leading-snug text-muted-foreground">{a.disabledReason}</span>
+      ) : a.description && (
+        <span className={cn("block text-[11px] leading-snug", a.danger ? "text-destructive/80" : "text-muted-foreground")}>{a.description}</span>
+      )}
     </span>
   </DropdownMenuItem>
 );

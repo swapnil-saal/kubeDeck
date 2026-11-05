@@ -7,6 +7,7 @@ import { useK8sDeployments } from "@/hooks/use-k8s";
 import { useHashParams } from "@/hooks/use-hash-params";
 import { useResourceNav } from "@/hooks/use-resource-nav";
 import { useServerMode } from "@/hooks/use-server-mode";
+import { useAccess } from "@/hooks/use-access";
 import type { useResourceActions } from "./resource-actions";
 
 const readyOf = (ready: string) => {
@@ -23,6 +24,7 @@ export function DeploymentList({ context, namespace, actions: actions_ }: {
   const search = get("q") || "";
   const onlyBad = get("f") === "bad";
   const { data, isLoading, isError, error } = useK8sDeployments(context, namespace);
+  const { denied } = useAccess(context, namespace === "all" ? (data ?? []).map((d) => d.namespace) : [namespace]);
   const { openDetail, openLogs, askAi } = useResourceNav();
   const pins = usePins(context);
   const serverMode = useServerMode();
@@ -89,8 +91,14 @@ export function DeploymentList({ context, namespace, actions: actions_ }: {
               onSelect: () => askAi(`Diagnose deployment ${item.name} in namespace ${item.namespace}: ${current}/${want} replicas ready. Check its rollout, pods, recent events and logs and tell me if anything is wrong.`),
             });
             if (serverMode.canWrite) {
-              actions.push({ id: "scale", label: "Scale…", icon: Scaling, description: `Change the replica count (now ${want})`, onSelect: () => actions_.openScale(item.name, want) });
-              actions.push({ id: "restart", label: "Rolling restart…", icon: RotateCw, description: "Replace its pods one by one", onSelect: () => actions_.restart(item.name) });
+              actions.push({
+                id: "scale", label: "Scale…", icon: Scaling, description: `Change the replica count (now ${want})`,
+                onSelect: () => actions_.openScale(item.name, want), disabledReason: denied(item.namespace, "patch", "deployments/scale", "apps"),
+              });
+              actions.push({
+                id: "restart", label: "Rolling restart…", icon: RotateCw, description: "Replace its pods one by one",
+                onSelect: () => actions_.restart(item.name), disabledReason: denied(item.namespace, "patch", "deployments", "apps"),
+              });
             }
             actions.push({
               id: "pin", label: pinned ? "Unpin" : "Pin", icon: pinned ? PinOff : Pin, description: pinned ? "Remove it from the Overview" : "Keep it at the top of the Overview",

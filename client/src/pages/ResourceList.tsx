@@ -3,6 +3,7 @@ import { Plus, Puzzle } from "lucide-react";
 import type { ApiResource } from "@shared/routes";
 import { CreateResourceDialog } from "@/components/yaml/CreateResourceDialog";
 import { useServerMode } from "@/hooks/use-server-mode";
+import { useAccess } from "@/hooks/use-access";
 import { skeletonFor, templateFor, YAML_TEMPLATES } from "@/lib/yaml-templates";
 import { useLocation, useRoute } from "wouter";
 import type { UseQueryResult } from "@tanstack/react-query";
@@ -90,7 +91,10 @@ export default function ResourceList() {
   useScopeFromUrl();
   const { context, namespace } = useTerminalStore();
   const { kind, group, api, unknown } = useKind(decodeURIComponent(params?.kind ?? ""), context);
-  const { canWrite } = useServerMode();
+  const { canWrite: serverAllowsWrites } = useServerMode();
+  const { denied } = useAccess(context, [kind?.clusterScoped ? "default" : namespace]);
+  // writes are on, and (once known) RBAC lets this account create this kind here
+  const canWrite = serverAllowsWrites && !(api && denied(kind?.clusterScoped ? "default" : namespace, "create", api.name, api.group));
   const [creating, setCreating] = useState(false);
   const starter =
     templateFor(kind?.key)?.yaml ??
