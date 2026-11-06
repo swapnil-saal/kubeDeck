@@ -52,6 +52,32 @@ describe("buildMap", () => {
   });
 });
 
+describe("Gateway API routes", () => {
+  const route = (name: string, backends: string[], conditions: { type: string; status: string }[] = []) => ({
+    kind: "HTTPRoute",
+    metadata: meta(name),
+    spec: {
+      hostnames: ["web.example.com"],
+      parentRefs: [{ name: "kong" }],
+      rules: [{ backendRefs: backends.map((b) => ({ name: b, port: 80 })) }, { backendRefs: [{ name: "elsewhere", namespace: "other" }] }],
+    },
+    status: { parents: [{ conditions }] },
+  });
+  const g = buildMap([...items, route("web-route", ["web"]), route("broken", ["nope"], [{ type: "ResolvedRefs", status: "False" }]), route("rejected", ["web"], [{ type: "Accepted", status: "False" }])] as any);
+  const node = (id: string) => g.nodes.find((n) => n.id === id);
+
+  it("draws HTTPRoutes beside Ingresses and links them to their backend Services", () => {
+    expect(node("HTTPRoute/web-route")).toMatchObject({ column: 0, detail: "web.example.com · via kong", type: "httproutes.gateway.networking.k8s.io" });
+    expect(g.edges).toContainEqual({ from: "HTTPRoute/web-route", to: "Service/web" });
+  });
+  it("skips backends in other namespaces, and flags missing ones and what the gateway rejected", () => {
+    expect(g.nodes.some((n) => n.name === "elsewhere")).toBe(false);
+    expect(node("Service/nope")).toMatchObject({ tone: "bad", badge: "does not exist" });
+    expect(node("HTTPRoute/broken")).toMatchObject({ tone: "warn", badge: "backends not resolved" });
+    expect(node("HTTPRoute/rejected")).toMatchObject({ tone: "bad", badge: "not accepted by its gateway" });
+  });
+});
+
 describe("podHealth / specRefs", () => {
   it("reads pod health", () => {
     expect(podHealth({ kind: "Pod", metadata: {}, status: running })).toBe("ready");

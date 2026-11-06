@@ -85,6 +85,27 @@ const API_VERSION = /^[a-z0-9.-]+(\/[a-z0-9]+)?$/i;
 const explainCache = new Map<string, ExplainResult>();
 const MAX_EXPLAIN_CACHE = 500;
 
+/** The cluster's listable kinds, cached per context for five minutes. */
+export async function discover(context: string, refresh = false): Promise<ApiResource[]> {
+  const hit = discoveryCache.get(context);
+  if (hit && !refresh && Date.now() - hit.at < DISCOVERY_TTL_MS) return hit.data;
+  const r = await spawnCommand(
+    "kubectl",
+    ["api-resources", "--verbs=list", "-o", "json", "--request-timeout=20s", ...contextArgs(context)],
+    getKubeconfigEnv(),
+  );
+  // discovery can partly fail (an aggregated API is down) and still print what it found
+  if (!r.stdout.trim()) throw new Error(r.stderr.trim().slice(0, 300) || "Could not list the cluster's resource kinds");
+  let data: ApiResource[];
+  try {
+    data = parseApiResources(r.stdout);
+  } catch {
+    throw new Error("Could not read the cluster's resource kinds");
+  }
+  discoveryCache.set(context, { at: Date.now(), data });
+  return data;
+}
+
 export function registerGenericRoutes(app: Express): void {
   // field documentation from the cluster's own OpenAPI schema (custom resources included)
   app.get(api.k8s.explain.path, async (req, res) => {
@@ -108,22 +129,10 @@ export function registerGenericRoutes(app: Express): void {
   });
 
   app.get(api.k8s.apiResources.path, async (req, res) => {
-    const key = String(req.query.context ?? "");
-    const hit = discoveryCache.get(key);
-    if (hit && Date.now() - hit.at < DISCOVERY_TTL_MS && req.query.refresh !== "1") return res.json(hit.data);
-    const r = await spawnCommand(
-      "kubectl",
-      ["api-resources", "--verbs=list", "-o", "json", "--request-timeout=20s", ...contextArgs(req.query.context)],
-      getKubeconfigEnv(),
-    );
-    // discovery can partly fail (an aggregated API is down) and still print what it found
-    if (!r.stdout.trim()) return res.status(500).json({ message: r.stderr.trim().slice(0, 300) || "Could not list the cluster's resource kinds" });
     try {
-      const data = parseApiResources(r.stdout);
-      discoveryCache.set(key, { at: Date.now(), data });
-      res.json(data);
-    } catch {
-      res.status(500).json({ message: "Could not read the cluster's resource kinds" });
+      res.json(await discover(String(req.query.context ?? ""), req.query.refresh === "1"));
+    } catch (err) {
+      res.status(500).json({ message: (err as Error).message });
     }
   });
 

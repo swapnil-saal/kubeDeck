@@ -1,5 +1,5 @@
 /**
- * A namespace as a graph: Ingress → Service → workload → ConfigMap / Secret / volume claim.
+ * A namespace as a graph: Ingress / HTTPRoute / GRPCRoute → Service → workload → ConfigMap / Secret / volume claim.
  * Pods are folded into the workload that owns them (Deployment via its ReplicaSet, StatefulSet,
  * DaemonSet, CronJob via its Job), so a namespace of 300 pods reads as its 90 workloads.
  * Secrets and ConfigMaps come only from the references in pod specs: their contents are never read.
@@ -14,7 +14,7 @@ const BAD_REASON = /^(CrashLoopBackOff|Error|ImagePullBackOff|ErrImagePull|OOMKi
 
 /** route type for the detail page */
 const ROUTE_TYPE: Record<string, string> = {
-  Ingress: "ingress", Service: "service", Deployment: "deployment", StatefulSet: "statefulset", DaemonSet: "daemonset",
+  Ingress: "ingress", HTTPRoute: "httproutes.gateway.networking.k8s.io", GRPCRoute: "grpcroutes.gateway.networking.k8s.io", Service: "service", Deployment: "deployment", StatefulSet: "statefulset", DaemonSet: "daemonset",
   CronJob: "cronjob", Job: "job", Pod: "pod", ConfigMap: "configmap", Secret: "secret", PersistentVolumeClaim: "pvc",
 };
 
@@ -171,6 +171,33 @@ export function buildMap(items: Obj[]): Omit<MapGraph, "missing"> {
         missing.badge = "does not exist";
       }
       link(n.id, id("Service", svc));
+    }
+  }
+
+  // Gateway API routes → the Services in their backendRefs (Kong, Envoy Gateway, Istio…)
+  for (const kind of ["HTTPRoute", "GRPCRoute"]) {
+    for (const route of of(kind)) {
+      const hosts: string[] = route.spec?.hostnames ?? [];
+      const n = add(node(kind, route.metadata.name, 0, hosts.join(", ") || "any host"));
+      const gateways = (route.spec?.parentRefs ?? []).map((p: any) => p.name).filter(Boolean);
+      if (gateways.length) n.detail = `${n.detail} · via ${gateways.join(", ")}`;
+      // what the gateway said about it: not accepted, or backends it could not resolve
+      const conditions = (route.status?.parents ?? []).flatMap((p: any) => p.conditions ?? []);
+      const failed = (type: string) => conditions.some((c: any) => c.type === type && c.status === "False");
+      if (failed("Accepted")) { n.tone = "bad"; n.badge = "not accepted by its gateway"; }
+      else if (failed("ResolvedRefs")) { n.tone = "warn"; n.badge = "backends not resolved"; }
+      for (const rule of route.spec?.rules ?? []) {
+        for (const ref of rule.backendRefs ?? []) {
+          // only same-namespace Services can be drawn on a one-namespace map
+          if ((ref.kind && ref.kind !== "Service") || (ref.namespace && ref.namespace !== route.metadata.namespace) || !ref.name) continue;
+          if (!nodes.has(id("Service", ref.name))) {
+            const missing = add(node("Service", ref.name, 1, "missing"));
+            missing.tone = "bad";
+            missing.badge = "does not exist";
+          }
+          link(n.id, id("Service", ref.name));
+        }
+      }
     }
   }
 

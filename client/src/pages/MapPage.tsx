@@ -2,7 +2,7 @@ import { useMemo, useState, type FC } from "react";
 import { useLocation } from "wouter";
 import {
   AlertTriangle, ArrowUpRight, Box, CalendarClock, Database, FileText, Globe, HardDrive, KeyRound, Layers, Loader2,
-  Network, Search, Workflow, X, type LucideIcon,
+  Network, Route, Search, Split, Workflow, X, type LucideIcon,
 } from "lucide-react";
 import type { MapNode } from "@shared/routes";
 import { AppHeader } from "@/components/AppHeader";
@@ -15,10 +15,10 @@ import { adjacency, chainOf, layout, MAP, type Placed } from "@/lib/map-layout";
 import { cn } from "@/lib/utils";
 
 const ICON: Record<string, LucideIcon> = {
-  Ingress: Globe, Service: Network, Deployment: Layers, StatefulSet: Database, DaemonSet: Layers, CronJob: CalendarClock,
+  Ingress: Globe, HTTPRoute: Route, GRPCRoute: Split, Service: Network, Deployment: Layers, StatefulSet: Database, DaemonSet: Layers, CronJob: CalendarClock,
   Job: CalendarClock, Pod: Box, ConfigMap: FileText, Secret: KeyRound, PersistentVolumeClaim: HardDrive,
 };
-const COLUMN_TITLE = ["Ingresses", "Services", "Workloads", "Config & storage"];
+const COLUMN_TITLE = ["Ingress & routes", "Services", "Workloads", "Config & storage"];
 const TONE_DOT = { good: "bg-success", warn: "bg-warning", bad: "bg-destructive", neutral: "bg-muted-foreground/40" } as const;
 const TONE_RING = { good: "", warn: "border-warning/50", bad: "border-destructive/60", neutral: "" } as const;
 

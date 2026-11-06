@@ -4,7 +4,7 @@ import { ChevronDown, FolderKanban, Gauge, LayoutGrid, PanelLeftClose, PanelLeft
 import { AiAvatar } from "@/ai";
 import { KubeDeckLogo, KubeDeckMark } from "@/components/KubeDeckLogo";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useK8sDeployments, useK8sPods } from "@/hooks/use-k8s";
+import { useApiResources, useK8sDeployments, useK8sPods } from "@/hooks/use-k8s";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useServerMode } from "@/hooks/use-server-mode";
@@ -115,6 +115,10 @@ export function AppSidebar() {
     setFolded((f) => (f.includes(group) ? f.filter((x) => x !== group) : [...f, group]));
   const serverMode = useServerMode();
   const badges = useHealthBadges();
+  const { context } = useTerminalStore();
+  // add-on kinds (Gateway API…) appear only on clusters that serve them; discovery is cached
+  const served = useApiResources(context).data;
+  const shownKinds = RESOURCE_KINDS.filter((k) => !k.optional || served?.some((r) => r.id === k.key));
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -167,7 +171,7 @@ export function AppSidebar() {
         )}
 
         {RESOURCE_GROUPS.map((group) => {
-          const kinds = RESOURCE_KINDS.filter((k) => k.group === group);
+          const kinds = shownKinds.filter((k) => k.group === group);
           // a folded group still shows the kind you are on
           const isFolded = !collapsed && folded.includes(group);
           const shown = isFolded ? kinds.filter((k) => isKindActive(k.key, k.type)) : kinds;

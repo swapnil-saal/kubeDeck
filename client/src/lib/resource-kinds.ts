@@ -1,6 +1,7 @@
 import {
   Archive, BadgeCheck, Box, Boxes, CalendarClock, Copy, Cylinder, Database, FileText, Folders, Gauge, Globe, HardDrive, History,
-  KeyRound, Layers, Link, Link2, ListChecks, Network, Puzzle, Ruler, Scale, Server, Shield, ShieldCheck, ShieldHalf, UserCog,
+  DoorOpen, KeyRound, Layers, Link, Link2, ListChecks, Network, Puzzle, Route, Ruler, Scale, Server, Shield, ShieldCheck, ShieldHalf,
+  Split, UserCog,
   type LucideIcon,
 } from "lucide-react";
 
@@ -23,13 +24,15 @@ export interface ResourceKind {
   clusterScoped?: boolean;
   /** listed by the generic list (the columns kubectl prints); `type` and `key` are the api-resource id */
   generic?: boolean;
+  /** shown only when the cluster serves this kind (an add-on API such as Gateway API) */
+  optional?: boolean;
 }
 
 export const RESOURCE_GROUPS = ["Workloads", "Network", "Config", "Storage", "Access", "Cluster"] as const;
 
 /** A kind with no list of its own: shown with kubectl's columns, linked by its api-resource id. */
-const g = (key: string, label: string, icon: LucideIcon, group: ResourceKind["group"], clusterScoped = false): ResourceKind =>
-  ({ key, label, type: key, kubectl: key, icon, group, clusterScoped, generic: true });
+const g = (key: string, label: string, icon: LucideIcon, group: ResourceKind["group"], clusterScoped = false, optional = false): ResourceKind =>
+  ({ key, label, type: key, kubectl: key, icon, group, clusterScoped, generic: true, optional });
 
 export const RESOURCE_KINDS: readonly ResourceKind[] = [
   { key: "pods", label: "Pods", type: "pod", kubectl: "pods", icon: Box, group: "Workloads" },
@@ -43,6 +46,9 @@ export const RESOURCE_KINDS: readonly ResourceKind[] = [
   g("poddisruptionbudgets", "Disruption budgets", ShieldCheck, "Workloads"),
   { key: "services", label: "Services", type: "service", kubectl: "services", icon: Network, group: "Network" },
   { key: "ingresses", label: "Ingresses", type: "ingress", kubectl: "ingresses", icon: Globe, group: "Network" },
+  g("gateways.gateway.networking.k8s.io", "Gateways", DoorOpen, "Network", false, true),
+  g("httproutes.gateway.networking.k8s.io", "HTTP routes", Route, "Network", false, true),
+  g("grpcroutes.gateway.networking.k8s.io", "gRPC routes", Split, "Network", false, true),
   g("networkpolicies", "Network policies", ShieldHalf, "Network"),
   { key: "configmaps", label: "ConfigMaps", type: "configmap", kubectl: "configmaps", icon: FileText, group: "Config" },
   { key: "secrets", label: "Secrets", type: "secret", kubectl: "secrets", icon: KeyRound, group: "Config" },
