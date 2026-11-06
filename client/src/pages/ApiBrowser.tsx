@@ -1,6 +1,9 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
-import { Inbox, LayoutGrid, Loader2, Puzzle, Search } from "lucide-react";
+import { Inbox, LayoutGrid, Loader2, Plus, Puzzle, Search } from "lucide-react";
+import { CreateResourceDialog } from "@/components/yaml/CreateResourceDialog";
+import { useServerMode } from "@/hooks/use-server-mode";
+import { YAML_TEMPLATES } from "@/lib/yaml-templates";
 import type { ApiResource } from "@shared/routes";
 import { AppHeader } from "@/components/AppHeader";
 import { useApiResources } from "@/hooks/use-k8s";
@@ -29,7 +32,9 @@ const matches = (r: ApiResource, q: string) =>
 /** `/resources` — every kind the cluster can list, built-in and custom, grouped by API group. */
 export default function ApiBrowser() {
   useScopeFromUrl();
-  const { context } = useTerminalStore();
+  const { context, namespace } = useTerminalStore();
+  const { canWrite } = useServerMode();
+  const [creating, setCreating] = useState(false);
   const [, navigate] = useLocation();
   const { get, set } = useHashParams();
   const q = (get("q") || "").trim().toLowerCase();
@@ -70,7 +75,16 @@ export default function ApiBrowser() {
             <span className="text-xs text-muted-foreground">
               {context || "…"} · every kind this cluster can list{customCount ? `, ${customCount} of them custom` : ""}
             </span>
-            <label className="focus-frame ml-auto flex h-8 w-72 max-w-full items-center gap-2 rounded-lg border border-border bg-secondary/50 px-2.5 focus-within:border-primary/40">
+            {canWrite && (
+              <button
+                type="button"
+                onClick={() => setCreating(true)}
+                className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-3 text-xs font-semibold text-primary transition-colors hover:bg-primary/15"
+              >
+                <Plus className="h-3.5 w-3.5" />Create
+              </button>
+            )}
+            <label className={cn("focus-frame flex h-8 w-72 max-w-full items-center gap-2 rounded-lg border border-border bg-secondary/50 px-2.5 focus-within:border-primary/40", !canWrite && "ml-auto")}>
               <Search className="h-3.5 w-3.5 text-muted-foreground" />
               <input
                 value={get("q") || ""}
@@ -96,6 +110,9 @@ export default function ApiBrowser() {
           )}
         </div>
       </main>
+      {canWrite && (
+        <CreateResourceDialog open={creating} onClose={() => setCreating(false)} context={context} namespace={namespace} initialYaml={YAML_TEMPLATES[0].yaml} />
+      )}
     </div>
   );
 }

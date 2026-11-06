@@ -443,7 +443,6 @@ export default function ResourceDetail() {
   const listLabel = kindInfo?.label ?? type.split(".")[0].charAt(0).toUpperCase() + type.split(".")[0].slice(1);
   const isPod = type === "pod";
   const isDeployment = type === "deployment";
-  const hasLogs = (LOG_TYPES as readonly string[]).includes(type);
 
   const { get: getParam, set: setParam } = useHashParams();
   const activeTab = getParam("tab") || "describe";
@@ -459,6 +458,10 @@ export default function ResourceDetail() {
   const previewMutation = useApplyYaml();
   const serverMode = useServerMode();
   const apiRes = findApiResource(useApiResources(context).data, type);
+  // the log kind: the route type itself, or its singular when opened from a generic list ("replicasets")
+  const logKind = ([type, apiRes && !apiRes.group.includes(".") ? apiRes.singular : ""] as string[])
+    .find((t) => (LOG_TYPES as readonly string[]).includes(t)) as LogKind | undefined;
+  const hasLogs = !!logKind;
   const { denied } = useAccess(context, [namespace]);
   // writes are on and RBAC (once known) allows them; unknown never hides anything
   const canPatch = serverMode.canWrite && !(apiRes && denied(namespace, "patch", apiRes.name, apiRes.group));
@@ -595,7 +598,7 @@ export default function ResourceDetail() {
               )}
               {activeTab === "logs" && hasLogs && (
                 <LogExplorer
-                  kind={type as LogKind}
+                  kind={logKind!}
                   name={name}
                   context={context}
                   namespace={namespace}
