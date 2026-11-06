@@ -17,7 +17,7 @@ Both containers run in **one pod**. Only oauth2-proxy is reachable from outside;
 | A hostname | e.g. `kubedeck.yourcompany.com`, pointing at the ingress |
 | Keycloak admin access | to create one OIDC client |
 | `kubectl` access | able to create a namespace, RBAC and a Deployment |
-| The image | `swapnilsaal/kubedeck:1.13.0-web` on Docker Hub, or build your own (below) |
+| The image | `swapnilsaal/kubedeck:1.14.0-web` on Docker Hub, or build your own (below) |
 
 ## 1. The image
 

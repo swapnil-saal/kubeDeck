@@ -130,7 +130,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: kubedeck
-          image: swapnilsaal/kubedeck:1.13.0-web   # or your own registry: see docs/DEPLOYMENT.md
+          image: swapnilsaal/kubedeck:1.14.0-web   # or your own registry: see docs/DEPLOYMENT.md
           env:
             - { name: KUBEDECK_MODE, value: web }
             - { name: HOST, value: 127.0.0.1 }            # only the sidecar can reach it
