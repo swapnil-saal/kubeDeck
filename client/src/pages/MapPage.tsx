@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import type { MapNode } from "@shared/routes";
 import { AppHeader } from "@/components/AppHeader";
+import { OverviewViews } from "@/components/OverviewViews";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { useK8sNamespaces, useNamespaceMap } from "@/hooks/use-k8s";
 import { useHashParams } from "@/hooks/use-hash-params";
@@ -128,7 +129,7 @@ export default function MapPage() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden text-foreground">
-      <AppHeader breadcrumbs={[{ label: "Overview", href: "/" }, { label: "Map" }]} rightSlot={<LiveRefresh />} />
+      <AppHeader breadcrumbs={[{ label: "Overview", href: "/" }, { label: "Map" }]} rightSlot={<><OverviewViews /><LiveRefresh /></>} />
       <div className="flex flex-wrap items-center gap-3 border-b border-border/60 px-5 py-2.5 sm:px-7">
         <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary"><Workflow className="h-4 w-4" /></span>
         <h1 className="text-lg font-bold tracking-tight">Map</h1>

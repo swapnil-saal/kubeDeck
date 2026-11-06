@@ -1,6 +1,6 @@
 import { useEffect, useMemo, type FC, type ReactNode } from "react";
 import { useLocation } from "wouter";
-import { ChevronDown, FolderKanban, Gauge, LayoutGrid, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Workflow } from "lucide-react";
+import { ChevronDown, FolderKanban, Gauge, LayoutGrid, PanelLeftClose, PanelLeftOpen, SlidersHorizontal } from "lucide-react";
 import { AiAvatar } from "@/ai";
 import { KubeDeckLogo, KubeDeckMark } from "@/components/KubeDeckLogo";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -157,9 +157,8 @@ export function AppSidebar() {
       </div>
 
       <nav aria-label="Main" className="no-scrollbar flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2">
-        <NavItem label="Overview" icon={<Gauge className="h-4 w-4" />} active={path === "/"} collapsed={collapsed} onClick={() => navigate("/")} />
-        <NavItem label="Projects" icon={<FolderKanban className="h-4 w-4" />} active={path.startsWith("/projects")} collapsed={collapsed} onClick={() => navigate("/projects")} />
-        <NavItem label="Map" icon={<Workflow className="h-4 w-4" />} active={path === "/map"} collapsed={collapsed} onClick={() => navigate("/map")} />
+        {/* the map is a view of the overview (Summary | Map in the header) */}
+        <NavItem label="Overview" icon={<Gauge className="h-4 w-4" />} active={path === "/" || path === "/map"} collapsed={collapsed} onClick={() => navigate("/")} />
         {serverMode.aiEnabled && (
           <NavItem
             label="Ask Deck"
@@ -219,6 +218,8 @@ export function AppSidebar() {
       </nav>
 
       <div className="flex shrink-0 flex-col gap-0.5 border-t border-border px-2 py-2">
+        {/* set up once, visited now and then: kept with Settings, out of the main list */}
+        <NavItem label="Projects" icon={<FolderKanban className="h-4 w-4" />} active={path.startsWith("/projects")} collapsed={collapsed} onClick={() => navigate("/projects")} />
         {/* always shown: appearance is per browser, even on a read-only shared KubeDeck */}
         <NavItem
           label="Settings"

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { AlertTriangle, Box, Layers, Network, RefreshCw, RotateCw, Server, Sparkles, X, Loader2 } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
+import { OverviewViews } from "@/components/OverviewViews";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { Button } from "@/components/ui/button";
 import {
@@ -234,7 +235,7 @@ export default function Dashboard() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden text-foreground selection:bg-primary/20">
-      <AppHeader breadcrumbs={[{ label: "Overview" }]} rightSlot={<LiveRefresh />} />
+      <AppHeader breadcrumbs={[{ label: "Overview" }]} rightSlot={<><OverviewViews /><LiveRefresh /></>} />
       <main className="relative flex-1 overflow-y-auto">
         <div className="mx-auto max-w-7xl space-y-7 p-5 sm:p-7">
 
