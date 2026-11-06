@@ -1,5 +1,5 @@
 import {
-  Activity, Eye, GitBranch, HelpCircle, LayoutDashboard, ScrollText, Terminal, FileSearch,
+  Activity, BarChart3, Eye, GitBranch, Gauge, HelpCircle, LayoutDashboard, ScrollText, Terminal, FileSearch, Waypoints,
   type LucideIcon,
 } from "lucide-react";
 
@@ -112,7 +112,38 @@ export function describeToolCall(tool: string | undefined, rawArgs: unknown): To
     case "present_dashboard":
       return { label: "dashboard", command: str(a.title) || "Dashboard", icon: LayoutDashboard, kubectl: false };
     default:
-      return { label: tool ?? "tool", command: "", icon: Terminal, kubectl: false };
+      return describeObservabilityCall(tool, a) ?? { label: tool ?? "tool", command: "", icon: Terminal, kubectl: false };
+  }
+}
+
+/** The trace and Grafana tools (see server/ai/chat/observability-tools.ts). */
+function describeObservabilityCall(tool: string | undefined, a: Record<string, unknown>): ToolDescription | null {
+  switch (tool) {
+    case "traces_stats":
+      return { label: "trace stats", command: `requests, errors, latency by ${str(a.groupBy) || "service"}${a.workloadName ? ` for ${str(a.workloadName)}` : ""}${a.namespace ? ` in ${str(a.namespace)}` : ""} (last ${str(a.since) || "1h"})`, icon: Gauge, kubectl: false };
+    case "logs_search": {
+      const target = str(a.pod) || (a.workloadName ? `${str(a.workloadKind)} ${str(a.workloadName)}` : str(a.namespace) || "namespace");
+      const bits = [`logs of ${target}`, a.errorsOnly ? "· errors" : "", a.contains ? `· "${str(a.contains)}"` : "", a.around ? `· around ${str(a.around)}` : `(last ${str(a.since) || "1h"})`];
+      return { label: "log history", command: bits.filter(Boolean).join(" "), icon: ScrollText, kubectl: false };
+    }
+    case "traces_search": {
+      const bits = ["traces"];
+      if (a.workloadName) bits.push(`${str(a.workloadKind) || "of"} ${str(a.workloadName)}`);
+      if (a.namespace) bits.push(`in ${str(a.namespace)}`);
+      if (a.errorsOnly) bits.push("· errors");
+      if (a.minDuration) bits.push(`· ≥ ${str(a.minDuration)}`);
+      if (a.where) bits.push(`· ${str(a.where)}`);
+      bits.push(`(last ${str(a.since) || "1h"})`);
+      return { label: "traces", command: bits.join(" "), icon: Waypoints, kubectl: false };
+    }
+    case "trace_get":
+      return { label: "trace", command: `trace ${str(a.traceId)}`, icon: Waypoints, kubectl: false };
+    case "grafana": {
+      const args = a.arguments && typeof a.arguments === "object" ? JSON.stringify(a.arguments) : "";
+      return { label: "grafana", command: `${str(a.tool) || "…"}${args && args !== "{}" ? ` ${args.length > 160 ? `${args.slice(0, 160)}…` : args}` : ""}`, icon: BarChart3, kubectl: false };
+    }
+    default:
+      return null;
   }
 }
 

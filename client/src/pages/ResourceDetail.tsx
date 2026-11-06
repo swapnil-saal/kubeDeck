@@ -12,7 +12,7 @@ import {
   FileText, Code, ScrollText, Search,
   Terminal, Variable, Wifi, WifiOff, Copy, Check, GitBranch,
   Box, Layers, Network, Share2, Square, ExternalLink, Save, Pencil, Eye,
-  Sparkles, Loader2, FolderTree, History,
+  Sparkles, Loader2, FolderTree, History, Waypoints,
 } from "lucide-react";
 import { m as motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
@@ -34,6 +34,10 @@ import { kindByType, listHref } from "@/lib/resource-kinds";
 import { findApiResource } from "@/lib/access";
 import { useAccess } from "@/hooks/use-access";
 import { useScopeFromUrl } from "@/hooks/use-scope-from-url";
+import { useTracingEnabled } from "@/hooks/use-traces";
+import { CopyButton } from "@/components/CopyButton";
+import { isTraceWorkloadKind } from "@shared/traces";
+import { TraceExplorer } from "@/components/traces/TraceExplorer";
 
 /** Loaded when the Files tab is first opened. */
 const PodFileBrowser = lazy(() => import("@/components/files/PodFileBrowser"));
@@ -46,16 +50,6 @@ const TYPE_META: Record<string, { label: string }> = {
 };
 
 /* ── Helpers ─────────────────────────────────────── */
-
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  const copy = () => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); };
-  return (
-    <button onClick={copy} className="p-1 rounded hover:bg-foreground/5 text-muted-foreground hover:text-foreground transition-colors" title="Copy">
-      {copied ? <Check className="w-3 h-3 text-foreground/60" /> : <Copy className="w-3 h-3" />}
-    </button>
-  );
-}
 
 function OutputPane({ content, isLoading, emptyMsg = "No data" }: {
   content?: string; isLoading: boolean; emptyMsg?: string;
@@ -467,8 +461,11 @@ export default function ResourceDetail() {
   const hasLogs = !!logKind;
   const { denied } = useAccess(context, [namespace]);
   // writes are on and RBAC (once known) allows them; unknown never hides anything
-  const canPatch = serverMode.canWrite && !(apiRes && denied(namespace, "patch", apiRes.name, apiRes.group));
+  // shown only when this account may do it; while discovery or access is loading, hidden
+  const canPatch = serverMode.canWrite && !!apiRes && !denied(namespace, "patch", apiRes.name, apiRes.group);
+  const canDelete = serverMode.canWrite && !!apiRes && !denied(namespace, "delete", apiRes.name, apiRes.group);
   const canExec = !denied(namespace, "create", "pods/exec");
+  const tracing = useTracingEnabled(context, namespace);
 
   const goToResource = (rType: string, rName: string, rNs: string) => {
     navigate(`/resource/${rType}/${encodeURIComponent(rName)}?context=${encodeURIComponent(context)}&namespace=${encodeURIComponent(rNs)}`);
@@ -522,6 +519,7 @@ export default function ResourceDetail() {
       { id: "logs", label: "Logs", icon: ScrollText },
     ] : []),
     { id: "events", label: "Events", icon: History },
+    ...(tracing && isTraceWorkloadKind(type) ? [{ id: "traces", label: "Traces", icon: Waypoints }] : []),
     // the related lookup knows workloads, services and ingresses; other kinds have nothing to show there
     ...(TYPE_META[type] ? [{ id: "related", label: "Connected", icon: GitBranch }] : []),
   ];
@@ -671,6 +669,9 @@ export default function ResourceDetail() {
               {activeTab === "events" && (
                 <EventsPane content={eventsData?.content} isLoading={eventsLoading} />
               )}
+              {activeTab === "traces" && isTraceWorkloadKind(type) && (
+                <TraceExplorer context={context} namespace={namespace} kind={type} name={name} />
+              )}
               {activeTab === "related" && (
                 <RelatedPanel type={type} name={name} context={context} namespace={namespace} onNavigate={goToResource} />
               )}
@@ -682,7 +683,7 @@ export default function ResourceDetail() {
       {/* ══════ PORT FORWARD STATUS BAR ══════ */}
       {serverMode.features.portForward && <PortForwardBar />}
 
-      <CommandBar commands={buildDetailCommands(type, name, context, namespace, activeTab)} />
+      <CommandBar commands={buildDetailCommands(type, name, context, namespace, activeTab, { patch: canPatch, delete: canDelete, exec: canExec })} />
     </div>
   );
 }

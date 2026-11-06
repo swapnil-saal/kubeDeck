@@ -92,10 +92,12 @@ export interface WorkloadViewProps {
   onRestart: (name: string) => void;
   /** false on a read-only shared KubeDeck: hides scale / restart */
   canWrite?: boolean;
+  /** why this account may not scale or restart a deployment in a namespace (RBAC); undefined = allowed */
+  patchDenied?: (namespace: string) => string | undefined;
 }
 
 /** Pods grouped under the Deployment / StatefulSet / … that owns them. */
-export const WorkloadView: FC<WorkloadViewProps> = ({ pods, usage, showNamespace, isPinned, onOpen, onLogs, onPin, onAsk, onScale, onRestart, canWrite = true }) => {
+export const WorkloadView: FC<WorkloadViewProps> = ({ pods, usage, showNamespace, isPinned, onOpen, onLogs, onPin, onAsk, onScale, onRestart, canWrite = true, patchDenied }) => {
   const [open, setOpen] = useState<Set<string>>(new Set());
   const usageMap = useMemo(() => new Map((usage ?? []).map((u) => [u.namespace ? `${u.namespace}/${u.name}` : u.name, u])), [usage]);
   const groups = useMemo(() => groupWorkloads(pods, usageMap), [pods, usageMap]);
@@ -139,8 +141,8 @@ export const WorkloadView: FC<WorkloadViewProps> = ({ pods, usage, showNamespace
                       onSelect: () => onAsk(`Diagnose ${w.kind.toLowerCase()} ${w.name} in namespace ${w.namespace}: ${w.pods.length} pods, ${w.readyPods} ready, ${w.restarts} restarts. Check pod status, recent logs and events and tell me if anything is wrong.`),
                     }] : []),
                     ...(canWrite && w.kind === "Deployment" ? [
-                      { id: "scale", label: "Scale…", icon: Scaling, description: `Change the replica count (now ${w.pods.length})`, onSelect: () => onScale(w.name, w.pods.length) },
-                      { id: "restart", label: "Rolling restart…", icon: RotateCw, description: "Replace its pods one by one", onSelect: () => onRestart(w.name) },
+                      { id: "scale", label: "Scale…", icon: Scaling, description: `Change the replica count (now ${w.pods.length})`, onSelect: () => onScale(w.name, w.pods.length), disabledReason: patchDenied?.(w.namespace) },
+                      { id: "restart", label: "Rolling restart…", icon: RotateCw, description: "Replace its pods one by one", onSelect: () => onRestart(w.name), disabledReason: patchDenied?.(w.namespace) },
                     ] : []),
                     {
                       id: "pin", label: pinned ? "Unpin" : "Pin", icon: pinned ? PinOff : Pin, description: pinned ? "Remove it from the Overview" : "Keep it at the top of the Overview",

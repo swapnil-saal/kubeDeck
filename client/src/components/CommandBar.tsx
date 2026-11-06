@@ -85,65 +85,64 @@ export function buildListCommands(
   ];
 }
 
+/** What the account may do to this resource; commands it may not run are left out. */
+export interface DetailPermissions { patch: boolean; delete: boolean; exec: boolean }
+
+/** A command and the permission it needs, if any. */
+type Gated = CommandEntry & { needs?: keyof DetailPermissions };
+
+/** The commands one kind adds, each with the permission it needs. */
+function kindCommands(type: string, name: string, ctx: string, ns: string): Gated[] {
+  switch (type) {
+    case "pod":
+      return [
+        { label: "LOGS", cmd: `kubectl logs ${name}${ctx}${ns} --tail=100` },
+        { label: "LOGS -f", cmd: `kubectl logs -f ${name}${ctx}${ns}` },
+        { label: "EXEC", cmd: `kubectl exec -it ${name}${ctx}${ns} -- /bin/sh`, needs: "exec" },
+      ];
+    case "deployment":
+      return [
+        { label: "LOGS", cmd: `kubectl logs deployment/${name}${ctx}${ns} --all-containers --prefix --tail=100` },
+        { label: "RESTART", cmd: `kubectl rollout restart deployment/${name}${ctx}${ns}`, needs: "patch" },
+        { label: "STATUS", cmd: `kubectl rollout status deployment/${name}${ctx}${ns}` },
+        { label: "HISTORY", cmd: `kubectl rollout history deployment/${name}${ctx}${ns}` },
+        { label: "SCALE", cmd: `kubectl scale deployment/${name}${ctx}${ns} --replicas=3`, needs: "patch" },
+      ];
+    case "statefulset":
+      return [
+        { label: "RESTART", cmd: `kubectl rollout restart statefulset/${name}${ctx}${ns}`, needs: "patch" },
+        { label: "SCALE", cmd: `kubectl scale statefulset/${name}${ctx}${ns} --replicas=3`, needs: "patch" },
+      ];
+    case "service":
+      return [{ label: "ENDPOINTS", cmd: `kubectl get endpoints ${name}${ctx}${ns}` }];
+    case "node":
+      return [
+        { label: "TOP", cmd: `kubectl top node ${name}${ctx}` },
+        { label: "CORDON", cmd: `kubectl cordon ${name}${ctx}`, needs: "patch" },
+        { label: "DRAIN", cmd: `kubectl drain ${name}${ctx} --ignore-daemonsets --delete-emptydir-data`, needs: "patch" },
+      ];
+    default:
+      return [];
+  }
+}
+
 export function buildDetailCommands(
   type: string,
   name: string,
   context: string,
   namespace: string,
-  activeTab?: string,
+  _activeTab?: string,
+  can: DetailPermissions = { patch: true, delete: true, exec: true },
 ): CommandEntry[] {
   const ctx = context ? ` --context=${context}` : "";
   const ns = namespace && namespace !== "all" ? ` -n ${namespace}` : "";
-
-  const cmds: CommandEntry[] = [
+  const all: Gated[] = [
     { label: "DESCRIBE", cmd: `kubectl describe ${type} ${name}${ctx}${ns}` },
     { label: "GET YAML", cmd: `kubectl get ${type} ${name}${ctx}${ns} -o yaml` },
     { label: "GET JSON", cmd: `kubectl get ${type} ${name}${ctx}${ns} -o json` },
-  ];
-
-  if (type === "pod") {
-    cmds.push(
-      { label: "LOGS", cmd: `kubectl logs ${name}${ctx}${ns} --tail=100` },
-      { label: "LOGS -f", cmd: `kubectl logs -f ${name}${ctx}${ns}` },
-      { label: "EXEC", cmd: `kubectl exec -it ${name}${ctx}${ns} -- /bin/sh` },
-    );
-  }
-
-  if (type === "deployment") {
-    cmds.push(
-      { label: "LOGS", cmd: `kubectl logs deployment/${name}${ctx}${ns} --all-containers --prefix --tail=100` },
-      { label: "RESTART", cmd: `kubectl rollout restart deployment/${name}${ctx}${ns}` },
-      { label: "STATUS", cmd: `kubectl rollout status deployment/${name}${ctx}${ns}` },
-      { label: "HISTORY", cmd: `kubectl rollout history deployment/${name}${ctx}${ns}` },
-      { label: "SCALE", cmd: `kubectl scale deployment/${name}${ctx}${ns} --replicas=3` },
-    );
-  }
-
-  if (type === "statefulset") {
-    cmds.push(
-      { label: "RESTART", cmd: `kubectl rollout restart statefulset/${name}${ctx}${ns}` },
-      { label: "SCALE", cmd: `kubectl scale statefulset/${name}${ctx}${ns} --replicas=3` },
-    );
-  }
-
-  if (type === "service") {
-    cmds.push(
-      { label: "ENDPOINTS", cmd: `kubectl get endpoints ${name}${ctx}${ns}` },
-    );
-  }
-
-  if (type === "node") {
-    cmds.push(
-      { label: "TOP", cmd: `kubectl top node ${name}${ctx}` },
-      { label: "CORDON", cmd: `kubectl cordon ${name}${ctx}` },
-      { label: "DRAIN", cmd: `kubectl drain ${name}${ctx} --ignore-daemonsets --delete-emptydir-data` },
-    );
-  }
-
-  cmds.push(
+    ...kindCommands(type, name, ctx, ns),
     { label: "EVENTS", cmd: `kubectl get events${ctx}${ns} --field-selector involvedObject.name=${name}` },
-    { label: "DELETE", cmd: `kubectl delete ${type} ${name}${ctx}${ns}` },
-  );
-
-  return cmds;
+    { label: "DELETE", cmd: `kubectl delete ${type} ${name}${ctx}${ns}`, needs: "delete" },
+  ];
+  return all.filter((c) => !c.needs || can[c.needs]).map(({ needs: _needs, ...c }) => c);
 }

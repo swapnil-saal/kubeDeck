@@ -12,7 +12,7 @@ interface Row {
 }
 
 /** Wide columns that are rarely what you scan a list for; one click in the column menu brings them back. */
-const HIDDEN_BY_DEFAULT = new Set(["SELECTOR", "LABELS", "NOMINATED NODE", "READINESS GATES"]);
+const HIDDEN_BY_DEFAULT = new Set(["SELECTOR", "LABELS", "NOMINATED NODE", "READINESS GATES", "GATEWAY"]);
 
 const UNIT_SECONDS: Record<string, number> = { y: 31_536_000, d: 86_400, h: 3_600, m: 60, s: 1 };
 

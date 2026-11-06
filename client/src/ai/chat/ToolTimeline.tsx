@@ -10,7 +10,10 @@ import { ApprovalPanel, lineCount, StepDetail } from "./StepDetail";
 import { describeToolCall, resultAsText, toolState, TOOL_STATE_UI, type ToolCallLike, type ToolState } from "./tool-state";
 
 /** Tools shown as trail steps. ask_human, present_dashboard and monitor_logs keep their own cards. */
-export const STEP_TOOLS = ["kubectl", "bash", "k8s_list", "k8s_describe", "k8s_logs"] as const;
+export const STEP_TOOLS = [
+  "kubectl", "bash", "k8s_list", "k8s_describe", "k8s_logs",
+  "traces_stats", "traces_search", "trace_get", "logs_search", "grafana",
+] as const;
 
 import { CONNECTOR_W, NODE_H, ROW_GAP, TURN_W, trailLayout, trailRows } from "./trail-layout";
 
@@ -268,7 +271,25 @@ export function stepLabel(toolName: string | undefined, args: unknown, command: 
     case "bash":
       return { verb: "shell", target: command || "…" };
     default:
-      return { verb: toolName ?? "tool", target: command || "…" };
+      return observabilityStepLabel(toolName, a) ?? { verb: toolName ?? "tool", target: command || "…" };
+  }
+}
+
+/** Node labels for the trace and Grafana tools. */
+function observabilityStepLabel(toolName: string | undefined, a: Record<string, unknown>): { verb: string; target: string } | null {
+  switch (toolName) {
+    case "traces_stats":
+      return { verb: `stats by ${word(a.groupBy) || "service"}`, target: word(a.workloadName) || word(a.namespace) || "namespace" };
+    case "logs_search":
+      return { verb: a.errorsOnly ? "error logs" : "log history", target: word(a.pod) || word(a.workloadName) || word(a.namespace) || "namespace" };
+    case "traces_search":
+      return { verb: a.errorsOnly ? "failed traces" : a.minDuration ? `traces ≥ ${word(a.minDuration)}` : "traces", target: word(a.workloadName) || word(a.namespace) || "namespace" };
+    case "trace_get":
+      return { verb: "trace", target: word(a.traceId).slice(0, 12) || "…" };
+    case "grafana":
+      return { verb: "grafana", target: word(a.tool) || "…" };
+    default:
+      return null;
   }
 }
 

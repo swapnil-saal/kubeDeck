@@ -14,7 +14,7 @@ export interface RowAction {
   onSelect: () => void;
   /** destructive: listed last, separated, in red */
   danger?: boolean;
-  /** shown but not clickable, with this reason (e.g. the account's RBAC does not allow it) */
+  /** set when the account may not do it (RBAC) or access is still being checked: the action is left out */
   disabledReason?: string;
 }
 
@@ -27,7 +27,9 @@ export const RowActions: FC<{
   subject: string;
   primary?: { label: string; icon: LucideIcon; onClick: () => void };
   actions: RowAction[];
-}> = ({ subject, primary, actions }) => {
+}> = ({ subject, primary, actions: offered }) => {
+  // only what this account may do: a refused action is not shown at all
+  const actions = offered.filter((a) => !a.disabledReason);
   const safe = actions.filter((a) => !a.danger);
   const danger = actions.filter((a) => a.danger);
 

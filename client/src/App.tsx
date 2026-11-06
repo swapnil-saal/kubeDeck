@@ -26,6 +26,8 @@ const loadMotionFeatures = () => import("@/lib/motion-features").then((m) => m.d
 const ResourceList = lazy(() => import("@/pages/ResourceList"));
 const ApiBrowser = lazy(() => import("@/pages/ApiBrowser"));
 const MapPage = lazy(() => import("@/pages/MapPage"));
+const TracesPage = lazy(() => import("@/pages/TracesPage"));
+const TracePage = lazy(() => import("@/pages/TracesPage").then((m) => ({ default: m.TracePage })));
 const ProjectsPage = lazy(() => import("@/pages/projects/ProjectsPage"));
 const ProjectPage = lazy(() => import("@/pages/projects/ProjectPage"));
 const ResourceDetail = lazy(() => import("@/pages/ResourceDetail"));
@@ -48,6 +50,8 @@ function Routes() {
       <Route path="/" component={Dashboard} />
       {aiEnabled && <Route path="/ai" component={AiChatPage} />}
       <Route path="/map" component={MapPage} />
+      <Route path="/traces" component={TracesPage} />
+      <Route path="/trace/:id" component={TracePage} />
       <Route path="/projects" component={ProjectsPage} />
       <Route path="/projects/:id" component={ProjectPage} />
       <Route path="/resources" component={ApiBrowser} />

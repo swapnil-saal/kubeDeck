@@ -1,4 +1,4 @@
-import { useEffect, useMemo, type FC, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type FC, type ReactNode } from "react";
 import { useLocation } from "wouter";
 import { ChevronDown, FolderKanban, Gauge, LayoutGrid, PanelLeftClose, PanelLeftOpen, SlidersHorizontal } from "lucide-react";
 import { AiAvatar } from "@/ai";
@@ -9,7 +9,9 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useServerMode } from "@/hooks/use-server-mode";
 import { useScope } from "@/hooks/use-scope";
-import { RESOURCE_GROUPS, RESOURCE_KINDS, listHref } from "@/lib/resource-kinds";
+import { RESOURCE_GROUPS, RESOURCE_KINDS, listHref, type ResourceKind } from "@/lib/resource-kinds";
+import { findApiResource } from "@/lib/access";
+import { useAccess } from "@/hooks/use-access";
 import { cn } from "@/lib/utils";
 
 /** The Electron window hides the title bar on macOS: the traffic-light buttons sit over the top-left corner. */
@@ -106,6 +108,29 @@ const NavItem: FC<{
  * App navigation: overview, the assistant, every resource list grouped the way Kubernetes
  * users think about them, and settings. Collapses to an icon rail (Ctrl/⌘ B); the choice is remembered.
  */
+/**
+ * The kinds the sidebar lists: add-on kinds (Gateway API…) only on clusters that serve them, and only
+ * kinds this account may list in the namespace in view. It waits for that answer (usually remembered
+ * from before) rather than showing every kind and then taking some away.
+ */
+function useVisibleKinds(context: string, namespace: string): readonly ResourceKind[] {
+  const discovery = useApiResources(context);
+  // a failed discovery shows the built-in kinds rather than waiting forever
+  const served = discovery.data ?? (discovery.isError || !context ? [] : undefined);
+  const { denied, ready } = useAccess(context, [namespace]);
+  const known = ready && !!served;
+  const lastShown = useRef<readonly ResourceKind[]>([]);
+  return useMemo((): readonly ResourceKind[] => {
+    if (!known) return lastShown.current;
+    return (lastShown.current = RESOURCE_KINDS.filter((k) => {
+      if (k.optional && !served.some((r) => r.id === k.key)) return false;
+      const res = findApiResource(served, k.kubectl);
+      // the namespace's review also carries cluster-wide grants (nodes, namespaces…)
+      return !(res && denied(namespace, "list", res.name, res.group));
+    }));
+  }, [known, served, denied, namespace]);
+}
+
 export function AppSidebar() {
   const [location, navigate] = useLocation();
   const [expanded, setExpanded] = usePersistedState("kubedeck.sidebar.expanded", true);
@@ -115,10 +140,8 @@ export function AppSidebar() {
     setFolded((f) => (f.includes(group) ? f.filter((x) => x !== group) : [...f, group]));
   const serverMode = useServerMode();
   const badges = useHealthBadges();
-  const { context } = useScope();
-  // add-on kinds (Gateway API…) appear only on clusters that serve them; discovery is cached
-  const served = useApiResources(context).data;
-  const shownKinds = RESOURCE_KINDS.filter((k) => !k.optional || served?.some((r) => r.id === k.key));
+  const { context, namespace } = useScope();
+  const shownKinds = useVisibleKinds(context, namespace);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -172,6 +195,7 @@ export function AppSidebar() {
 
         {RESOURCE_GROUPS.map((group) => {
           const kinds = shownKinds.filter((k) => k.group === group);
+          if (kinds.length === 0) return null;
           // a folded group still shows the kind you are on
           const isFolded = !collapsed && folded.includes(group);
           const shown = isFolded ? kinds.filter((k) => isKindActive(k.key, k.type)) : kinds;

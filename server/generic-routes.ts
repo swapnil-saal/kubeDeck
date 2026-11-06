@@ -4,6 +4,7 @@
  * Detail views (describe, YAML, events) already accept any type: see detail-routes.ts.
  */
 import type { Express } from "express";
+import { readableCell, ROUTE_TYPE, routeTable } from "./route-table";
 import { api, type ApiResource, type ExplainResult, type GenericList } from "@shared/routes";
 import { parseTable } from "./ai/chat/kubectl";
 import { spawnCommand } from "./kubectl-run";
@@ -40,7 +41,7 @@ export function parseApiResources(json: string): ApiResource[] {
 /** `kubectl get -o wide` text → columns and rows (one string per column). */
 export function toGenericList(stdout: string): GenericList {
   const { columns, rows } = parseTable(stdout);
-  return { columns, rows: rows.map((r) => columns.map((c) => r[c] ?? "")) };
+  return { columns, rows: rows.map((r) => columns.map((c) => readableCell(r[c] ?? ""))) };
 }
 
 /** `kubectl explain` plain text → kind, the field's type and description, and its sub-fields. */
@@ -140,9 +141,11 @@ export function registerGenericRoutes(app: Express): void {
     const { type } = req.params;
     const ns = typeof req.query.namespace === "string" ? req.query.namespace : "";
     const nsArgs = ns && ns !== "all" ? ["-n", ns] : ["-A"];
+    // Gateway API routes are read from their objects: the wide table has no paths or backends
+    const asRoutes = ROUTE_TYPE.test(type);
     const r = await spawnCommand(
       "kubectl",
-      ["get", type, "-o", "wide", "--request-timeout=20s", ...contextArgs(req.query.context), ...nsArgs],
+      ["get", type, "-o", asRoutes ? "json" : "wide", "--request-timeout=20s", ...contextArgs(req.query.context), ...nsArgs],
       getKubeconfigEnv(),
     );
     const err = r.stderr.trim();
@@ -152,6 +155,11 @@ export function registerGenericRoutes(app: Express): void {
       return res.status(500).json({ message: err.slice(0, 300) || `Cannot list ${type}` });
     }
     // "No resources found" arrives on stderr with an empty stdout
-    res.json(r.stdout.trim() ? toGenericList(r.stdout) : { columns: [], rows: [] });
+    if (!r.stdout.trim()) return res.json({ columns: [], rows: [] });
+    if (asRoutes) {
+      const items = JSON.parse(r.stdout).items ?? [];
+      return res.json(items.length ? routeTable(items, nsArgs[0] === "-A") : { columns: [], rows: [] });
+    }
+    res.json(toGenericList(r.stdout));
   });
 }

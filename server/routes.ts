@@ -14,6 +14,7 @@ import { registerPodFilesRoutes } from "./pod-files-routes";
 import { registerPortForwardRoutes } from "./port-forward-routes";
 import { registerResourceRoutes } from "./resource-routes";
 import { registerSettingsRoutes } from "./settings-routes";
+import { registerTracesRoutes } from "./traces-routes";
 
 /** Mounts every HTTP route. Each area lives in its own module. */
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
@@ -24,6 +25,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   registerGenericRoutes(app);
   registerAccessRoutes(app);
   registerMapRoutes(app);
+  registerTracesRoutes(app);
   // web mode can switch pod files and AI off: see webFeatureOff
   registerPodFilesRoutes(app);
 

@@ -484,10 +484,15 @@ const POD_COLORS = [
   "text-rose-500", "text-cyan-500", "text-fuchsia-500", "text-lime-500",
 ] as const;
 
-export function podColor(pod: string): string {
+/** The same index in [0, size) for the same text: stable colours per pod or service. */
+export function stableIndex(text: string, size: number): number {
   let h = 0;
-  for (let i = 0; i < pod.length; i++) h = (h * 31 + pod.charCodeAt(i)) >>> 0;
-  return POD_COLORS[h % POD_COLORS.length];
+  for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) >>> 0;
+  return h % size;
+}
+
+export function podColor(pod: string): string {
+  return POD_COLORS[stableIndex(pod, POD_COLORS.length)];
 }
 
 /** Oldest first; entries without a timestamp keep their arrival order relative to each other. */

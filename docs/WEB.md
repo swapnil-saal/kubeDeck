@@ -25,6 +25,9 @@ KubeDeck never sees passwords. It trusts the identity headers only when the requ
 
 ## Settings (environment variables)
 
+What a user sees follows the cluster identity's RBAC: kinds it may not list are left out of the sidebar, and actions it may not take (edit, scale, restart, delete, exec…) are not shown at all.
+
+
 | Variable | Meaning |
 |---|---|
 | `KUBEDECK_MODE=web` | turn web mode on |
@@ -43,6 +46,12 @@ KubeDeck never sees passwords. It trusts the identity headers only when the requ
 | `KUBEDECK_AI_API_KEY` | the provider's key (not needed for `ollama`, optional for `custom`) |
 | `KUBEDECK_AI_MODEL` / `KUBEDECK_AI_FAST_MODEL` | model ids; empty uses the provider's defaults |
 | `KUBEDECK_AI_BASE_URL` | the endpoint (required for `custom`) |
+| `KUBEDECK_TEMPO_URL` | Grafana Tempo's HTTP API, e.g. `https://tempo.example.com`: turns on traces (workload **Traces** tab, Overview → **Traces**, the assistant's trace tools) |
+| `KUBEDECK_TEMPO_TOKEN` / `KUBEDECK_TEMPO_TENANT` | optional bearer token / `X-Scope-OrgID` for Tempo |
+| `KUBEDECK_LOKI_URL` / `KUBEDECK_LOKI_TOKEN` / `KUBEDECK_LOKI_TENANT` | optional: Grafana Loki's HTTP API (+ bearer token / `X-Scope-OrgID`): the pod's log lines next to a traced request, and log history (pods that are gone, up to 7 days) for the assistant. Streams are matched by `cluster` and `namespace` labels, pods by the `pod` label or metadata |
+| `KUBEDECK_TEMPO_CLUSTERS` | optional `context=cluster,…`: the `k8s.cluster.name` a context's traces carry, where KubeDeck cannot tell (in-cluster the context is `in-cluster`, so set `in-cluster=<your cluster name>`) |
+| `KUBEDECK_GRAFANA_URL` / `KUBEDECK_GRAFANA_TEMPO_DATASOURCE` | optional: Grafana and the Tempo data source uid, for "Open in Grafana" on a trace |
+| `KUBEDECK_GRAFANA_MCP_URL` / `KUBEDECK_GRAFANA_MCP_TOKEN` | optional: the [Grafana MCP server](https://github.com/grafana/mcp-grafana)'s streamable-HTTP endpoint (`…/mcp`) and its token; the assistant then reads Prometheus, Loki, dashboards and alerts through it |
 | `HOST` | bind address (default `0.0.0.0` in web mode) |
 | `KUBECONFIG` | optional; with no kubeconfig inside a pod, KubeDeck builds one context, `in-cluster`, from the pod's service account |
 
@@ -62,6 +71,14 @@ By default every signed-in user acts with KubeDeck's service account. With `KUBE
 For a private test cluster where you do not want a login yet: run KubeDeck alone (no oauth2-proxy), with `HOST=0.0.0.0`, `KUBEDECK_AUTH=none` and `KUBEDECK_PUBLIC_URL` set to the address people open (an IP is fine). Every request is the user `anonymous`; identity headers are ignored; the host check still applies; audit lines carry the caller's IP. The header shows a **No sign-in** badge and the server logs a warning at startup.
 
 Anyone who can reach the URL gets the cluster access of KubeDeck's kubeconfig or service account, including changes and pod files unless you turn them off. Prefer `KUBEDECK_READ_ONLY=true`, keep it on a network only your team reaches, and switch to a login proxy before wider use. `KUBEDECK_ALLOWED_GROUPS` cannot be used with it.
+
+### Traces and Grafana
+
+Traces come from Tempo, found by the OpenTelemetry resource attributes the OTel operator or collector puts on every span (`k8s.cluster.name`, `k8s.namespace.name`, `k8s.deployment.name`, `k8s.pod.name`, `service.name`). A kube context is matched to its Tempo cluster by `KUBEDECK_TEMPO_CLUSTERS`, then by name, then by the one cluster whose traces carry the namespace on screen.
+
+- **What you get:** on a workload's Traces tab, its endpoints with requests, error % and p95 (click p95 for requests that slow), a rollout check on Deployments (new ReplicaSet vs the old ones), and each trace in a side panel with the pod's log lines from Loki at that moment. Overview → Traces does the same per service for the namespace. Tempo answers metrics for at most 3h by default; longer windows are measured over that.
+- **Who sees which traces:** a namespace's traces (and its Loki logs) are shown only to someone whose identity may `list pods` there (the signed-in user with impersonation, otherwise KubeDeck's service account). One trace that crosses namespaces loses the spans from namespaces the user cannot read.
+- **Grafana MCP:** the assistant gets only Grafana's read tools (searches, queries, lists, `generate_deeplink`); anything that creates, updates or deletes, raw SQL and the generic API tool are never offered. Run the MCP server with `--disable-write` anyway. Grafana data is not filtered per user: every user of this KubeDeck reads what the MCP server's Grafana token can read.
 
 ## Deploy
 

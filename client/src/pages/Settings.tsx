@@ -1,5 +1,5 @@
 import type { FC } from "react";
-import { Bot, Info, Palette, Server, type LucideIcon } from "lucide-react";
+import { Bot, Info, Palette, Server, Waypoints, type LucideIcon } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { useHashParams } from "@/hooks/use-hash-params";
 import { useServerMode } from "@/hooks/use-server-mode";
@@ -8,6 +8,7 @@ import { AboutSection } from "./settings/AboutSection";
 import { AiSection } from "./settings/AiSection";
 import { AppearanceSection } from "./settings/AppearanceSection";
 import { ClustersSection } from "./settings/ClustersSection";
+import { ObservabilitySection } from "./settings/ObservabilitySection";
 
 interface Section {
   id: string;
@@ -23,6 +24,8 @@ const SECTIONS: Section[] = [
   { id: "appearance", label: "Appearance", description: "Light or dark, and the colours of each", icon: Palette, render: AppearanceSection },
   { id: "clusters", label: "Clusters", description: "The kubeconfig files KubeDeck reads", icon: Server, render: ClustersSection, editable: true },
   { id: "ai", label: "AI assistant", description: "Model provider for Ask Deck and AI features", icon: Bot, render: AiSection, editable: true },
+  // shown read-only on a shared KubeDeck: it says whether tracing and Grafana are connected
+  { id: "observability", label: "Observability", description: "Traces from Grafana Tempo, and Grafana for the assistant", icon: Waypoints, render: ObservabilitySection },
   { id: "about", label: "About", description: "Version, source and keyboard shortcuts", icon: Info, render: AboutSection },
 ];
 
@@ -63,7 +66,7 @@ export default function Settings() {
               })}
             </ul>
             {!features.settingsEdit && (
-              <p className="mt-4 px-2 text-xs text-muted-foreground">Cluster and AI settings are managed by the server on a shared KubeDeck.</p>
+              <p className="mt-4 px-2 text-xs text-muted-foreground">Cluster, AI and observability settings are managed by the server on a shared KubeDeck.</p>
             )}
           </nav>
 

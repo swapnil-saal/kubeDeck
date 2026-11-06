@@ -130,7 +130,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: kubedeck
-          image: swapnilsaal/kubedeck:1.14.0-web   # or your own registry: see docs/DEPLOYMENT.md
+          image: swapnilsaal/kubedeck:1.15.0-web   # or your own registry: see docs/DEPLOYMENT.md
           env:
             - { name: KUBEDECK_MODE, value: web }
             - { name: HOST, value: 127.0.0.1 }            # only the sidecar can reach it
@@ -153,6 +153,15 @@ spec:
               valueFrom: { secretKeyRef: { name: kubedeck-ai, key: fast-model, optional: true } }
             - name: KUBEDECK_AI_BASE_URL
               valueFrom: { secretKeyRef: { name: kubedeck-ai, key: base-url, optional: true } }
+            # Traces from Grafana Tempo, and Grafana for the assistant (docs/WEB.md → Traces and Grafana)
+            # - { name: KUBEDECK_TEMPO_URL, value: "https://tempo.example.com" }
+            # - { name: KUBEDECK_TEMPO_CLUSTERS, value: "in-cluster=CHANGE_ME" }   # the k8s.cluster.name on your spans
+            # - { name: KUBEDECK_LOKI_URL, value: "https://loki.example.com" }      # pod logs next to traces, log history
+            # - { name: KUBEDECK_GRAFANA_URL, value: "https://grafana.example.com" }
+            # - { name: KUBEDECK_GRAFANA_TEMPO_DATASOURCE, value: "CHANGE_ME" }     # Tempo data source uid
+            # - { name: KUBEDECK_GRAFANA_MCP_URL, value: "https://grafana-mcp.example.com/mcp" }
+            # - name: KUBEDECK_GRAFANA_MCP_TOKEN
+            #   valueFrom: { secretKeyRef: { name: kubedeck-grafana, key: mcp-token, optional: true } }
           readinessProbe:
             exec: { command: ["wget", "-qO-", "http://127.0.0.1:5000/healthz"] }
             periodSeconds: 10

@@ -173,6 +173,17 @@ export const settingsSchema = z.object({
     exists: z.boolean(),
   })),
   ai: aiProviderSchema.optional(),
+  /** Tempo / Grafana settings as saved (desktop) or in effect with secrets blanked (web) */
+  observability: z.object({
+    tempoUrl: z.string(), tempoToken: z.string(), tempoTenant: z.string(),
+    lokiUrl: z.string(), lokiToken: z.string(), lokiTenant: z.string(),
+    clusters: z.record(z.string(), z.string()),
+    grafanaUrl: z.string(), grafanaTempoDatasource: z.string(),
+    mcpUrl: z.string(), mcpToken: z.string(),
+  }).partial().optional(),
+  /** desktop: fields the environment sets, shown as defaults (secrets as "set in the environment") */
+  observabilityEnv: z.record(z.string(), z.string()).optional(),
+  managed: z.boolean().optional(),
 });
 
 export const settingsInputSchema = z.object({

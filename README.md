@@ -39,6 +39,8 @@
 | 📋 **Pod logs** | Stream live logs directly from any pod container |
 | 🗂️ **Pod files** | Browse a container's file tree, view and search files, download a file or a whole folder (.tar.gz) |
 | 🤖 **AI operator** | Chat with an agent that has live, read-mostly kubectl access: it inspects the cluster, shows dashboards, and asks for your approval before any mutating command. Works with OpenAI, Anthropic, Ollama, or any OpenAI-compatible gateway |
+| 🧵 **Traces and log history** | With Grafana Tempo: each workload's endpoints with requests, errors and p95, a rollout check (new version vs old), per-service health in Overview → Traces, and a span waterfall. With Loki, the pod's log lines at the moment of a request sit next to the span, and the AI operator can read log history of pods that are gone. Grafana (Prometheus, dashboards, alerts) through the Grafana MCP server |
+| 🔐 **Permission-aware** | Shows only what your account may do: kinds you cannot list leave the sidebar, actions you cannot take are not offered |
 | 🩺 **Cluster pulse** | Live health score and a list of what is broken right now (crashing pods, image-pull errors, degraded deployments, NotReady nodes), each one click from an AI diagnosis |
 | 🔌 **Port forwarding** | Start, test, and stop `kubectl port-forward` sessions from the UI (desktop only) |
 | ⌘K **kubectl palette** | Run kubectl or describe what you want in plain English |

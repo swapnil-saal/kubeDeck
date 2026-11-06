@@ -13,7 +13,11 @@ import { formatProviderError } from "../errors";
 import { defaultMaxOutputTokens, getLanguageModel } from "../provider";
 import { describeAccessLimits, resetAgentCallGuards } from "./kubectl";
 import { buildSystemPrompt, parseAgentMode } from "./prompts";
+import { observabilityForCall } from "./observability-tools";
 import { kubeScopeSchema, kubeToolApproval, kubeTools, kubeToolsContext } from "./tools";
+
+/** Tools every request has; trace and Grafana tools are added when they are set up. */
+const BASE_TOOLS = ["k8s_list", "k8s_describe", "k8s_logs", "kubectl", "bash", "monitor_logs", "ask_human", "present_dashboard"] as const;
 
 /** Hard backstop against tool-call loops (the discovery budget is enforced in kubectl.ts). */
 const MAX_STEPS = 14;
@@ -47,8 +51,10 @@ function createKubeAgent(model: LanguageModel) {
     stopWhen: isStepCount(MAX_STEPS),
     temperature: 0.25,
     // Settings can change between requests, so the model and prompt are resolved per call.
-    prepareCall: ({ options, ...settings }) => {
+    // Tracing and Grafana are switched on per call: settings change, and the MCP server may be down.
+    prepareCall: async ({ options, ...settings }) => {
       const { model: current, provider } = getLanguageModel();
+      const obs = await observabilityForCall();
       return {
         ...settings,
         model: current,
@@ -58,7 +64,10 @@ function createKubeAgent(model: LanguageModel) {
           parseAgentMode(options.mode),
           describeAccessLimits(options.scope.threadId),
           options.scope,
+          obs.prompt,
         ),
+        tools: (obs.grafanaDescription ? { ...kubeTools, grafana: { ...kubeTools.grafana, description: obs.grafanaDescription } } : kubeTools) as typeof kubeTools,
+        activeTools: [...BASE_TOOLS, ...obs.active] as (keyof typeof kubeTools)[],
         toolsContext: kubeToolsContext(options.scope),
       };
     },

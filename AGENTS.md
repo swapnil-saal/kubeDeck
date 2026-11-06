@@ -22,8 +22,9 @@ Web mode locally: `KUBEDECK_MODE=web KUBEDECK_AUTH=none KUBEDECK_PUBLIC_URL=http
 
 - `server/`: Express routes, one module per area (`*-routes.ts`). `kubectl-run.ts` runs kubectl,
   `kubectl-safety.ts` classifies commands, `web-mode.ts` is the login gate and feature switches,
-  `identity.ts` the per-user impersonation, `map.ts` the namespace graph, `ai/` the assistant
-  (AI SDK agent, tools, prompts).
+  `identity.ts` the per-user impersonation, `map.ts` the namespace graph, `tempo.ts` +
+  `traces-routes.ts` traces from Grafana Tempo, `loki.ts` log history, `grafana-mcp.ts` the Grafana MCP client (read tools
+  only), `ai/` the assistant (AI SDK agent, tools, prompts).
 - `client/src/`: pages in `pages/`, shared UI in `components/`, data hooks in `hooks/use-k8s.ts`,
   the assistant in `ai/`. Resource kinds in the sidebar come from `lib/resource-kinds.ts`.
 - `shared/`: route definitions and schemas used by both sides.

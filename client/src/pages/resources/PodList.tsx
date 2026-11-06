@@ -90,6 +90,7 @@ export function PodList({ context, namespace, actions: actions_ }: {
             onScale={actions_.openScale}
             onRestart={actions_.restart}
             canWrite={serverMode.canWrite}
+            patchDenied={(ns) => denied(ns, "patch", "deployments", "apps")}
           />
         </div>
       ) : (

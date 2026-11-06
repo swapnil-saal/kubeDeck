@@ -128,9 +128,12 @@ export function buildSystemPrompt(
   mode: AgentMode,
   accessLimits: string[] = [],
   scope?: AgentScope,
+  /** sections for the extra sources this request has (traces, Grafana) */
+  extraSources = "",
 ): string {
   const parts = [MAIN_SYSTEM_PROMPT, MODE_PROMPTS[mode]];
   if (scope) parts.push(scopePrompt(scope));
+  if (extraSources) parts.push(extraSources);
   if (accessLimits.length > 0) {
     parts.push(
       `Known access limits for this user (learned earlier in this chat — do NOT try these again):\n` +
