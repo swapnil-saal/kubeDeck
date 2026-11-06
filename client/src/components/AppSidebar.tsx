@@ -156,7 +156,8 @@ export function AppSidebar() {
         </button>
       </div>
 
-      <nav aria-label="Main" className="no-scrollbar flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2">
+      {/* items keep their height; a long list scrolls instead of squeezing every row */}
+      <nav aria-label="Main" className="no-scrollbar flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2 [&>*]:shrink-0">
         {/* the map is a view of the overview (Summary | Map in the header) */}
         <NavItem label="Overview" icon={<Gauge className="h-4 w-4" />} active={path === "/" || path === "/map"} collapsed={collapsed} onClick={() => navigate("/")} />
         {serverMode.aiEnabled && (
