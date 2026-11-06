@@ -33,6 +33,7 @@ import {
 import { kindByType, listHref } from "@/lib/resource-kinds";
 import { findApiResource } from "@/lib/access";
 import { useAccess } from "@/hooks/use-access";
+import { useScopeFromUrl } from "@/hooks/use-scope-from-url";
 
 /** Loaded when the Files tab is first opened. */
 const PodFileBrowser = lazy(() => import("@/components/files/PodFileBrowser"));
@@ -430,6 +431,8 @@ export default function ResourceDetail() {
   const searchString = useSearch();
   const [, navigate] = useLocation();
 
+  // the app's scope follows the resource being viewed, so ⌘K, the sidebar and alerts all mean this cluster
+  useScopeFromUrl({ keepInUrl: true });
   const type = params.type || "pod";
   const name = decodeURIComponent(params.name || "");
   const sp = new URLSearchParams(searchString);

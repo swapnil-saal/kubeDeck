@@ -1,256 +1,21 @@
 import { useServerMode } from "@/hooks/use-server-mode";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import {
-  Copy, Check, Terminal, ArrowRight, Sparkles, Loader2, ShieldAlert, AlertTriangle,
-  Search, Box, History, X, Clock, Bug, ScrollText, RotateCcw, Layers, Activity, Cpu, MessageSquare,
-} from "lucide-react";
+import { ArrowRight, Check, Copy, Loader2, Search, Sparkles, Terminal } from "lucide-react";
+import { ConfirmPanel } from "@/components/palette/ConfirmPanel";
+import { EditableCommand, INTERACTIVE_COMMANDS } from "@/components/palette/EditableCommand";
+import { EmptyState } from "@/components/palette/EmptyState";
+import { ExecOutput, type ExecResult } from "@/components/palette/ExecOutput";
+import { buildCtx, buildNs, matchQuery, type MatchedCommand } from "@/components/palette/patterns";
+import { ScopeStrip } from "@/components/palette/ScopeStrip";
 import { navigateHash as hashNavigate } from "@/lib/hash-router";
 import { useTerminalStore } from "@/hooks/use-terminal-store";
 import { useAiConfig, translateToKubectl } from "@/ai";
 import { useResourceNames, searchResourceNames } from "@/hooks/use-resource-names";
-import { useSmartSuggestions, type SmartSuggestion } from "@/hooks/use-smart-suggestions";
+import { useSmartSuggestions } from "@/hooks/use-smart-suggestions";
 import {
   getKubectlHistory, recordKubectlHistory, clearKubectlHistory,
 } from "@/lib/kubectl-history";
 import { useK8sNamespaces, useK8sPods, useK8sDeployments, useK8sServices } from "@/hooks/use-k8s";
-
-interface MatchedCommand {
-  description: string;
-  command: string;
-  confidence: number;
-}
-
-interface Pattern {
-  triggers: RegExp[];
-  build: (match: RegExpMatchArray | null, ctx: string, ns: string) => MatchedCommand;
-}
-
-function buildCtx(ctx: string) { return ctx ? ` --context=${ctx}` : ""; }
-function buildNs(ns: string) { return ns && ns !== "all" ? ` -n ${ns}` : ""; }
-
-const PATTERNS: Pattern[] = [
-  // pods with restarts
-  {
-    triggers: [/pods?\s+(?:with\s+)?(?:more\s+than\s+)?(\d+)\s*\+?\s*restarts?/i, /restarts?\s*(?:>\s*|more\s+than\s+|above\s+|over\s+)(\d+)/i],
-    build: (m, ctx, ns) => ({
-      description: `Pods with more than ${m?.[1] || "0"} restarts`,
-      command: `kubectl get pods${buildCtx(ctx)}${buildNs(ns)} -o json | jq '.items[] | select(.status.containerStatuses[]?.restartCount > ${m?.[1] || "0"}) | .metadata.name'`,
-      confidence: 0.9,
-    }),
-  },
-  // crashloopbackoff / crashing pods
-  {
-    triggers: [/crash(?:ing|loop|loopbackoff)?/i, /failing\s*pods?/i, /broken\s*pods?/i, /errored?\s*pods?/i, /unhealthy\s*pods?/i],
-    build: (_, ctx, ns) => ({
-      description: "Pods in CrashLoopBackOff or Error state",
-      command: `kubectl get pods${buildCtx(ctx)}${buildNs(ns)} --field-selector=status.phase!=Running,status.phase!=Succeeded`,
-      confidence: 0.85,
-    }),
-  },
-  // pod logs
-  {
-    triggers: [/logs?\s+(?:for\s+|of\s+|from\s+)?(?:pod\s+)?(\S+)/i, /show\s+(?:me\s+)?logs?\s+(?:for\s+|of\s+)?(\S+)/i],
-    build: (m, ctx, ns) => {
-      const name = m?.[1] || m?.[2] || "<pod-name>";
-      return {
-        description: `Stream logs from ${name}`,
-        command: `kubectl logs -f ${name}${buildCtx(ctx)}${buildNs(ns)}`,
-        confidence: 0.8,
-      };
-    },
-  },
-  // exec into pod
-  {
-    triggers: [/exec\s+(?:into\s+)?(\S+)/i, /shell\s+(?:into\s+)?(\S+)/i, /ssh\s+(?:into\s+)?(\S+)/i, /connect\s+(?:to\s+)?(\S+)/i],
-    build: (m, ctx, ns) => ({
-      description: `Exec into ${m?.[1] || "<pod>"}`,
-      command: `kubectl exec -it ${m?.[1] || "<pod-name>"}${buildCtx(ctx)}${buildNs(ns)} -- /bin/sh`,
-      confidence: 0.85,
-    }),
-  },
-  // scale deployment
-  {
-    triggers: [/scale\s+(?:deployment\s+)?(\S+)\s+(?:to\s+)?(\d+)/i, /set\s+replicas?\s+(?:for\s+)?(\S+)\s+(?:to\s+)?(\d+)/i],
-    build: (m, ctx, ns) => ({
-      description: `Scale ${m?.[1]} to ${m?.[2]} replicas`,
-      command: `kubectl scale deployment/${m?.[1]}${buildCtx(ctx)}${buildNs(ns)} --replicas=${m?.[2]}`,
-      confidence: 0.9,
-    }),
-  },
-  // restart deployment
-  {
-    triggers: [/restart\s+(?:deployment\s+)?(\S+)/i, /rolling\s+restart\s+(\S+)/i, /redeploy\s+(\S+)/i],
-    build: (m, ctx, ns) => ({
-      description: `Rolling restart of ${m?.[1]}`,
-      command: `kubectl rollout restart deployment/${m?.[1]}${buildCtx(ctx)}${buildNs(ns)}`,
-      confidence: 0.85,
-    }),
-  },
-  // rollout status
-  {
-    triggers: [/rollout\s+status\s+(?:for\s+)?(\S+)/i, /deployment\s+status\s+(?:of\s+)?(\S+)/i],
-    build: (m, ctx, ns) => ({
-      description: `Rollout status of ${m?.[1]}`,
-      command: `kubectl rollout status deployment/${m?.[1]}${buildCtx(ctx)}${buildNs(ns)}`,
-      confidence: 0.85,
-    }),
-  },
-  // top / resource usage
-  {
-    triggers: [/(?:top|cpu|memory|usage|resource)\s*(?:for\s+)?(?:pods?|containers?)/i, /which\s+pods?\s+(?:are\s+)?(?:using|consuming)\s+(?:the\s+)?most/i, /highest\s+(?:cpu|memory)/i],
-    build: (_, ctx, ns) => ({
-      description: "Top pods by resource usage",
-      command: `kubectl top pods${buildCtx(ctx)}${buildNs(ns)} --sort-by=cpu`,
-      confidence: 0.85,
-    }),
-  },
-  {
-    triggers: [/(?:top|cpu|memory|usage|resource)\s*(?:for\s+)?nodes?/i, /node\s+(?:cpu|memory|usage)/i],
-    build: (_, ctx, _ns) => ({
-      description: "Top nodes by resource usage",
-      command: `kubectl top nodes${buildCtx(ctx)}`,
-      confidence: 0.85,
-    }),
-  },
-  // events
-  {
-    triggers: [/events?\s*(?:in\s+|for\s+)?(?:namespace\s+)?/i, /show\s+(?:me\s+)?events/i, /what.?s\s+happening/i, /recent\s+events/i],
-    build: (_, ctx, ns) => ({
-      description: "Recent cluster events",
-      command: `kubectl get events${buildCtx(ctx)}${buildNs(ns)} --sort-by='.lastTimestamp'`,
-      confidence: 0.7,
-    }),
-  },
-  // delete pod
-  {
-    triggers: [/delete\s+pod\s+(\S+)/i, /remove\s+pod\s+(\S+)/i, /kill\s+pod\s+(\S+)/i],
-    build: (m, ctx, ns) => ({
-      description: `Delete pod ${m?.[1]}`,
-      command: `kubectl delete pod ${m?.[1]}${buildCtx(ctx)}${buildNs(ns)}`,
-      confidence: 0.9,
-    }),
-  },
-  // get by resource type
-  {
-    triggers: [/(?:show|list|get|find)\s+(?:me\s+)?(?:all\s+)?(pods?|deployments?|services?|ingress(?:es)?|configmaps?|secrets?|nodes?|jobs?|cronjobs?|statefulsets?|daemonsets?|hpa|pvcs?)/i],
-    build: (m, ctx, ns) => {
-      const raw = m?.[1]?.toLowerCase() || "pods";
-      const resource = raw.endsWith("s") ? raw : raw + "s";
-      return {
-        description: `List ${resource}`,
-        command: `kubectl get ${resource}${buildCtx(ctx)}${buildNs(ns)}`,
-        confidence: 0.75,
-      };
-    },
-  },
-  // describe a resource
-  {
-    triggers: [/describe\s+(pod|deployment|service|ingress|configmap|secret|node|job|cronjob|statefulset|daemonset|hpa|pvc)\s+(\S+)/i],
-    build: (m, ctx, ns) => ({
-      description: `Describe ${m?.[1]} ${m?.[2]}`,
-      command: `kubectl describe ${m?.[1]} ${m?.[2]}${buildCtx(ctx)}${buildNs(ns)}`,
-      confidence: 0.9,
-    }),
-  },
-  // port forward
-  {
-    triggers: [/port[\s-]?forward\s+(\S+)\s+(\d+)(?::(\d+))?/i, /forward\s+(?:port\s+)?(\d+)\s+(?:to\s+)?(\S+)/i],
-    build: (m, ctx, ns) => {
-      const name = m?.[1] || "<pod>";
-      const local = m?.[2] || "8080";
-      const remote = m?.[3] || local;
-      return {
-        description: `Port forward ${name} ${local}:${remote}`,
-        command: `kubectl port-forward ${name}${buildCtx(ctx)}${buildNs(ns)} ${local}:${remote}`,
-        confidence: 0.85,
-      };
-    },
-  },
-  // apply / create
-  {
-    triggers: [/apply\s+(?:from\s+)?(\S+)/i],
-    build: (m, ctx, ns) => ({
-      description: `Apply manifest from ${m?.[1]}`,
-      command: `kubectl apply -f ${m?.[1]}${buildCtx(ctx)}${buildNs(ns)}`,
-      confidence: 0.85,
-    }),
-  },
-  // namespaces
-  {
-    triggers: [/(?:show|list|get)\s+(?:all\s+)?namespaces?/i, /which\s+namespaces/i],
-    build: (_, ctx, _ns) => ({
-      description: "List all namespaces",
-      command: `kubectl get namespaces${buildCtx(ctx)}`,
-      confidence: 0.8,
-    }),
-  },
-  // wide output for pods
-  {
-    triggers: [/pods?\s+(?:with\s+)?(?:ip|ips|node|nodes|wide|detail)/i, /where\s+(?:are\s+)?(?:my\s+)?pods?\s+running/i],
-    build: (_, ctx, ns) => ({
-      description: "Pods with node and IP info",
-      command: `kubectl get pods${buildCtx(ctx)}${buildNs(ns)} -o wide`,
-      confidence: 0.8,
-    }),
-  },
-  // cordon / drain
-  {
-    triggers: [/cordon\s+(?:node\s+)?(\S+)/i],
-    build: (m, ctx) => ({
-      description: `Cordon node ${m?.[1]}`,
-      command: `kubectl cordon ${m?.[1]}${buildCtx(ctx)}`,
-      confidence: 0.9,
-    }),
-  },
-  {
-    triggers: [/drain\s+(?:node\s+)?(\S+)/i],
-    build: (m, ctx) => ({
-      description: `Drain node ${m?.[1]}`,
-      command: `kubectl drain ${m?.[1]}${buildCtx(ctx)} --ignore-daemonsets --delete-emptydir-data`,
-      confidence: 0.9,
-    }),
-  },
-];
-
-function matchQuery(query: string, ctx: string, ns: string): MatchedCommand[] {
-  if (!query.trim()) return [];
-  const results: MatchedCommand[] = [];
-
-  for (const pattern of PATTERNS) {
-    for (const trigger of pattern.triggers) {
-      const match = query.match(trigger);
-      if (match) {
-        results.push(pattern.build(match, ctx, ns));
-        break;
-      }
-    }
-  }
-
-  // If nothing matched, try a kubectl passthrough
-  if (results.length === 0 && query.trim().startsWith("kubectl")) {
-    results.push({
-      description: "Run as-is",
-      command: query.trim(),
-      confidence: 1.0,
-    });
-  }
-
-  // Deduplicate by command
-  const seen = new Set<string>();
-  return results.filter(r => {
-    if (seen.has(r.command)) return false;
-    seen.add(r.command);
-    return true;
-  }).sort((a, b) => b.confidence - a.confidence);
-}
-
-interface ExecResult {
-  stdout: string;
-  stderr: string;
-  code: number;
-}
-
-const INTERACTIVE_COMMANDS = /\b(exec|logs\s+-f|port-forward|attach|run\s+.*--stdin)\b/i;
 
 export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [query, setQuery] = useState("");
@@ -285,7 +50,11 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
   const [history, setHistory] = useState(() => getKubectlHistory(context, namespace));
   const [selectedIdx, setSelectedIdx] = useState(0);
 
-  const results = useMemo(() => matchQuery(query, context, namespace), [query, context, namespace]);
+  // names the palette knows, so a request's words resolve to real resources (never "kubectl logs the")
+  const results = useMemo(
+    () => matchQuery(query, context, namespace, (type) => resourceNames.filter((r) => r.type === type).map((r) => r.name)),
+    [query, context, namespace, resourceNames],
+  );
 
   const ctxFlag = useMemo(() => buildCtx(context), [context]);
   const nsFlag = useMemo(() => buildNs(namespace), [namespace]);
@@ -561,123 +330,26 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
           )}
 
           {/* AI translated result — full interactive card */}
-          {aiTranslated && (() => {
-            const isInteractive = INTERACTIVE_COMMANDS.test(aiCmd);
-            const isRunning = execState?.idx === -1 && execState.loading;
-            const hasResult = execState?.idx === -1 && !execState.loading && (execState.result || execState.error);
-            const isEdited = aiEditedCmd !== null && aiEditedCmd !== aiTranslated.command;
-
-            return (
-              <div>
-                <div className="group flex flex-col gap-2 px-4 py-3 border-b border-primary/20 bg-primary/[0.03]">
-                  <div className="flex items-center gap-3">
-                    <Sparkles className="w-3.5 h-3.5 text-primary shrink-0" />
-                    <p className="text-[10px] text-primary font-medium flex-1">AI: {aiTranslated.description}</p>
-                    <div className="flex items-center gap-1 shrink-0">
-                      {!isInteractive && (
-                        <button
-                          onClick={() => handleExec(aiCmd, -1)}
-                          disabled={isRunning}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-primary/20 text-[10px] font-medium text-primary bg-primary/5 hover:bg-primary/10 transition-colors disabled:opacity-50"
-                          title="Execute command"
-                        >
-                          {isRunning ? (
-                            <div className="w-3 h-3 border border-primary/40 border-t-primary rounded-full animate-spin" />
-                          ) : (
-                            <ArrowRight className="w-3 h-3" />
-                          )}
-                          <span>{isRunning ? "Running" : "Run"}</span>
-                        </button>
-                      )}
-                      {isInteractive && (
-                        <span className="text-[8px] text-muted-foreground/50 uppercase tracking-wider px-1.5 py-0.5 rounded border border-border/50">interactive</span>
-                      )}
-                      <button
-                        onClick={() => handleCopy(aiCmd, -1)}
-                        className="p-1.5 rounded hover:bg-foreground/8 text-muted-foreground hover:text-foreground transition-colors"
-                        title="Copy command"
-                      >
-                        {copiedIdx === -1 ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="relative">
-                    <textarea
-                      value={aiCmd}
-                      onChange={(e) => setAiEditedCmd(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey && !isInteractive) {
-                          e.preventDefault();
-                          handleExec(aiCmd, -1);
-                        }
-                      }}
-                      rows={Math.min(Math.ceil(aiCmd.length / 70) || 1, 4)}
-                      className="w-full bg-surface-inset border border-primary/20 rounded px-3 py-2 text-[11px] text-foreground/80 font-mono resize-none focus:outline-none focus:border-primary/40 transition-colors leading-relaxed"
-                      spellCheck={false}
-                    />
-                    {isEdited && (
-                      <button
-                        onClick={() => setAiEditedCmd(null)}
-                        className="absolute top-1.5 right-1.5 text-[7px] uppercase tracking-wider font-bold text-muted-foreground/50 hover:text-foreground px-1 py-0.5 rounded border border-border/50 hover:bg-foreground/[0.04] transition-colors"
-                        title="Reset to original"
-                      >
-                        Reset
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {hasResult && (
-                  <div className="border-b border-border bg-surface-inset">
-                    <div className="flex items-center gap-2 px-4 py-1.5 border-b border-border/50 bg-foreground/[0.02]">
-                      <span className={`text-[9px] uppercase font-bold tracking-wider ${
-                        execState!.error || (execState!.result && execState!.result.code !== 0)
-                          ? "text-destructive/80" : "text-foreground/50"
-                      }`}>
-                        {execState!.error ? "ERROR" : execState!.result!.code === 0 ? "OUTPUT" : `EXIT ${execState!.result!.code}`}
-                      </span>
-                      {execState!.result && (
-                        <span className="text-[9px] text-muted-foreground/50 tabular-nums">
-                          {(execState!.result.stdout || execState!.result.stderr).split("\n").length} lines
-                        </span>
-                      )}
-                      <div className="ml-auto flex items-center gap-1">
-                        <button
-                          onClick={handleCopyOutput}
-                          className="px-1.5 py-0.5 rounded text-[8px] uppercase font-bold tracking-wider text-muted-foreground/60 hover:text-foreground border border-border/50 hover:bg-foreground/[0.04] transition-colors"
-                        >
-                          Copy output
-                        </button>
-                        <button
-                          onClick={() => setExecState(null)}
-                          className="px-1.5 py-0.5 rounded text-[8px] uppercase font-bold tracking-wider text-muted-foreground/60 hover:text-foreground border border-border/50 hover:bg-foreground/[0.04] transition-colors"
-                        >
-                          Close
-                        </button>
-                      </div>
-                    </div>
-                    <pre
-                      ref={outputRef}
-                      className="px-4 py-3 text-[10px] leading-relaxed overflow-auto max-h-60 whitespace-pre-wrap break-all"
-                    >
-                      {execState!.error ? (
-                        <span className="text-destructive/80">{execState!.error}</span>
-                      ) : (
-                        <>
-                          {execState!.result!.stdout && (
-                            <span className="text-foreground/70">{execState!.result!.stdout}</span>
-                          )}
-                          {execState!.result!.stderr && (
-                            <span className="text-destructive/60">{execState!.result!.stderr}</span>
-                          )}
-                        </>
-                      )}
-                    </pre>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
+          {aiTranslated && (
+            <div>
+              <EditableCommand
+                tone="ai"
+                icon={<Sparkles className="w-3.5 h-3.5 text-primary shrink-0" />}
+                description={<>AI: {aiTranslated.description}</>}
+                command={aiCmd}
+                edited={aiEditedCmd !== null && aiEditedCmd !== aiTranslated.command}
+                onChange={setAiEditedCmd}
+                onReset={() => setAiEditedCmd(null)}
+                onRun={() => handleExec(aiCmd, -1)}
+                onCopy={() => handleCopy(aiCmd, -1)}
+                copied={copiedIdx === -1}
+                running={execState?.idx === -1 && execState.loading}
+              />
+              {execState?.idx === -1 && !execState.loading && (execState.result || execState.error) && (
+                <ExecOutput result={execState.result} error={execState.error} onCopy={handleCopyOutput} onClose={() => setExecState(null)} outputRef={outputRef} />
+              )}
+            </div>
+          )}
 
           {/* Manual AI translate button when pattern results exist but query is NL */}
           {isConfigured && isNaturalLanguage && results.length > 0 && !aiTranslated && !aiTranslating && (
@@ -740,40 +412,7 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
                       </div>
                     </div>
                     {hasResult && (
-                      <div className="border-b border-border bg-surface-inset">
-                        <div className="flex items-center gap-2 px-4 py-1.5 border-b border-border/50 bg-foreground/[0.02]">
-                          <span className={`text-[9px] uppercase font-bold tracking-wider ${
-                            execState!.error || (execState!.result && execState!.result.code !== 0)
-                              ? "text-destructive/80" : "text-foreground/50"
-                          }`}>
-                            {execState!.error ? "ERROR" : execState!.result!.code === 0 ? "OUTPUT" : `EXIT ${execState!.result!.code}`}
-                          </span>
-                          <div className="ml-auto flex items-center gap-1">
-                            <button
-                              onClick={handleCopyOutput}
-                              className="px-1.5 py-0.5 rounded text-[8px] uppercase font-bold tracking-wider text-muted-foreground/60 hover:text-foreground border border-border/50 hover:bg-foreground/[0.04] transition-colors"
-                            >
-                              Copy
-                            </button>
-                            <button
-                              onClick={() => setExecState(null)}
-                              className="px-1.5 py-0.5 rounded text-[8px] uppercase font-bold tracking-wider text-muted-foreground/60 hover:text-foreground border border-border/50 hover:bg-foreground/[0.04] transition-colors"
-                            >
-                              Close
-                            </button>
-                          </div>
-                        </div>
-                        <pre ref={outputRef} className="px-4 py-3 text-[10px] leading-relaxed overflow-auto max-h-60 whitespace-pre-wrap break-all">
-                          {execState!.error ? (
-                            <span className="text-destructive/80">{execState!.error}</span>
-                          ) : (
-                            <>
-                              {execState!.result!.stdout && <span className="text-foreground/70">{execState!.result!.stdout}</span>}
-                              {execState!.result!.stderr && <span className="text-destructive/60">{execState!.result!.stderr}</span>}
-                            </>
-                          )}
-                        </pre>
-                      </div>
+                      <ExecOutput result={execState!.result} error={execState!.error} onCopy={handleCopyOutput} onClose={() => setExecState(null)} outputRef={outputRef} />
                     )}
                   </div>
                 );
@@ -783,119 +422,23 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
 
           {results.map((r, i) => {
             const currentCmd = getCmd(i);
-            const isInteractive = INTERACTIVE_COMMANDS.test(currentCmd);
-            const isRunning = execState?.idx === i && execState.loading;
             const hasResult = execState?.idx === i && !execState.loading && (execState.result || execState.error);
-            const isEdited = editedCmds[i] !== undefined && editedCmds[i] !== r.command;
-
             return (
               <div key={i}>
-                <div className="group flex flex-col gap-2 px-4 py-3 border-b border-border/50 hover:bg-foreground/[0.03] transition-colors">
-                  <div className="flex items-center gap-3">
-                    <Terminal className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
-                    <p className="text-[10px] text-muted-foreground flex-1">{r.description}</p>
-                    <div className="flex items-center gap-1 shrink-0">
-                      {!isInteractive && (
-                        <button
-                          onClick={() => handleExec(currentCmd, i)}
-                          disabled={isRunning}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-primary/20 text-[10px] font-medium text-primary bg-primary/5 hover:bg-primary/10 transition-colors disabled:opacity-50"
-                          title="Execute command"
-                        >
-                          {isRunning ? (
-                            <div className="w-3 h-3 border border-muted-foreground/40 border-t-foreground/60 rounded-full animate-spin" />
-                          ) : (
-                            <ArrowRight className="w-3 h-3" />
-                          )}
-                          <span>{isRunning ? "Running" : "Run"}</span>
-                        </button>
-                      )}
-                      {isInteractive && (
-                        <span className="text-[8px] text-muted-foreground/50 uppercase tracking-wider px-1.5 py-0.5 rounded border border-border/50">interactive</span>
-                      )}
-                      <button
-                        onClick={() => handleCopy(currentCmd, i)}
-                        className="p-1.5 rounded hover:bg-foreground/8 text-muted-foreground hover:text-foreground transition-colors"
-                        title="Copy command"
-                      >
-                        {copiedIdx === i ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="relative">
-                    <textarea
-                      value={currentCmd}
-                      onChange={(e) => setEditedCmds(prev => ({ ...prev, [i]: e.target.value }))}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey && !isInteractive) {
-                          e.preventDefault();
-                          handleExec(currentCmd, i);
-                        }
-                      }}
-                      rows={Math.min(Math.ceil(currentCmd.length / 70) || 1, 4)}
-                      className="w-full bg-surface-inset border border-border rounded px-3 py-2 text-[11px] text-foreground/80 font-mono resize-none focus:outline-none focus:border-foreground/20 transition-colors leading-relaxed"
-                      spellCheck={false}
-                    />
-                    {isEdited && (
-                      <button
-                        onClick={() => setEditedCmds(prev => { const copy = { ...prev }; delete copy[i]; return copy; })}
-                        className="absolute top-1.5 right-1.5 text-[7px] uppercase tracking-wider font-bold text-muted-foreground/50 hover:text-foreground px-1 py-0.5 rounded border border-border/50 hover:bg-foreground/[0.04] transition-colors"
-                        title="Reset to original"
-                      >
-                        Reset
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Execution output */}
+                <EditableCommand
+                  icon={<Terminal className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />}
+                  description={r.description}
+                  command={currentCmd}
+                  edited={editedCmds[i] !== undefined && editedCmds[i] !== r.command}
+                  onChange={(cmd) => setEditedCmds((prev) => ({ ...prev, [i]: cmd }))}
+                  onReset={() => setEditedCmds((prev) => { const copy = { ...prev }; delete copy[i]; return copy; })}
+                  onRun={() => handleExec(currentCmd, i)}
+                  onCopy={() => handleCopy(currentCmd, i)}
+                  copied={copiedIdx === i}
+                  running={execState?.idx === i && execState.loading}
+                />
                 {hasResult && (
-                  <div className="border-b border-border bg-surface-inset">
-                    <div className="flex items-center gap-2 px-4 py-1.5 border-b border-border/50 bg-foreground/[0.02]">
-                      <span className={`text-[9px] uppercase font-bold tracking-wider ${
-                        execState!.error || (execState!.result && execState!.result.code !== 0)
-                          ? "text-destructive/80" : "text-foreground/50"
-                      }`}>
-                        {execState!.error ? "ERROR" : execState!.result!.code === 0 ? "OUTPUT" : `EXIT ${execState!.result!.code}`}
-                      </span>
-                      {execState!.result && (
-                        <span className="text-[9px] text-muted-foreground/50 tabular-nums">
-                          {(execState!.result.stdout || execState!.result.stderr).split("\n").length} lines
-                        </span>
-                      )}
-                      <div className="ml-auto flex items-center gap-1">
-                        <button
-                          onClick={handleCopyOutput}
-                          className="px-1.5 py-0.5 rounded text-[8px] uppercase font-bold tracking-wider text-muted-foreground/60 hover:text-foreground border border-border/50 hover:bg-foreground/[0.04] transition-colors"
-                        >
-                          Copy output
-                        </button>
-                        <button
-                          onClick={() => setExecState(null)}
-                          className="px-1.5 py-0.5 rounded text-[8px] uppercase font-bold tracking-wider text-muted-foreground/60 hover:text-foreground border border-border/50 hover:bg-foreground/[0.04] transition-colors"
-                        >
-                          Close
-                        </button>
-                      </div>
-                    </div>
-                    <pre
-                      ref={outputRef}
-                      className="px-4 py-3 text-[10px] leading-relaxed overflow-auto max-h-60 whitespace-pre-wrap break-all"
-                    >
-                      {execState!.error ? (
-                        <span className="text-destructive/80">{execState!.error}</span>
-                      ) : (
-                        <>
-                          {execState!.result!.stdout && (
-                            <span className="text-foreground/70">{execState!.result!.stdout}</span>
-                          )}
-                          {execState!.result!.stderr && (
-                            <span className="text-destructive/60">{execState!.result!.stderr}</span>
-                          )}
-                        </>
-                      )}
-                    </pre>
-                  </div>
+                  <ExecOutput result={execState!.result} error={execState!.error} onCopy={handleCopyOutput} onClose={() => setExecState(null)} outputRef={outputRef} />
                 )}
               </div>
             );
@@ -904,33 +447,12 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
 
         {/* Confirmation dialog for mutating commands */}
         {confirmState && (
-          <div className="px-4 py-4 border-t border-warning/30 bg-warning/5">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
-              <div className="flex-1 space-y-2">
-                <p className="text-[11px] font-semibold text-warning">Confirmation Required</p>
-                <p className="text-[10px] text-foreground/70">{confirmState.warning}</p>
-                <div className="bg-surface-inset border border-border rounded px-3 py-1.5 text-[10px] font-mono text-foreground/70">
-                  {confirmState.command}
-                </div>
-                <div className="flex items-center gap-2 pt-1">
-                  <button
-                    onClick={() => handleExec(confirmState.command, confirmState.idx, true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium text-warning-foreground bg-warning hover:bg-warning/90 transition-colors"
-                  >
-                    <ShieldAlert className="w-3 h-3" />
-                    Execute Anyway
-                  </button>
-                  <button
-                    onClick={() => setConfirmState(null)}
-                    className="px-3 py-1.5 rounded-lg text-[10px] font-medium text-muted-foreground border border-border hover:bg-foreground/5 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+          <ConfirmPanel
+            warning={confirmState.warning}
+            command={confirmState.command}
+            onConfirm={() => handleExec(confirmState.command, confirmState.idx, true)}
+            onCancel={() => setConfirmState(null)}
+          />
         )}
 
         {/* Footer hints */}
@@ -948,222 +470,6 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
             namespace={namespace}
           />
         )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Scope strip ──────────────────────────────────────────────
-
-function ScopeStrip({
-  context, namespace, namespaces, onNamespaceChange, onAskAi,
-}: {
-  context: string;
-  namespace: string;
-  namespaces: string[];
-  onNamespaceChange: (ns: string) => void;
-  onAskAi?: () => void;
-}) {
-  const [pickingNs, setPickingNs] = useState(false);
-  const [nsFilter, setNsFilter] = useState("");
-  const filtered = useMemo(() => {
-    const q = nsFilter.trim().toLowerCase();
-    const all = ["all", ...namespaces];
-    if (!q) return all.slice(0, 50);
-    return all.filter((n) => n.toLowerCase().includes(q)).slice(0, 50);
-  }, [namespaces, nsFilter]);
-
-  return (
-    <div className="relative flex items-center gap-2 px-4 py-2 border-b border-border bg-muted/20">
-      <span className="text-[9px] uppercase font-bold tracking-wider text-muted-foreground/70">Scope</span>
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono bg-primary/10 text-primary border border-primary/20">
-        <Box className="w-2.5 h-2.5" />
-        {context || "no-context"}
-      </span>
-      <span className="text-primary/40 text-[10px]">/</span>
-      <button
-        onClick={() => setPickingNs((v) => !v)}
-        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono bg-primary/10 text-primary border border-primary/20 hover:bg-primary/15 transition-colors"
-        title="Change namespace"
-      >
-        <Layers className="w-2.5 h-2.5" />
-        {namespace || "all"}
-      </button>
-      {onAskAi && (
-        <button
-          onClick={onAskAi}
-          className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
-          title="Open this query in AI chat"
-        >
-          <MessageSquare className="w-2.5 h-2.5" />
-          Ask AI
-        </button>
-      )}
-
-      {pickingNs && (
-        <div className="absolute left-2 right-2 top-full mt-1 z-10 bg-popover border border-border rounded-lg shadow-lg overflow-hidden">
-          <input
-            autoFocus
-            value={nsFilter}
-            onChange={(e) => setNsFilter(e.target.value)}
-            placeholder="Filter namespaces…"
-            className="w-full bg-transparent px-3 py-2 text-xs border-b border-border focus:outline-none"
-          />
-          <div className="max-h-60 overflow-auto py-1">
-            {filtered.length === 0 && (
-              <div className="px-3 py-2 text-xs text-muted-foreground">No namespaces match.</div>
-            )}
-            {filtered.map((n) => (
-              <button
-                key={n}
-                onClick={() => { onNamespaceChange(n); setPickingNs(false); setNsFilter(""); }}
-                className={`w-full text-left px-3 py-1.5 text-xs font-mono hover:bg-muted/60 transition-colors ${
-                  n === namespace ? "text-primary bg-primary/5" : "text-foreground/80"
-                }`}
-              >
-                {n}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Empty state with smart suggestions + history ─────────────
-
-const SMART_ICON: Record<SmartSuggestion["icon"], typeof Bug> = {
-  bug: Bug,
-  log: ScrollText,
-  restart: RotateCcw,
-  deploy: Layers,
-  event: Activity,
-  cpu: Cpu,
-};
-
-function EmptyState({
-  smartSuggestions, history, onPick, onRun, onClearHistory, context, namespace,
-}: {
-  smartSuggestions: SmartSuggestion[];
-  history: { command: string; at: number }[];
-  onPick: (cmd: string) => void;
-  onRun: (cmd: string) => void;
-  onClearHistory: () => void;
-  context: string;
-  namespace: string;
-}) {
-  const STATIC_EXAMPLES = [
-    "show me crashing pods",
-    "pods with more than 5 restarts",
-    "top pods by cpu",
-    "scale my-deployment to 3",
-    "exec into my-pod",
-    "logs for my-pod",
-    "restart my-deployment",
-    "list all services",
-    "events in this namespace",
-    "port-forward my-pod 8080:80",
-  ];
-
-  return (
-    <div className="border-t border-border/50 max-h-[55vh] overflow-auto">
-      {/* Smart suggestions — only when we have cluster data */}
-      {smartSuggestions.length > 0 && (
-        <div className="px-4 py-3">
-          <div className="flex items-center gap-2 mb-2">
-            <Sparkles className="w-3 h-3 text-primary" />
-            <p className="text-[10px] uppercase font-bold tracking-wider text-primary">
-              For this scope ({context}/{namespace || "all"})
-            </p>
-          </div>
-          <div className="space-y-1">
-            {smartSuggestions.map((s, i) => {
-              const Icon = SMART_ICON[s.icon] || Terminal;
-              return (
-                <div
-                  key={i}
-                  className="group flex items-start gap-2 px-2 py-1.5 rounded-md hover:bg-muted/40 transition-colors"
-                >
-                  <Icon className="w-3 h-3 shrink-0 mt-0.5 text-primary/70" />
-                  <button
-                    onClick={() => onPick(s.command)}
-                    className="flex-1 min-w-0 text-left"
-                  >
-                    <div className="text-[11px] text-foreground">{s.label}</div>
-                    <div className="text-[10px] text-muted-foreground/80 truncate font-mono">{s.command}</div>
-                    <div className="text-[10px] text-muted-foreground/60 italic">{s.reason}</div>
-                  </button>
-                  <button
-                    onClick={() => onRun(s.command)}
-                    className="shrink-0 opacity-0 group-hover:opacity-100 px-2 py-0.5 rounded text-[10px] font-medium text-primary bg-primary/10 hover:bg-primary/20 transition-all"
-                    title="Run now"
-                  >
-                    <ArrowRight className="w-3 h-3" />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Recent commands for this scope */}
-      {history.length > 0 && (
-        <div className="px-4 py-3 border-t border-border/50">
-          <div className="flex items-center gap-2 mb-2">
-            <History className="w-3 h-3 text-muted-foreground" />
-            <p className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
-              Recent in {namespace || "all"}
-            </p>
-            <button
-              onClick={onClearHistory}
-              className="ml-auto text-[9px] text-muted-foreground/60 hover:text-foreground transition-colors flex items-center gap-1"
-              title="Clear scope history"
-            >
-              <X className="w-2.5 h-2.5" /> clear
-            </button>
-          </div>
-          <div className="space-y-0.5">
-            {history.map((h, i) => (
-              <div
-                key={i}
-                className="group flex items-center gap-2 px-2 py-1 rounded hover:bg-muted/40 transition-colors"
-              >
-                <Clock className="w-3 h-3 shrink-0 text-muted-foreground/50" />
-                <button
-                  onClick={() => onPick(h.command)}
-                  className="flex-1 min-w-0 text-left text-[10px] font-mono text-foreground/80 truncate"
-                >
-                  {h.command}
-                </button>
-                <button
-                  onClick={() => onRun(h.command)}
-                  className="shrink-0 opacity-0 group-hover:opacity-100 px-2 py-0.5 rounded text-[10px] font-medium text-primary bg-primary/10 hover:bg-primary/20 transition-all"
-                  title="Run again"
-                >
-                  <ArrowRight className="w-3 h-3" />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Static examples — always at bottom */}
-      <div className="px-4 py-3 border-t border-border/50">
-        <p className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground/60 mb-2">Try asking</p>
-        <div className="grid grid-cols-2 gap-1.5">
-          {STATIC_EXAMPLES.map((ex) => (
-            <button
-              key={ex}
-              onClick={() => onPick(ex)}
-              className="text-left text-[10px] text-foreground/50 hover:text-foreground bg-foreground/[0.02] hover:bg-foreground/[0.05] px-2.5 py-1.5 rounded border border-border/50 transition-colors truncate"
-            >
-              {ex}
-            </button>
-          ))}
-        </div>
       </div>
     </div>
   );
