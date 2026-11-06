@@ -64,7 +64,7 @@ export function getNamespaceFlag(ns: string | undefined): string {
   return `-n ${ns}`;
 }
 
-/** "cannot list resource "resourcequotas" in … namespace "e2"" → what the account is missing, in words. */
+/** "cannot list resource "resourcequotas" in … namespace "shop"" → what the account is missing, in words. */
 export function missingPermission(stderr: string): string | null {
   const m = stderr.match(/cannot (\w+) resource "([^"]+)"(?: in API group "([^"]*)")?(?: in the namespace "([^"]+)")?/);
   if (!m) return null;

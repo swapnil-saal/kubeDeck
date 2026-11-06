@@ -5,7 +5,7 @@ import { chatTitle, expirePendingApprovals, EXPIRED_APPROVAL_REASON, groupChats,
 const user = (text: string): UIMessage => ({ id: Math.random().toString(36), role: "user", parts: [{ type: "text", text }] });
 
 const summary = (id: string, updatedAt: number, extra: Partial<ChatSummary> = {}): ChatSummary => ({
-  id, title: id, createdAt: updatedAt, updatedAt, context: "e2dev", namespace: "e2", mode: "chat", messageCount: 2, ...extra,
+  id, title: id, createdAt: updatedAt, updatedAt, context: "dev", namespace: "shop", mode: "chat", messageCount: 2, ...extra,
 });
 
 describe("chatTitle", () => {
@@ -45,8 +45,8 @@ describe("groupChats", () => {
 });
 
 describe("matchesSearch", () => {
-  const chat = summary("c", 1, { title: "Why is e2-api crashing?", context: "e2dev", namespace: "payments" });
-  it.each(["", "CRASH", "payments", "e2dev"])("matches %j", (q) => expect(matchesSearch(chat, q)).toBe(true));
+  const chat = summary("c", 1, { title: "Why is checkout-api crashing?", context: "dev", namespace: "payments" });
+  it.each(["", "CRASH", "payments", "dev"])("matches %j", (q) => expect(matchesSearch(chat, q)).toBe(true));
   it("does not match other text", () => expect(matchesSearch(chat, "ingress")).toBe(false));
 });
 

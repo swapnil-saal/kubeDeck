@@ -47,7 +47,7 @@ describe("loadWebConfig / validateWebConfig", () => {
       .toMatch(/impersonate needs a login proxy/);
   });
   it("takes the public hostname from the URL", () => {
-    expect(loadWebConfig({ KUBEDECK_MODE: "web", KUBEDECK_PUBLIC_URL: "https://E2-K8S.saal.ai/x" }).hosts).toEqual(["e2-k8s.saal.ai"]);
+    expect(loadWebConfig({ KUBEDECK_MODE: "web", KUBEDECK_PUBLIC_URL: "https://KubeDeck.Example.com/x" }).hosts).toEqual(["kubedeck.example.com"]);
   });
 });
 

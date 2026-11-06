@@ -32,7 +32,7 @@ export interface WebConfig {
   ai: boolean;
   /** pod file browsing via kubectl exec of fixed scripts (default on; KUBEDECK_POD_FILES=off) */
   podFiles: boolean;
-  /** public hostname(s) users reach the app on, e.g. e2-k8s.saal.ai */
+  /** public hostname(s) users reach the app on, e.g. kubedeck.example.com */
   hosts: string[];
   /** value the proxy must send in `X-KubeDeck-Proxy-Secret` */
   proxySecret: string;

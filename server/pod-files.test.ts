@@ -25,8 +25,8 @@ describe("searchable", () => {
 describe("execArgs", () => {
   it("passes the user's values as arguments after a fixed script, never inside it", () => {
     const evil = "/tmp/$(rm -rf /);`id`";
-    const args = execArgs({ pod: "api-1", namespace: "e2", context: "e2dev", container: "app" }, "list", [evil]);
-    expect(args.slice(0, 8)).toEqual(["exec", "api-1", "-n", "e2", "--context", "e2dev", "-c", "app"]);
+    const args = execArgs({ pod: "api-1", namespace: "shop", context: "dev", container: "app" }, "list", [evil]);
+    expect(args.slice(0, 8)).toEqual(["exec", "api-1", "-n", "shop", "--context", "dev", "-c", "app"]);
     const script = args[args.indexOf("-c", 8) + 1];
     expect(script).not.toContain(evil);
     expect(args.slice(-2)).toEqual(["sh", evil]);

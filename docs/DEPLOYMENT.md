@@ -42,7 +42,7 @@ In the Keycloak admin console (realm `master`, or your own realm):
 4. Copy the client secret from the **Credentials** tab.
 5. *(Only if you want to limit access by group.)* **Client scopes → kubedeck-dedicated → Add mapper → Group Membership**: token claim name `groups`, *Full group path* **off**, add to ID token and access token.
 
-Note down: the client ID, the client secret, and the issuer URL, `https://<keycloak-host>/auth/realms/<realm>` (for yours: `https://saga.saal.ai/auth/realms/master`).
+Note down: the client ID, the client secret, and the issuer URL, `https://<keycloak-host>/realms/<realm>` (Keycloak before version 17: `https://<keycloak-host>/auth/realms/<realm>`).
 
 ## 3. Create the namespace and secrets
 
