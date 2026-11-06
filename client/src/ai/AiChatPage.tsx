@@ -4,7 +4,7 @@ import type { UIMessage } from "ai";
 import { AlertTriangle, History, MessageSquarePlus, X } from "lucide-react";
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
 import { useChatRuntime } from "@assistant-ui/react-ai-sdk";
-import { useTerminalStore } from "@/hooks/use-terminal-store";
+import { useScope } from "@/hooks/use-scope";
 import { useSettings } from "@/hooks/use-settings";
 import { useK8sPods, useK8sDeployments, useK8sNodes } from "@/hooks/use-k8s";
 import { useResourceNames } from "@/hooks/use-resource-names";
@@ -102,7 +102,7 @@ interface SessionSeed {
 const ChatSession: FC<SessionSeed & { onOpenHistory: () => void; onNewChat: () => void }> = ({
   id, messages, scope: storedScope, onOpenHistory, onNewChat,
 }) => {
-  const { context, namespace, setContext, setNamespace } = useTerminalStore();
+  const { context, namespace, setContext, setNamespace } = useScope();
   const { data: settings } = useSettings();
   const model = settings?.ai?.model || "";
   const [mode, setMode] = useState<ChatMode>(loadChatMode);

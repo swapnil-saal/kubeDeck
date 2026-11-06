@@ -1,16 +1,16 @@
 import { useSyncExternalStore, useCallback } from "react";
 import {
-  getTerminalState,
+  getScopeState,
   subscribe,
   setContext as _setContext,
   setNamespace as _setNamespace,
   setScope as _setScope,
-} from "@/lib/terminal-store";
+} from "@/lib/scope-store";
 
 /** The selected context and namespace, and setters for them. */
 
-export function useTerminalStore() {
-  const state = useSyncExternalStore(subscribe, getTerminalState, getTerminalState);
+export function useScope() {
+  const state = useSyncExternalStore(subscribe, getScopeState, getScopeState);
 
   const setContext = useCallback((ctx: string) => _setContext(ctx), []);
   const setNamespace = useCallback((ns: string) => _setNamespace(ns), []);

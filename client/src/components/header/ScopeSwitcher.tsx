@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Check, ChevronDown, Lock, Search } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { useTerminalStore } from "@/hooks/use-terminal-store";
+import { useScope } from "@/hooks/use-scope";
 import { useK8sContexts, useK8sNamespaces } from "@/hooks/use-k8s";
 import { useNamespaceAccess } from "@/hooks/use-cluster-extras";
 import { cn } from "@/lib/utils";
@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
  * list itself tells you where you can go.
  */
 export function ScopeSwitcher({ className }: { className?: string }) {
-  const { context, namespace, setContext, setNamespace } = useTerminalStore();
+  const { context, namespace, setContext, setNamespace } = useScope();
   const { data: contexts } = useK8sContexts();
   const { data: namespaces } = useK8sNamespaces(context);
   const { data: access } = useNamespaceAccess(context);

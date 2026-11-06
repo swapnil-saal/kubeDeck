@@ -11,7 +11,7 @@ import { LiveRefresh } from "@/components/LiveRefresh";
 import { useK8sNamespaces, useNamespaceMap } from "@/hooks/use-k8s";
 import { useHashParams } from "@/hooks/use-hash-params";
 import { useScopeFromUrl } from "@/hooks/use-scope-from-url";
-import { useTerminalStore } from "@/hooks/use-terminal-store";
+import { useScope } from "@/hooks/use-scope";
 import { adjacency, chainOf, layout, MAP, type Placed } from "@/lib/map-layout";
 import { cn } from "@/lib/utils";
 
@@ -124,7 +124,7 @@ export function MapView({ context, namespace }: { context: string; namespace: st
 /** `/map` — the selected namespace as a graph: what routes to what, what runs, and what it reads. */
 export default function MapPage() {
   useScopeFromUrl();
-  const { context, namespace, setNamespace } = useTerminalStore();
+  const { context, namespace, setNamespace } = useScope();
   const namespaces = useK8sNamespaces(namespace === "all" ? context : undefined);
 
   return (

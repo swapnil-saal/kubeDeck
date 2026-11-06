@@ -9,7 +9,7 @@ import { AppHeader } from "@/components/AppHeader";
 import { useApiResources } from "@/hooks/use-k8s";
 import { useHashParams } from "@/hooks/use-hash-params";
 import { useScopeFromUrl } from "@/hooks/use-scope-from-url";
-import { useTerminalStore } from "@/hooks/use-terminal-store";
+import { useScope } from "@/hooks/use-scope";
 import { RESOURCE_KINDS } from "@/lib/resource-kinds";
 import { cn } from "@/lib/utils";
 
@@ -32,7 +32,7 @@ const matches = (r: ApiResource, q: string) =>
 /** `/resources` — every kind the cluster can list, built-in and custom, grouped by API group. */
 export default function ApiBrowser() {
   useScopeFromUrl();
-  const { context, namespace } = useTerminalStore();
+  const { context, namespace } = useScope();
   const { canWrite } = useServerMode();
   const [creating, setCreating] = useState(false);
   const [, navigate] = useLocation();

@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { FolderKanban, Plus } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { useAcrossScopes } from "@/hooks/use-k8s";
-import { useTerminalStore } from "@/hooks/use-terminal-store";
+import { useScope } from "@/hooks/use-scope";
 import { useProjects, type Project } from "@/lib/projects";
 import { cn } from "@/lib/utils";
 import { healthOf } from "./project-health";
@@ -12,7 +12,7 @@ import { ProjectDialog } from "./ProjectDialog";
 /** `/projects` — applications grouped across namespaces and clusters. */
 export default function ProjectsPage() {
   const projects = useProjects();
-  const { context, namespace } = useTerminalStore();
+  const { context, namespace } = useScope();
   const [creating, setCreating] = useState(false);
   const [, navigate] = useLocation();
 

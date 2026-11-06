@@ -8,7 +8,7 @@ import { useApiResources, useK8sDeployments, useK8sPods } from "@/hooks/use-k8s"
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { useServerMode } from "@/hooks/use-server-mode";
-import { useTerminalStore } from "@/hooks/use-terminal-store";
+import { useScope } from "@/hooks/use-scope";
 import { RESOURCE_GROUPS, RESOURCE_KINDS, listHref } from "@/lib/resource-kinds";
 import { cn } from "@/lib/utils";
 
@@ -26,7 +26,7 @@ interface Badge {
  * queries on every page, so the sidebar adds no requests of its own.
  */
 function useHealthBadges(): Record<string, Badge | undefined> {
-  const { context, namespace } = useTerminalStore();
+  const { context, namespace } = useScope();
   const pods = useK8sPods(context, namespace).data;
   const deployments = useK8sDeployments(context, namespace).data;
   return useMemo(() => {
@@ -115,7 +115,7 @@ export function AppSidebar() {
     setFolded((f) => (f.includes(group) ? f.filter((x) => x !== group) : [...f, group]));
   const serverMode = useServerMode();
   const badges = useHealthBadges();
-  const { context } = useTerminalStore();
+  const { context } = useScope();
   // add-on kinds (Gateway API…) appear only on clusters that serve them; discovery is cached
   const served = useApiResources(context).data;
   const shownKinds = RESOURCE_KINDS.filter((k) => !k.optional || served?.some((r) => r.id === k.key));

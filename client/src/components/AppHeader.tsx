@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect } from "react";
 import { useLocation } from "wouter";
 import { ChevronRight, LogOut, ShieldOff, SquareTerminal } from "lucide-react";
-import { useTerminalStore } from "@/hooks/use-terminal-store";
+import { useScope } from "@/hooks/use-scope";
 import { useK8sContexts } from "@/hooks/use-k8s";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { AlertBell } from "@/components/header/AlertBell";
@@ -28,7 +28,7 @@ export interface Breadcrumb {
  */
 export function AppHeader({ breadcrumbs = [], rightSlot, showSelectors = true }: AppHeaderProps) {
   const [, navigate] = useLocation();
-  const { context: currentContext, setContext } = useTerminalStore();
+  const { context: currentContext, setContext } = useScope();
   const { data: contexts } = useK8sContexts();
   const serverMode = useServerMode();
 

@@ -1,6 +1,6 @@
 /**
  * The selected cluster context and namespace, shared by every page (a tiny pub-sub store,
- * persisted in localStorage). Historically named after the terminal it once also served.
+ * persisted in localStorage).
  */
 
 const STORAGE_KEY = "kubedeck-defaults";
@@ -46,7 +46,7 @@ function notify() {
   listeners.forEach((fn) => fn(state));
 }
 
-export function getTerminalState() {
+export function getScopeState() {
   return state;
 }
 

@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { useLocation } from "wouter";
-import { useTerminalStore } from "@/hooks/use-terminal-store";
+import { useScope } from "@/hooks/use-scope";
 import { addRecent } from "@/lib/pins";
 
 /** Link to one resource's page, in the scope it lives in. */
@@ -12,7 +12,7 @@ export function resourceHref(type: string, name: string, context: string, namesp
 /** Open a resource (remembered in "recent"), its logs, or ask the assistant about it. */
 export function useResourceNav() {
   const [, navigate] = useLocation();
-  const { context, namespace } = useTerminalStore();
+  const { context, namespace } = useScope();
 
   const open = useCallback(
     (type: string, name: string, ns?: string, tab?: string) => {

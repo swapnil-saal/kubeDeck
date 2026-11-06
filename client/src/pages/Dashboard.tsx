@@ -14,7 +14,7 @@ import { useHashParams } from "@/hooks/use-hash-params";
 import { useResourceNav } from "@/hooks/use-resource-nav";
 import { useScopeFromUrl } from "@/hooks/use-scope-from-url";
 import { useServerMode } from "@/hooks/use-server-mode";
-import { useTerminalStore } from "@/hooks/use-terminal-store";
+import { useScope } from "@/hooks/use-scope";
 import {
   analyzeHealth, parseCpuMilli, parseMemMi, recentChanges,
   type DeployLike, type EventLike, type JobLike, type NodeLike, type PodLike, type PvcLike,
@@ -28,7 +28,7 @@ import { StatTiles, type Tile, type TileState } from "@/pages/dashboard/StatTile
 
 /** `/` — the health of the selected scope. Resource lists live at `/resources/:kind`. */
 export default function Dashboard() {
-  const { context: currentContext, namespace: currentNamespace, setContext: handleSetContext, setNamespace } = useTerminalStore();
+  const { context: currentContext, namespace: currentNamespace, setContext: handleSetContext, setNamespace } = useScope();
   const [, navigate] = useLocation();
   const { get: getParam } = useHashParams();
   const { openDetail, openLogs, askAi } = useResourceNav();

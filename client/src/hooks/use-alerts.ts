@@ -1,6 +1,6 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { useK8sDeployments, useK8sPods } from "@/hooks/use-k8s";
-import { useTerminalStore } from "@/hooks/use-terminal-store";
+import { useScope } from "@/hooks/use-scope";
 import { getAlertState, publishAlerts, subscribeAlerts } from "@/lib/alert-store";
 import { newTracker, trackAlerts, type TrackerState } from "@/lib/alerts";
 import type { DeployLike, PodLike } from "@/lib/cluster-health";
@@ -14,7 +14,7 @@ export function useAlertState() {
  * uses, so no extra requests) and raises alerts for what newly breaks. Mount once, in the shell.
  */
 export function useAlertWatcher() {
-  const { context, namespace } = useTerminalStore();
+  const { context, namespace } = useScope();
   const { prefs } = useAlertState();
   const pods = useK8sPods(context, namespace);
   const deployments = useK8sDeployments(context, namespace);

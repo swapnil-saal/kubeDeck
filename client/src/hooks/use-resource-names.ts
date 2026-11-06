@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@shared/routes";
-import { useTerminalStore } from "./use-terminal-store";
+import { useScope } from "./use-scope";
 
 interface NamedResource {
   name: string;
@@ -62,7 +62,7 @@ function normalizeType(input: string): string | null {
  */
 export function useResourceNames(): ResourceNameEntry[] {
   const qc = useQueryClient();
-  const { context, namespace } = useTerminalStore();
+  const { context, namespace } = useScope();
   const [tick, setTick] = useState(0);
 
   const buildEntries = useCallback((): ResourceNameEntry[] => {

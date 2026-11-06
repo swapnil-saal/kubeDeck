@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useHashParams } from "@/hooks/use-hash-params";
-import { useTerminalStore } from "@/hooks/use-terminal-store";
+import { useScope } from "@/hooks/use-scope";
 
 /**
  * A link like `#/resources/pods?context=e2dev&namespace=e2` sets the scope, then tidies the URL.
@@ -8,7 +8,7 @@ import { useTerminalStore } from "@/hooks/use-terminal-store";
  */
 export function useScopeFromUrl({ keepInUrl = false }: { keepInUrl?: boolean } = {}): void {
   const { get, setMany } = useHashParams();
-  const { context, namespace, setScope } = useTerminalStore();
+  const { context, namespace, setScope } = useScope();
   const urlContext = get("context");
   const urlNamespace = get("namespace");
   useEffect(() => {

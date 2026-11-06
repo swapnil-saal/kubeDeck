@@ -17,7 +17,7 @@ import {
 import { useHashParams } from "@/hooks/use-hash-params";
 import { useResourceNav } from "@/hooks/use-resource-nav";
 import { useScopeFromUrl } from "@/hooks/use-scope-from-url";
-import { useTerminalStore } from "@/hooks/use-terminal-store";
+import { useScope } from "@/hooks/use-scope";
 import { kindByKey, type ResourceKind } from "@/lib/resource-kinds";
 import { SimpleResourceList, type SimpleKindKey } from "@/pages/dashboard/SimpleResourceList";
 import { DeploymentList } from "@/pages/resources/DeploymentList";
@@ -89,7 +89,7 @@ export default function ResourceList() {
   const [, params] = useRoute("/resources/:kind");
   const [, navigate] = useLocation();
   useScopeFromUrl();
-  const { context, namespace } = useTerminalStore();
+  const { context, namespace } = useScope();
   const { kind, group, api, unknown } = useKind(decodeURIComponent(params?.kind ?? ""), context);
   const { canWrite: serverAllowsWrites } = useServerMode();
   const { denied } = useAccess(context, [kind?.clusterScoped ? "default" : namespace]);

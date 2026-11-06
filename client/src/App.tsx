@@ -11,7 +11,7 @@ import Dashboard from "@/pages/Dashboard";
 import { AiChatPage } from "@/ai";
 import { AppSidebar } from "@/components/AppSidebar";
 import { PortForwardBar } from "@/components/PortForwardBar";
-import { useTerminalStore } from "@/hooks/use-terminal-store";
+import { useScope } from "@/hooks/use-scope";
 import { useAppHashLocation, useAppHashSearch } from "@/lib/hash-router";
 import { useAlertWatcher } from "@/hooks/use-alerts";
 import { useServerMode } from "@/hooks/use-server-mode";

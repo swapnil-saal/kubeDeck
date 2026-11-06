@@ -8,7 +8,7 @@ import { ExecOutput, type ExecResult } from "@/components/palette/ExecOutput";
 import { buildCtx, buildNs, matchQuery, type MatchedCommand } from "@/components/palette/patterns";
 import { ScopeStrip } from "@/components/palette/ScopeStrip";
 import { navigateHash as hashNavigate } from "@/lib/hash-router";
-import { useTerminalStore } from "@/hooks/use-terminal-store";
+import { useScope } from "@/hooks/use-scope";
 import { useAiConfig, translateToKubectl } from "@/ai";
 import { useResourceNames, searchResourceNames } from "@/hooks/use-resource-names";
 import { useSmartSuggestions } from "@/hooks/use-smart-suggestions";
@@ -28,7 +28,7 @@ export function KubectlPalette({ open, onClose }: { open: boolean; onClose: () =
   const inputRef = useRef<HTMLInputElement>(null);
   const outputRef = useRef<HTMLPreElement>(null);
   const aiDebounceRef = useRef<ReturnType<typeof setTimeout>>();
-  const { context, namespace, setNamespace } = useTerminalStore();
+  const { context, namespace, setNamespace } = useScope();
   const { isConfigured: aiConfigured } = useAiConfig();
   const { aiEnabled } = useServerMode();
   const isConfigured = aiConfigured && aiEnabled;

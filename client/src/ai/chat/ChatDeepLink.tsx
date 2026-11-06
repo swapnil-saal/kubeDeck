@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useSearch, useLocation } from "wouter";
 import { useAui } from "@assistant-ui/react";
-import { useTerminalStore } from "@/hooks/use-terminal-store";
+import { useScope } from "@/hooks/use-scope";
 
 /**
  * Deep-link helper for AI chat.
@@ -13,7 +13,7 @@ export function ChatDeepLink() {
   const search = useSearch();
   const [location, setLocation] = useLocation();
   const aui = useAui();
-  const { context, namespace, setContext, setNamespace } = useTerminalStore();
+  const { context, namespace, setContext, setNamespace } = useScope();
   const seededRef = useRef(false);
 
   useEffect(() => {
