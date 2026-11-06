@@ -2,7 +2,6 @@ node_modules
 dist
 release
 .git
-.gitnexus
 .claude
 *.dmg
 *.zip

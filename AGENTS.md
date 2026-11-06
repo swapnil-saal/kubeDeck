@@ -1,44 +1,46 @@
-<!-- gitnexus:start -->
-# GitNexus — Code Intelligence
+# Working on KubeDeck
 
-This project is indexed by GitNexus as **kube-navigator** (1568 symbols, 3560 relationships, 119 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+KubeDeck is a Kubernetes dashboard that runs as an Electron desktop app or as a shared web service
+(web mode, behind a login proxy). One Express server serves the React client and talks to clusters
+through `kubectl`.
 
-> Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
+## Commands
 
-## Always Do
+| | |
+|---|---|
+| `npm run dev` | server + client with hot reload (desktop mode) on `PORT` (default 5000) |
+| `npm run electron:dev` | the desktop app |
+| `npm test` | vitest (server and client) |
+| `npm run check` | TypeScript |
+| `npm run build` | production bundle in `dist/` |
+| `script/docker-build.sh [--push]` | web image; `--push` builds linux/amd64 + linux/arm64 |
 
-- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
-- **MUST run `detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows. For regression review, compare against the default branch: `detect_changes({scope: "compare", base_ref: "main"})`.
-- **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
-- When exploring unfamiliar code, use `query({search_query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
-- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `context({name: "symbolName"})`.
-- For security review, `explain({target: "fileOrSymbol"})` lists taint findings (source→sink flows; needs `analyze --pdg`).
+Web mode locally: `KUBEDECK_MODE=web KUBEDECK_AUTH=none KUBEDECK_PUBLIC_URL=http://localhost:5051 PORT=5051 npm run dev`
+(see `docs/WEB.md` for every setting).
 
-## Never Do
+## Where things are
 
-- NEVER edit a function, class, or method without first running `impact` on it.
-- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
-- NEVER rename symbols with find-and-replace — use `rename` which understands the call graph.
-- NEVER commit changes without running `detect_changes()` to check affected scope.
+- `server/`: Express routes, one module per area (`*-routes.ts`). `kubectl-run.ts` runs kubectl,
+  `kubectl-safety.ts` classifies commands, `web-mode.ts` is the login gate and feature switches,
+  `identity.ts` the per-user impersonation, `map.ts` the namespace graph, `ai/` the assistant
+  (AI SDK agent, tools, prompts).
+- `client/src/`: pages in `pages/`, shared UI in `components/`, data hooks in `hooks/use-k8s.ts`,
+  the assistant in `ai/`. Resource kinds in the sidebar come from `lib/resource-kinds.ts`.
+- `shared/`: route definitions and schemas used by both sides.
+- `deploy/kubernetes/`, `docs/`: web-mode manifest and runbooks.
 
-## Resources
+## Rules
 
-| Resource | Use for |
-|----------|---------|
-| `gitnexus://repo/kube-navigator/context` | Codebase overview, check index freshness |
-| `gitnexus://repo/kube-navigator/clusters` | All functional areas |
-| `gitnexus://repo/kube-navigator/processes` | All execution flows |
-| `gitnexus://repo/kube-navigator/process/{name}` | Step-by-step execution trace |
+- Never run kubectl through a shell. Build argument arrays (`spawnCommand`, `runKubectlRaw`); route
+  parameters are validated in `server/security.ts`. Every kubectl spawn goes through `asUser()` so
+  per-user impersonation applies.
+- Anything a shared web server runs must keep users inside its identity: no `config`, `auth`,
+  `exec`, `--as`, `--token`… from the palette or the assistant (`webExecAllowed`, `webAgentRefusal`).
+- Never add a `HEALTHCHECK` to the Dockerfile; probes live in the pod spec.
+- Tests run against real code; no mocked LLMs or clusters.
 
-## CLI
+## Understanding the code
 
-| Task | Read this skill file |
-|------|---------------------|
-| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
-| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
-| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |
-| Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
-| Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
-| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
-
-<!-- gitnexus:end -->
+Use [ripwire](https://github.com/redhat-et/ripwire) to map the code before reading files:
+`ripwire . --for="<task>"` to find where to start, `--impact=SYMBOL` before changing something
+widely used, `--quality-delta` before calling work done.
