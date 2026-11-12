@@ -79,14 +79,17 @@ async function setUp(urls: { tempoUrl?: string; lokiUrl?: string; mcpUrl?: strin
   fs.mkdirSync(path.join(home, ".kubedeck"), { recursive: true });
   fs.writeFileSync(
     path.join(home, ".kubedeck", "settings.json"),
-    // a keyless local provider: building the model needs no network
-    JSON.stringify({ kubeconfigPaths: [], ai: { provider: "ollama", apiKey: "", model: "test-model", baseUrl: "http://127.0.0.1:9" } }),
+    JSON.stringify({ kubeconfigPaths: [] }),
   );
   // after HOME is set: the agent registers its own tools and loads the built-in plugins' definitions
   await import("./agent");
   const p = await import("../../plugins");
   await p.stopPlugins();
-  const env: NodeJS.ProcessEnv = { KUBEDECK_AUTH_SECRET: "x".repeat(40) };
+  // a keyless local provider, as a deployment would set it: building the model needs no network
+  const env: NodeJS.ProcessEnv = {
+    KUBEDECK_AUTH_SECRET: "x".repeat(40),
+    KUBEDECK_AI_PROVIDER: "ollama", KUBEDECK_AI_MODEL: "test-model", KUBEDECK_AI_BASE_URL: "http://127.0.0.1:9",
+  };
   if (urls.tempoUrl) env.KUBEDECK_TEMPO_URL = urls.tempoUrl;
   if (urls.lokiUrl) env.KUBEDECK_LOKI_URL = urls.lokiUrl;
   if (urls.mcpUrl) env.KUBEDECK_GRAFANA_MCP_URL = urls.mcpUrl;

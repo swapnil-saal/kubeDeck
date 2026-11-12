@@ -25,6 +25,8 @@ export interface PluginDefinition {
   fields: PluginField[];
   /** cannot be switched off */
   alwaysOn?: boolean;
+  /** false: kept out of Settings → Plugins because it has its own page (the AI provider) */
+  listed?: boolean;
   /** what it adds, for the Plugins page */
   provides?: { tools?: string[]; features?: string[] };
   /** settings the server's environment pins: they win over saved ones and are not editable */

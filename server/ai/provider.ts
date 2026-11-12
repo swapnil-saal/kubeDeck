@@ -4,6 +4,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { loadSettings, type AiProviderSettings } from "../settings";
 import { aiSettingsPlace } from "./errors";
+import "./ai-plugin"; // the AI provider is kept as the "ai" plugin (Settings → AI assistant)
 
 export const DEFAULTS: Record<string, { baseUrl: string; defaultModel: string; defaultFastModel: string }> = {
   openai: { baseUrl: "https://api.openai.com/v1", defaultModel: "gpt-4o-mini", defaultFastModel: "gpt-4o-mini" },

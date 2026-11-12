@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { pluginState } from "./plugins";
 import { isWebMode } from "./web-mode";
 
 const SETTINGS_DIR = path.join(os.homedir(), ".kubedeck");
@@ -58,18 +59,22 @@ function backupUnreadableSettings(raw: string, reason: string): void {
 }
 
 const PROVIDERS: AiProviderSettings["provider"][] = ["openai", "anthropic", "ollama", "custom"];
+const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
 
-/** Web mode's AI provider, from the server's environment (a Kubernetes Secret), never from a browser. */
-export function aiSettingsFromEnv(env: NodeJS.ProcessEnv = process.env): AiProviderSettings {
-  const provider = (env.KUBEDECK_AI_PROVIDER ?? "").trim().toLowerCase() as AiProviderSettings["provider"];
+/** AI provider settings from the "ai" plugin's values (server/ai/ai-plugin.ts): environment first, then saved. */
+export function aiSettingsFrom(values: Record<string, unknown>): AiProviderSettings {
+  const provider = text(values.provider).toLowerCase() as AiProviderSettings["provider"];
   return {
     provider: PROVIDERS.includes(provider) ? provider : "openai",
-    apiKey: env.KUBEDECK_AI_API_KEY ?? "",
-    model: env.KUBEDECK_AI_MODEL ?? "",
-    fastModel: env.KUBEDECK_AI_FAST_MODEL || undefined,
-    baseUrl: env.KUBEDECK_AI_BASE_URL ?? "",
+    apiKey: text(values.apiKey),
+    model: text(values.model),
+    fastModel: text(values.fastModel) || undefined,
+    baseUrl: text(values.baseUrl),
   };
 }
+
+/** The AI provider in effect: set under Settings → AI assistant (or pinned by KUBEDECK_AI_*), in both modes. */
+export const currentAiSettings = (): AiProviderSettings => aiSettingsFrom(pluginState("ai").values);
 
 /** The raw JSON of the settings file; undefined when there is none or it cannot be read. */
 function readSettingsFile(): Record<string, unknown> | undefined {
@@ -85,6 +90,13 @@ function readSettingsFile(): Record<string, unknown> | undefined {
  * The desktop's old Settings → Observability block, for the one-time move into Settings → Plugins
  * (server/observability). Nothing else reads it; a shared KubeDeck never had one.
  */
+/** The desktop's AI settings as settings.json kept them, for the one-time move into the "ai" plugin. */
+export function legacyAi(): Partial<AiProviderSettings> | undefined {
+  if (isWebMode()) return undefined;
+  const block = readSettingsFile()?.ai;
+  return block && typeof block === "object" && !Array.isArray(block) ? (block as Partial<AiProviderSettings>) : undefined;
+}
+
 export function legacyObservability(): Record<string, unknown> | undefined {
   if (isWebMode()) return undefined;
   const block = readSettingsFile()?.observability;
@@ -99,7 +111,7 @@ export function aiConfigured(ai: AiProviderSettings | undefined): boolean {
 
 export function loadSettings(): KubeDeckSettings {
   // Shared service: no per-machine settings file; the AI provider comes from the environment.
-  if (isWebMode()) return { kubeconfigPaths: [], ai: aiSettingsFromEnv() };
+  if (isWebMode()) return { kubeconfigPaths: [], ai: currentAiSettings() };
   if (!fs.existsSync(SETTINGS_FILE)) return defaults();
   let raw: string;
   try {
@@ -122,7 +134,7 @@ export function loadSettings(): KubeDeckSettings {
       Array.isArray(parsed?.kubeconfigPaths) && parsed.kubeconfigPaths.length > 0
         ? parsed.kubeconfigPaths
         : base.kubeconfigPaths,
-    ai: parsed?.ai || base.ai,
+    ai: currentAiSettings(),
   };
 }
 

@@ -1,6 +1,6 @@
 /**
- * Kubeconfig and AI settings. In web mode settings come from the environment and are read-only.
- * Tempo, Loki and Grafana are plugins, configured under Settings → Plugins (server/plugins).
+ * Kubeconfig paths (desktop) and a read-only view of the AI provider. The AI provider is saved through
+ * the "ai" plugin (Settings → AI assistant, server/ai/ai-plugin.ts); Tempo, Loki and Grafana are plugins.
  */
 import type { Express } from "express";
 import { existsSync } from "fs";
@@ -26,7 +26,8 @@ export function registerSettingsRoutes(app: Express): void {
         path: p,
         exists: existsSync(p),
       }));
-      res.json({ kubeconfigPaths: settings.kubeconfigPaths, files, ai: settings.ai });
+      // the key never leaves the server; the AI page reads /api/plugins/ai for what is set
+      res.json({ kubeconfigPaths: settings.kubeconfigPaths, files, ai: { ...(settings.ai ?? {}), apiKey: "", configured: aiConfigured(settings.ai) } });
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to load settings" });
     }
@@ -47,7 +48,8 @@ export function registerSettingsRoutes(app: Express): void {
           return res.status(400).json({ message: `Invalid path: ${p}` });
         }
       }
-      saveSettings({ kubeconfigPaths, ai: ai || loadSettings().ai });
+      if (ai !== undefined) return res.status(400).json({ message: "The AI provider is saved under Settings → AI assistant (PUT /api/plugins/ai)." });
+      saveSettings({ kubeconfigPaths });
       res.json({ message: "Settings saved" });
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to save settings" });

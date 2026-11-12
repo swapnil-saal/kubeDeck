@@ -181,9 +181,15 @@ function info(e: Entry, status: PluginStatus, canManage: boolean): PluginInfo {
 }
 
 export async function listPlugins(canManage: boolean): Promise<PluginInfo[]> {
-  const list = [...entries.values()];
+  const list = [...entries.values()].filter((e) => e.def.listed !== false);
   const statuses = await Promise.all(list.map((e) => statusOf(e)));
   return list.map((e, i) => info(e, statuses[i], canManage));
+}
+
+/** One plugin, listed or not (the AI provider's page reads its own). */
+export async function getPlugin(id: string, canManage: boolean): Promise<PluginInfo> {
+  const e = entryOf(id);
+  return info(e, await statusOf(e), canManage);
 }
 
 export class PluginError extends Error {
@@ -220,7 +226,8 @@ export function updatePlugin(id: string, update: PluginUpdate, by: string, chang
     await store.save(e.saved);
     await startEntry(e);
     emit("plugin.changed", { id, enabled, by, change: change ?? (update.values ? "settings" : enabled ? "enabled" : "disabled") });
-    return info(e, await statusOf(e, true), true);
+    // the cheap status check; the full test (a model call, a tool listing) runs only on "Test connection"
+    return info(e, await statusOf(e), true);
   });
 }
 

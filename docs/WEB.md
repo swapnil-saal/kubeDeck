@@ -16,7 +16,7 @@ browser ──HTTPS──▶ ingress ──▶ KubeDeck ──kubectl --as=kubed
 | Cluster identity | your kubeconfig | each signed-in person, through impersonation: `kubedeck:<email>` in groups `kubedeck:<group>` |
 | Writes (scale, restart, edit, delete) | allowed | allowed where the person's RBAC allows (`KUBEDECK_READ_ONLY=true` turns them off for everyone) |
 | Browse pod files | yes | yes, where the person may `exec` (`KUBEDECK_POD_FILES=off` turns it off). Only fixed read-only scripts run in the pod |
-| AI (Ask Deck, diagnose, explain, summaries, command translation) | provider set in Settings | provider set by the server's `KUBEDECK_AI_*` env (`KUBEDECK_AI=off` turns it off). The assistant acts as the signed-in person. Cluster data it reads goes to that provider |
+| AI (Ask Deck, diagnose, explain, summaries, command translation) | provider set in Settings → AI assistant | provider set by an admin in Settings → AI assistant (stored encrypted), or pinned by the server's `KUBEDECK_AI_*` env, which wins (`KUBEDECK_AI=off` turns AI off). The assistant acts as the signed-in person. Cluster data it reads goes to that provider |
 | Port-forward | yes | no: the port would open inside the server, not on the user's machine |
 | Settings | edited in the app | configuration comes from the environment; admins manage **Users** and read the **Audit log** |
 | kubectl palette and assistant | any verb | no `config`, `auth`, `exec`, `cp`, `port-forward`, `proxy`, `attach`, `debug`, and no `--token/--server/--kubeconfig/--as` flags, so nobody steps outside their own identity. The assistant's pipelines run without a shell. When read-only, both only read |
@@ -40,7 +40,7 @@ What a person sees follows their RBAC: kinds they may not list are left out of t
 | `KUBEDECK_READ_ONLY` | `false` (default) or `true`: refuse every change, from the UI, the palette and the assistant |
 | `KUBEDECK_AI` | `on` (default) or `off` |
 | `KUBEDECK_POD_FILES` | `on` (default) or `off` |
-| `KUBEDECK_AI_PROVIDER` | `openai`, `anthropic`, `ollama` or `custom` (OpenAI-compatible) |
+| `KUBEDECK_AI_PROVIDER` | `openai`, `anthropic`, `ollama` or `custom` (OpenAI-compatible). Each `KUBEDECK_AI_*` variable that is set pins that field; admins set the rest in Settings → AI assistant |
 | `KUBEDECK_AI_API_KEY` | the provider's key (not needed for `ollama`, optional for `custom`) |
 | `KUBEDECK_AI_MODEL` / `KUBEDECK_AI_FAST_MODEL` | model ids; empty uses the provider's defaults |
 | `KUBEDECK_AI_BASE_URL` | the endpoint (required for `custom`) |

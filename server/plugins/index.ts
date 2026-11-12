@@ -5,7 +5,7 @@
  */
 import "./kubernetes";
 
-export { addableKinds, createPlugin, definePlugin, definePluginKind, listPlugins, pluginState, PluginError, removePlugin, startPlugins, stopPlugins, testPlugin, updatePlugin } from "./manager";
+export { addableKinds, createPlugin, definePlugin, definePluginKind, getPlugin, listPlugins, pluginState, PluginError, removePlugin, startPlugins, stopPlugins, testPlugin, updatePlugin } from "./manager";
 export { registerPluginRoutes } from "./routes";
 export { databaseStore, memoryStore, type PluginStore, type StoredPlugin } from "./store";
 export type { PluginContext, PluginDefinition, PluginFactory, PluginRuntime } from "./types";

@@ -42,24 +42,6 @@ export function useUpdateSettings() {
   });
 }
 
-export interface AiSettingsInput {
-  provider: string;
-  apiKey: string;
-  model: string;
-  fastModel: string;
-  baseUrl: string;
-}
-
-/** Save the AI provider settings (the kubeconfig list is sent unchanged, as the API expects both). */
-export function useUpdateAiSettings() {
-  return useMutation({
-    mutationFn: ({ ai, kubeconfigPaths }: { ai: AiSettingsInput; kubeconfigPaths: string[] }) =>
-      putSettings({ kubeconfigPaths, ai }, "Failed to save AI settings"),
-    // every AI feature reads these settings: refresh them right away
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: [api.settings.get.path] }),
-  });
-}
-
 export function useKubeconfigScan() {
   return useQuery({
     queryKey: [api.settings.kubeconfigScan.path],

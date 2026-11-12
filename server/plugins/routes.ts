@@ -4,7 +4,7 @@
  */
 import type { Express, Request, Response } from "express";
 import { pluginCreateSchema, pluginPaths, pluginUpdateSchema, type PluginList } from "@shared/plugins";
-import { addableKinds, createPlugin, listPlugins, PluginError, removePlugin, testPlugin, updatePlugin } from "./manager";
+import { addableKinds, createPlugin, getPlugin, listPlugins, PluginError, removePlugin, testPlugin, updatePlugin } from "./manager";
 
 const canManage = (req: Request) => req.kubedeckUser?.role === "admin";
 const who = (req: Request) => req.kubedeckUser?.email || req.kubedeckUser?.name || "unknown";
@@ -27,6 +27,10 @@ export function registerPluginRoutes(app: Express): void {
       (plugins) => res.json({ plugins, canManage: manage, addable: manage ? (addableKinds() as PluginList["addable"]) : [] } satisfies PluginList),
       (err) => fail(res, err),
     );
+  });
+
+  app.get(pluginPaths.one, (req, res) => {
+    getPlugin(String(req.params.id), canManage(req)).then((p) => res.json(p), (err) => fail(res, err));
   });
 
   app.post(pluginPaths.list, managed(async (req, res) => {

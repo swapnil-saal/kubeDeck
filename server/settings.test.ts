@@ -38,19 +38,16 @@ describe("loadSettings", () => {
   });
 
   it("reads a valid file", async () => {
-    write(JSON.stringify({ kubeconfigPaths: ["/a/config"], ai: { provider: "custom", apiKey: "k", model: "m", baseUrl: "http://x/v1" } }));
+    write(JSON.stringify({ kubeconfigPaths: ["/a/config"] }));
     const { loadSettings } = await load();
-    const s = loadSettings();
-    expect(s.kubeconfigPaths).toEqual(["/a/config"]);
-    expect(s.ai?.apiKey).toBe("k");
+    expect(loadSettings().kubeconfigPaths).toEqual(["/a/config"]);
   });
 
-  it("keeps the AI settings when the kubeconfig list is empty", async () => {
+  it("falls back to the default kubeconfig for an empty list, and offers the old AI block for the one-time move", async () => {
     write(JSON.stringify({ kubeconfigPaths: [], ai: { provider: "anthropic", apiKey: "secret", model: "claude-x" } }));
-    const { loadSettings } = await load();
-    const s = loadSettings();
-    expect(s.ai?.apiKey).toBe("secret");
-    expect(s.kubeconfigPaths.length).toBeGreaterThan(0);
+    const { loadSettings, legacyAi } = await load();
+    expect(loadSettings().kubeconfigPaths.length).toBeGreaterThan(0);
+    expect(legacyAi()).toEqual({ provider: "anthropic", apiKey: "secret", model: "claude-x" });
   });
 
   it("backs up an unreadable file instead of silently losing it", async () => {
@@ -79,12 +76,12 @@ describe("saveSettings", () => {
   });
 });
 
-describe("AI settings from the environment (web mode)", () => {
-  it("reads the provider from KUBEDECK_AI_* and falls back to openai for an unknown one", async () => {
-    const { aiSettingsFromEnv } = await import("./settings");
-    expect(aiSettingsFromEnv({ KUBEDECK_AI_PROVIDER: "Anthropic", KUBEDECK_AI_API_KEY: "k", KUBEDECK_AI_MODEL: "m", KUBEDECK_AI_FAST_MODEL: "f" }))
+describe("AI provider settings", () => {
+  it("reads the plugin's values and falls back to openai for an unknown provider", async () => {
+    const { aiSettingsFrom } = await import("./settings");
+    expect(aiSettingsFrom({ provider: "Anthropic", apiKey: "k", model: "m", fastModel: "f" }))
       .toEqual({ provider: "anthropic", apiKey: "k", model: "m", fastModel: "f", baseUrl: "" });
-    expect(aiSettingsFromEnv({ KUBEDECK_AI_PROVIDER: "nope" }).provider).toBe("openai");
+    expect(aiSettingsFrom({ provider: "nope" }).provider).toBe("openai");
   });
   it("counts a key, ollama, or a custom endpoint as configured", async () => {
     const { aiConfigured } = await import("./settings");
