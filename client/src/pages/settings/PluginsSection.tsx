@@ -31,6 +31,3 @@ function PluginPage({ page }: { page: keyof typeof PAGES }) {
 
 /** Settings → Plugins: the built-in integrations (Kubernetes tools, Tempo, Loki). */
 export const PluginsSection = () => <PluginPage page="plugins" />;
-
-/** Settings → MCP servers: Grafana and the servers an admin added, whose tools the assistant may call. */
-export const McpSection = () => <PluginPage page="mcp" />;

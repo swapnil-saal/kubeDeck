@@ -1,6 +1,6 @@
-import type { PluginCategory, PluginField, PluginStatus, PluginValues } from "@shared/plugins";
+import type { PluginCategory, PluginField, PluginStatus, PluginTool, PluginValues } from "@shared/plugins";
 
-/** What a plugin is given when it starts: its id and its current settings (environment, saved, defaults). */
+/** What a plugin is given when it starts: its id and its current settings (environment, saved, then the fields' defaults). */
 export interface PluginContext {
   id: string;
   values: PluginValues;
@@ -14,6 +14,8 @@ export interface PluginRuntime {
   status?(): PluginStatus | Promise<PluginStatus>;
   /** a real check for "Test connection"; defaults to status() */
   test?(): PluginStatus | Promise<PluginStatus>;
+  /** a tool server's tools and their access, from what it last listed (no request); undefined before it answered */
+  catalog?(): PluginTool[] | undefined;
 }
 
 export interface PluginDefinition {

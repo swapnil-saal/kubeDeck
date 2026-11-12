@@ -4,7 +4,7 @@
  * change something (only when the plugin allows them) wait for the person's approval in the chat.
  * The tool is hidden on a call when the server does not answer or the person is not in its groups.
  */
-import type { PluginStatus } from "@shared/plugins";
+import type { PluginStatus, PluginTool } from "@shared/plugins";
 import type { PluginRuntime } from "../plugins";
 import { proxyTool, registerTools, unregisterTools, type KubeScope, type ToolApproval, type ToolEntry, type ToolsetCall } from "../ai/tools";
 import { currentPerson } from "../identity";
@@ -27,6 +27,8 @@ export interface McpToolsetOptions {
   target: McpTarget;
   /** a tool's risk, or null to leave it out */
   classify(t: McpTool): "read" | "change" | null;
+  /** why `classify` leaves a tool out, for the settings page: "It may change things, and Allow changes is off." */
+  hiddenReason(t: McpTool): string;
   /** whether any tool may be a "change" one: the proxy then has an approval policy */
   changes: boolean;
   /** the registered description, before the server's catalog is known */
@@ -46,7 +48,10 @@ export interface McpToolsetOptions {
 
 export interface McpToolsetRuntime extends PluginRuntime {
   connection: McpConnection;
-  catalog(fresh?: boolean): Promise<McpCatalog>;
+  /** the tools offered to the assistant, asking the server (cached) */
+  offered(fresh?: boolean): Promise<McpCatalog>;
+  /** every tool the server last listed, with its access, for the settings page */
+  catalog(): PluginTool[] | undefined;
   status(): Promise<PluginStatus>;
   test(): Promise<PluginStatus>;
   stop(): Promise<void>;
@@ -72,14 +77,26 @@ const riskOf = (c: McpCatalog, name: string): "read" | "change" | null =>
 
 const countOf = (c: McpCatalog) => c.read.length + c.change.length;
 
+const byName = (tools: McpTool[]) => [...tools].sort((a, b) => a.name.localeCompare(b.name));
+
 /** A server's tools by the risk `classify` gives them, sorted by name; null leaves a tool out. */
 function splitCatalog(tools: McpTool[], classify: McpToolsetOptions["classify"]): McpCatalog {
   const c: McpCatalog = { read: [], change: [] };
-  for (const t of [...tools].sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const t of byName(tools)) {
     const risk = classify(t);
     if (risk) c[risk].push(toInfo(t));
   }
   return c;
+}
+
+/** All of a server's tools for the settings page, sorted by name: read, approval, or hidden with the reason. */
+function pageCatalog(tools: McpTool[], o: Pick<McpToolsetOptions, "classify" | "hiddenReason">): PluginTool[] {
+  return byName(tools).map((t) => {
+    const { name, description } = toInfo(t);
+    const risk = o.classify(t);
+    if (!risk) return { name, description, access: "hidden", reason: o.hiddenReason(t) };
+    return { name, description, access: risk === "read" ? "read" : "approval" };
+  });
 }
 
 /** "6 tools (2 need approval)" */
@@ -110,8 +127,14 @@ class McpToolset implements McpToolsetRuntime {
   }
 
   /** The tools this plugin offers, by risk, sorted by name. */
-  async catalog(fresh = false): Promise<McpCatalog> {
+  async offered(fresh = false): Promise<McpCatalog> {
     return splitCatalog(await this.connection.listTools({ fresh }), this.o.classify);
+  }
+
+  /** Every tool the server last listed (none asked for here), with what the assistant may do with it. */
+  catalog(): PluginTool[] | undefined {
+    const known = this.connection.knownTools();
+    return known ? pageCatalog(known, this.o) : undefined;
   }
 
   /** Register the proxy tool, and ask for the catalog once so the server's state is known (and logged) before the first chat. */
@@ -122,15 +145,15 @@ class McpToolset implements McpToolsetRuntime {
       ? { tool: proxy, scoped: true, risk: "change", approval: (input: { tool: string }) => approve(this.connection, o, input.tool) }
       : { tool: proxy, scoped: true };
     registerTools(o.owner, { tools: { [o.toolName]: entry }, forCall: () => this.forCall() });
-    this.catalog().then((c) => o.log?.(`${countOf(c)} tools from ${o.target.url}`), (err) => o.log?.(message(err)));
+    this.offered().then((c) => o.log?.(`${countOf(c)} tools from ${o.target.url}`), (err) => o.log?.(message(err)));
   }
 
   async status(): Promise<PluginStatus> {
-    return statusOf(await this.catalog());
+    return statusOf(await this.offered());
   }
 
   async test(): Promise<PluginStatus> {
-    return statusOf(await this.catalog(true));
+    return statusOf(await this.offered(true));
   }
 
   async stop(): Promise<void> {
@@ -143,7 +166,7 @@ class McpToolset implements McpToolsetRuntime {
     const { o } = this;
     if (!personMayUse(o.groups)) return { active: [] };
     try {
-      const c = await this.catalog();
+      const c = await this.offered();
       if (countOf(c) === 0) return { active: [] };
       return { active: [o.toolName], descriptions: { [o.toolName]: o.describe(c) }, prompt: o.prompt(c) };
     } catch (err) {
@@ -156,7 +179,7 @@ class McpToolset implements McpToolsetRuntime {
     const { o } = this;
     console.log(`[kubedeck:agent] ${o.toolName}${scope.user ? ` user=${JSON.stringify(scope.user)}` : ""} thread=${scope.threadId} tool=${name}`);
     if (!personMayUse(o.groups)) return `Blocked: ${o.source} is not available to this user.`;
-    const c = await this.catalog();
+    const c = await this.offered();
     if (!riskOf(c, name)) {
       return `Blocked: "${name}" is not one of the ${o.source} tools KubeDeck may use${o.changes ? "" : " (read-only)"}. ` +
         `Available: ${[...c.read, ...c.change].map((t) => t.name).join(", ")}`;

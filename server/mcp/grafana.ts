@@ -42,6 +42,9 @@ definePlugin({
       source: "Grafana",
       target: { url: String(ctx.values.url), token: typeof ctx.values.token === "string" ? ctx.values.token : "", label: "the Grafana MCP server" },
       classify: (t) => (isReadTool(t, GRAFANA_RULE) ? "read" : null),
+      hiddenReason: (t) => isReadTool(t)
+        ? "KubeDeck leaves out Grafana's raw queries, API calls and image renders."
+        : "It may change things, and KubeDeck only reads Grafana.",
       changes: false,
       // replaced per request with the tools the server actually offers
       description: "Call a read-only tool on the Grafana MCP server (Loki logs, Prometheus metrics, dashboards, alerts).",
@@ -64,6 +67,7 @@ definePlugin({
     return {
       status: () => runtime.status(),
       test: () => runtime.test(),
+      catalog: () => runtime.catalog(),
       async stop() {
         if (running === runtime) running = null;
         await runtime.stop();
@@ -77,7 +81,7 @@ export async function grafanaMcpStatus(): Promise<GrafanaMcpStatus> {
   const r = running;
   if (!pluginState(GRAFANA_PLUGIN_ID).enabled || !r) return { configured: false, ok: false, tools: [] };
   try {
-    return { configured: true, ok: true, tools: (await r.catalog()).read.map((t) => t.name) };
+    return { configured: true, ok: true, tools: (await r.offered()).read.map((t) => t.name) };
   } catch (err) {
     return { configured: true, ok: false, tools: [], message: err instanceof Error ? err.message : String(err) };
   }

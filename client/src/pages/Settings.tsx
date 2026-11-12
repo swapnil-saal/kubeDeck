@@ -10,7 +10,8 @@ import { AppearanceSection } from "./settings/AppearanceSection";
 import { AuditSection } from "./settings/AuditSection";
 import { UsersSection } from "./settings/UsersSection";
 import { ClustersSection } from "./settings/ClustersSection";
-import { McpSection, PluginsSection } from "./settings/PluginsSection";
+import { PluginsSection } from "./settings/PluginsSection";
+import McpSection from "./settings/mcp/McpSection";
 
 interface Section {
   id: string;
