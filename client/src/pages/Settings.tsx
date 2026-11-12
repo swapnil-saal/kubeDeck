@@ -1,5 +1,5 @@
 import type { FC } from "react";
-import { Blocks, Bot, Info, Palette, ScrollText, Server, Users, type LucideIcon } from "lucide-react";
+import { Blocks, Bot, Cable, Info, Palette, ScrollText, Server, Users, type LucideIcon } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { useHashParams } from "@/hooks/use-hash-params";
 import { useServerMode } from "@/hooks/use-server-mode";
@@ -10,7 +10,7 @@ import { AppearanceSection } from "./settings/AppearanceSection";
 import { AuditSection } from "./settings/AuditSection";
 import { UsersSection } from "./settings/UsersSection";
 import { ClustersSection } from "./settings/ClustersSection";
-import { PluginsSection } from "./settings/PluginsSection";
+import { McpSection, PluginsSection } from "./settings/PluginsSection";
 
 interface Section {
   id: string;
@@ -29,7 +29,8 @@ const SECTIONS: Section[] = [
   { id: "clusters", label: "Clusters", description: "The kubeconfig files KubeDeck reads", icon: Server, render: ClustersSection, editable: true },
   { id: "ai", label: "AI assistant", description: "Model provider for Ask Deck and AI features", icon: Bot, render: AiSection, editable: true },
   // everyone sees what is on and whether it works; only someone who may manage plugins changes them
-  { id: "plugins", label: "Plugins", description: "Traces, logs, Grafana and MCP servers: switch them on and set them up", icon: Blocks, render: PluginsSection },
+  { id: "plugins", label: "Plugins", description: "Built-in integrations: traces from Tempo, logs from Loki, the assistant's Kubernetes tools", icon: Blocks, render: PluginsSection },
+  { id: "mcp", label: "MCP servers", description: "Tool servers the assistant may call: Grafana, and any you add", icon: Cable, render: McpSection },
   { id: "users", label: "Users", description: "Who can sign in, and their groups", icon: Users, render: UsersSection, feature: "users" },
   { id: "audit", label: "Audit log", description: "Every change made through KubeDeck", icon: ScrollText, render: AuditSection, feature: "audit" },
   { id: "about", label: "About", description: "Version, source and keyboard shortcuts", icon: Info, render: AboutSection },

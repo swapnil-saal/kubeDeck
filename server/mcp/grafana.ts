@@ -25,7 +25,7 @@ definePlugin({
   name: "Grafana",
   description:
     "Lets the assistant read the team's Grafana through the Grafana MCP server: Prometheus metrics, Loki logs, dashboards, alert rules and incidents. Read-only.",
-  category: "ai",
+  category: "mcp",
   kind: "builtin",
   fields: [
     { key: "url", label: "Grafana MCP server URL", kind: "url", required: true, placeholder: "https://grafana-mcp.example.com/mcp", help: "The Grafana MCP server's Streamable HTTP endpoint (usually ending in /mcp)." },
