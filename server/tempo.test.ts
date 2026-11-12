@@ -3,10 +3,12 @@ import {
   b64ToHex, extraCondition, metricsLimitSeconds, searchSlices, windowLabel, grafanaTraceUrl, parseTrace, q, scopeConditions, searchQuery, TempoError, toSummary, traceqlDuration,
 } from "./tempo";
 import { condenseTrace } from "./ai/chat/observability-tools";
-import { mergeObservability, observabilityFromEnv, parseClusterMap } from "./settings";
-import { cleanObservability } from "./settings-routes";
+import { parseClusterMap, type ObservabilitySettings } from "./observability";
 
-const o = observabilityFromEnv({});
+const o: ObservabilitySettings = {
+  tempoUrl: "", tempoToken: "", tempoTenant: "", lokiUrl: "", lokiToken: "", lokiTenant: "",
+  clusters: {}, grafanaUrl: "", grafanaTempoDatasource: "", mcpUrl: "", mcpToken: "",
+};
 
 describe("TraceQL building", () => {
   it("quotes string literals", () => {
@@ -169,19 +171,6 @@ describe("one trace", () => {
 describe("observability settings", () => {
   it("reads a context → cluster map", () => {
     expect(parseClusterMap("prod-admin=shared, dev = dev,broken,=x,y=")).toEqual({ "prod-admin": "shared", dev: "dev" });
-  });
-
-  it("lets saved values win and falls back to the environment", () => {
-    const env = observabilityFromEnv({ KUBEDECK_TEMPO_URL: "https://env", KUBEDECK_TEMPO_CLUSTERS: "a=x,b=y", KUBEDECK_GRAFANA_MCP_URL: "https://mcp" });
-    const m = mergeObservability({ tempoUrl: "https://saved", clusters: { b: "z" } }, env);
-    expect(m).toMatchObject({ tempoUrl: "https://saved", mcpUrl: "https://mcp", clusters: { a: "x", b: "z" } });
-  });
-
-  it("accepts only known fields and http(s) URLs from the settings form", () => {
-    expect(cleanObservability({ tempoUrl: " https://tempo.example.com ", extra: "x", clusters: { a: "b", " ": "c" } })).toEqual({ tempoUrl: "https://tempo.example.com", clusters: { a: "b" } });
-    expect(cleanObservability({ tempoUrl: "file:///etc/passwd" })).toBeNull();
-    expect(cleanObservability({ clusters: ["a"] })).toBeNull();
-    expect(cleanObservability("x")).toBeNull();
   });
 
   it("links a trace to Grafana Explore only with a Grafana URL and data source", () => {

@@ -18,7 +18,8 @@ import { logQuery, lokiConfigured, LokiError, queryLogs, type LogScope } from ".
 import { currentIdentity } from "./identity";
 import { spawnCommand } from "./kubectl-run";
 import { findInvalidParam } from "./security";
-import { getKubeconfigEnv, getObservability, type ObservabilitySettings } from "./settings";
+import { getObservability, type ObservabilitySettings } from "./observability";
+import { getKubeconfigEnv } from "./settings";
 import {
   getTrace,
   grafanaTraceUrl,
@@ -143,7 +144,7 @@ function fail(res: Response, err: unknown) {
 /** The scope a request asks about, validated; sends the error and returns null when it is not usable. */
 async function scopeOf(req: Request, res: Response, o: ObservabilitySettings | null): Promise<{ o: ObservabilitySettings; scope: TraceScope; context: string } | null> {
   if (!o) {
-    res.status(404).json({ message: "Tracing is not set up. Add the Tempo URL in Settings → Observability (KUBEDECK_TEMPO_URL on a shared KubeDeck)." });
+    res.status(404).json({ message: "Tracing is not set up. Switch on Tempo traces in Settings → Plugins (or set KUBEDECK_TEMPO_URL)." });
     return null;
   }
   const context = str(req.query.context);
@@ -156,7 +157,7 @@ async function scopeOf(req: Request, res: Response, o: ObservabilitySettings | n
   if (kind && !name) { res.status(400).json({ message: "A kind needs a name." }); return null; }
   const found = await resolveCluster(o, context, namespace);
   if (!found) {
-    res.status(409).json({ message: `Which Tempo cluster is "${context || "the default context"}"? Map it in Settings → Observability (KUBEDECK_TEMPO_CLUSTERS on a shared KubeDeck).` });
+    res.status(409).json({ message: `Which Tempo cluster is "${context || "the default context"}"? Map it under Tempo traces in Settings → Plugins (or KUBEDECK_TEMPO_CLUSTERS).` });
     return null;
   }
   if (!(await mayReadNamespace(context, namespace))) {
@@ -194,7 +195,7 @@ export function registerTracesRoutes(app: Express): void {
         grafanaTraceUrl: grafanaTraceUrl(o),
         logs: lokiConfigured(o),
         tracedNamespaces: found ? await tracedNamespaces(o, found.cluster, context) : null,
-        ...(found ? {} : { message: `Tempo has no cluster that is clearly "${context || "the default context"}". Map it in Settings → Observability.` }),
+        ...(found ? {} : { message: `Tempo has no cluster that is clearly "${context || "the default context"}". Map it under Tempo traces in Settings → Plugins.` }),
       } satisfies TraceStatus);
     } catch (err) {
       res.json({ configured: true, cluster: null, source: null, grafanaTraceUrl: grafanaTraceUrl(o), logs: lokiConfigured(o), tracedNamespaces: null, message: err instanceof Error ? err.message : String(err) } satisfies TraceStatus);
@@ -250,7 +251,7 @@ export function registerTracesRoutes(app: Express): void {
   app.get(tracesPaths.logs, async (req, res) => {
     try {
       const o = getObservability();
-      if (!lokiConfigured(o)) return res.status(404).json({ message: "Log history is not set up. Add the Loki URL in Settings → Observability (KUBEDECK_LOKI_URL on a shared KubeDeck)." });
+      if (!lokiConfigured(o)) return res.status(404).json({ message: "Log history is not set up. Switch on Loki logs in Settings → Plugins (or set KUBEDECK_LOKI_URL)." });
       const context = str(req.query.context);
       const namespace = str(req.query.namespace);
       const kind = str(req.query.kind);

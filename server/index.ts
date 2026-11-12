@@ -16,6 +16,8 @@ import { startAudit } from "./audit";
 import { registerAuditRoutes } from "./audit";
 import { openAppDatabase } from "./db";
 import { databaseStore, memoryStore, registerPluginRoutes, startPlugins } from "./plugins";
+import { migrateObservability } from "./observability";
+import { legacyObservability } from "./settings";
 
 // Web (shared-service) mode is opt-in; refuse to start half-configured rather than serve cluster access to anyone.
 const webCfg = loadWebConfig();
@@ -130,7 +132,10 @@ app.use((req, res, next) => {
     registerAdminRoutes(app, a);
   }
   // Plugins (Settings → Plugins): their choices live in the database; without one, in memory for this run
-  await startPlugins(d ? databaseStore(d) : memoryStore());
+  const pluginStore = d ? databaseStore(d) : memoryStore();
+  await startPlugins(pluginStore);
+  // once: the desktop's old Settings → Observability values become the Tempo / Loki / Grafana plugins'
+  await migrateObservability(pluginStore, legacyObservability());
   registerPluginRoutes(app);
 
   await registerRoutes(httpServer, app);

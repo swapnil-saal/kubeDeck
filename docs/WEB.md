@@ -44,11 +44,11 @@ What a person sees follows their RBAC: kinds they may not list are left out of t
 | `KUBEDECK_AI_API_KEY` | the provider's key (not needed for `ollama`, optional for `custom`) |
 | `KUBEDECK_AI_MODEL` / `KUBEDECK_AI_FAST_MODEL` | model ids; empty uses the provider's defaults |
 | `KUBEDECK_AI_BASE_URL` | the endpoint (required for `custom`) |
-| `KUBEDECK_TEMPO_URL` | Grafana Tempo's HTTP API, e.g. `https://tempo.example.com`: turns on traces (workload **Traces** tab, Overview → **Traces**, the assistant's trace tools) |
-| `KUBEDECK_TEMPO_TOKEN` / `KUBEDECK_TEMPO_TENANT` | optional bearer token / `X-Scope-OrgID` for Tempo |
-| `KUBEDECK_LOKI_URL` / `KUBEDECK_LOKI_TOKEN` / `KUBEDECK_LOKI_TENANT` | optional: Grafana Loki's HTTP API (+ bearer token / `X-Scope-OrgID`): the pod's log lines next to a traced request, and log history (pods that are gone, up to 7 days) for the assistant. Streams are matched by `cluster` and `namespace` labels, pods by the `pod` label or metadata |
-| `KUBEDECK_TEMPO_CLUSTERS` | optional `context=cluster,…`: the `k8s.cluster.name` a context's traces carry, where KubeDeck cannot tell (in-cluster the context is `in-cluster`, so set `in-cluster=<your cluster name>`) |
-| `KUBEDECK_GRAFANA_URL` / `KUBEDECK_GRAFANA_TEMPO_DATASOURCE` | optional: Grafana and the Tempo data source uid, for "Open in Grafana" on a trace |
+| `KUBEDECK_TEMPO_URL` | Grafana Tempo's HTTP API, e.g. `https://tempo.example.com`: configures and switches on the **Tempo traces** plugin (workload **Traces** tab, Overview → **Traces**, the assistant's trace tools). Settings → Plugins can do the same; a variable that is set wins and shows read-only there |
+| `KUBEDECK_TEMPO_TOKEN` / `KUBEDECK_TEMPO_TENANT` | optional bearer token / `X-Scope-OrgID` for Tempo (the Tempo traces plugin's Token and Tenant) |
+| `KUBEDECK_LOKI_URL` / `KUBEDECK_LOKI_TOKEN` / `KUBEDECK_LOKI_TENANT` | optional: Grafana Loki's HTTP API (+ bearer token / `X-Scope-OrgID`): configures and switches on the **Loki logs** plugin: the pod's log lines next to a traced request, and log history (pods that are gone, up to 7 days) for the assistant. Streams are matched by `cluster` and `namespace` labels, pods by the `pod` label or metadata. Settings → Plugins can do the same; the environment wins |
+| `KUBEDECK_TEMPO_CLUSTERS` | optional `context=cluster,…`: the `k8s.cluster.name` a context's traces carry, where KubeDeck cannot tell (in-cluster the context is `in-cluster`, so set `in-cluster=<your cluster name>`); the Tempo traces plugin's Clusters |
+| `KUBEDECK_GRAFANA_URL` / `KUBEDECK_GRAFANA_TEMPO_DATASOURCE` | optional: Grafana and the Tempo data source uid, for "Open in Grafana" on a trace (part of the Tempo traces plugin) |
 | `KUBEDECK_GRAFANA_MCP_URL` / `KUBEDECK_GRAFANA_MCP_TOKEN` | optional: the [Grafana MCP server](https://github.com/grafana/mcp-grafana)'s streamable-HTTP endpoint (`…/mcp`) and its token; the assistant then reads Prometheus, Loki, dashboards and alerts through it |
 | `HOST` | bind address (default `0.0.0.0` in web mode) |
 | `KUBECONFIG` | optional; with no kubeconfig inside a pod, KubeDeck builds one context, `in-cluster`, from the pod's service account |

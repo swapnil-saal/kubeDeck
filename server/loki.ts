@@ -4,7 +4,7 @@
  * the collector sets (`cluster`, `namespace`, `pod`), the same cluster names Tempo uses. Only GETs.
  */
 import type { LogLine, TraceWorkloadKind } from "@shared/traces";
-import type { ObservabilitySettings } from "./settings";
+import type { ObservabilitySettings } from "./observability";
 
 const TIMEOUT_MS = 25_000;
 
@@ -37,6 +37,12 @@ async function lokiGet<T>(o: ObservabilitySettings, path: string, params: Record
   } catch {
     throw new LokiError("Loki sent something that is not JSON. Is the Loki URL pointing at Loki's HTTP API?");
   }
+}
+
+/** The label names Loki knows: a cheap check that the URL, token and tenant work. */
+export async function lokiLabels(o: ObservabilitySettings, signal?: AbortSignal): Promise<string[]> {
+  const r = await lokiGet<{ data?: string[] }>(o, "/loki/api/v1/labels", {}, signal);
+  return r.data ?? [];
 }
 
 /** A LogQL string literal. */

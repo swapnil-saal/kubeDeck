@@ -173,7 +173,10 @@ export const settingsSchema = z.object({
     exists: z.boolean(),
   })),
   ai: aiProviderSchema.optional(),
-  /** Tempo / Grafana settings as saved (desktop) or in effect with secrets blanked (web) */
+  /**
+   * @deprecated no longer sent: Tempo, Loki and Grafana are plugins (Settings → Plugins). Kept only
+   * until client/src/pages/settings/ObservabilitySection.tsx is deleted; remove with it.
+   */
   observability: z.object({
     tempoUrl: z.string(), tempoToken: z.string(), tempoTenant: z.string(),
     lokiUrl: z.string(), lokiToken: z.string(), lokiTenant: z.string(),
@@ -181,7 +184,7 @@ export const settingsSchema = z.object({
     grafanaUrl: z.string(), grafanaTempoDatasource: z.string(),
     mcpUrl: z.string(), mcpToken: z.string(),
   }).partial().optional(),
-  /** desktop: fields the environment sets, shown as defaults (secrets as "set in the environment") */
+  /** @deprecated no longer sent; remove with ObservabilitySection.tsx (see `observability`) */
   observabilityEnv: z.record(z.string(), z.string()).optional(),
   managed: z.boolean().optional(),
 });

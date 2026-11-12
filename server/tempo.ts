@@ -14,7 +14,7 @@ import {
   type TraceSummary,
   type TraceWorkloadKind,
 } from "@shared/traces";
-import type { ObservabilitySettings } from "./settings";
+import type { ObservabilitySettings } from "./observability";
 
 const TIMEOUT_MS = 25_000;
 
