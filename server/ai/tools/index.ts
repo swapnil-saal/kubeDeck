@@ -7,3 +7,4 @@ export const allTools = toolRegistry.allTools.bind(toolRegistry);
 export const toolsForCall = toolRegistry.toolsForCall.bind(toolRegistry);
 export { ToolRegistry, type ToolApproval, type ToolCallContext, type ToolEntry, type Toolset, type ToolsetCall, type ToolsForCall } from "./registry";
 export { kubeScopeSchema, type KubeScope } from "./scope";
+export { proxyTool, type ProxyToolOptions } from "./proxy";

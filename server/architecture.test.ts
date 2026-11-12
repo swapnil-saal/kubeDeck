@@ -51,8 +51,8 @@ const PACKAGE_RULES: PackageRule[] = [
   {
     what: "only the MCP gateway may use @ai-sdk/mcp",
     matches: (p) => p === "@ai-sdk/mcp",
-    allowedIn: ["server/grafana-mcp.ts", "server/mcp/"],
-    fix: "go through server/grafana-mcp.ts (or the MCP hub under server/mcp/)",
+    allowedIn: ["server/mcp/"],
+    fix: "go through the MCP hub: connectMcp from server/mcp (import from its index)",
   },
   {
     what: "only the assistant (server/ai, client/src/ai) may use the AI SDK core package `ai`",
@@ -92,7 +92,7 @@ const CHILD_PROCESS_ALLOWED: Record<string, string> = {
 const CHILD_PROCESS_FNS = new Set(["spawn", "spawnSync", "execFile", "execFileSync", "exec", "execSync", "fork"]);
 
 /** Modules with one front door: code outside the folder imports only its index. */
-const FRONT_DOORS = ["server/auth", "server/db", "server/audit", "server/events", "server/ai/tools", "server/plugins", "server/observability"];
+const FRONT_DOORS = ["server/auth", "server/db", "server/audit", "server/events", "server/ai/tools", "server/plugins", "server/observability", "server/mcp"];
 
 /**
  * Imports allowed past a front door. Empty: export what is needed from the module's index instead.

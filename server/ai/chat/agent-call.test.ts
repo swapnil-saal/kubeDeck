@@ -2,8 +2,9 @@
  * What one agent call hands the model, for each observability setup: the tools offered (in the order
  * the model gets them), every tool's name, description and input schema, which tools get the cluster
  * scope, which have an approval policy, and the system prompt. Runs the real agent's prepareCall
- * against a real settings file, the real Tempo / Loki plugins and, for Grafana, a small MCP server
- * speaking the real protocol over HTTP. No model is called.
+ * against a real settings file, the real Tempo, Loki and Grafana plugins (configured by the environment,
+ * as a web deployment does) and, for Grafana, a small MCP server speaking the real protocol over HTTP.
+ * No model is called.
  *
  * The AI SDK sends `tools` in their key order, keeping those named in `activeTools`; `activeTools`
  * and `toolsContext` are only looked up, so their own order is not recorded.
@@ -73,34 +74,23 @@ afterAll(async () => {
   fs.rmSync(home, { recursive: true, force: true });
 });
 
-/** The AI settings, and the Tempo / Loki / Grafana MCP plugins switched on for the URLs given. */
-async function writeSettings(urls: { tempoUrl?: string; lokiUrl?: string; mcpUrl?: string }) {
+/** One setup: the AI settings file, and the plugins started as the server starts them, configured by its environment. */
+async function setUp(urls: { tempoUrl?: string; lokiUrl?: string; mcpUrl?: string }) {
   fs.mkdirSync(path.join(home, ".kubedeck"), { recursive: true });
   fs.writeFileSync(
     path.join(home, ".kubedeck", "settings.json"),
     // a keyless local provider: building the model needs no network
     JSON.stringify({ kubeconfigPaths: [], ai: { provider: "ollama", apiKey: "", model: "test-model", baseUrl: "http://127.0.0.1:9" } }),
   );
-  await import("./agent"); // after HOME is set; loads the built-in plugins' definitions
+  // after HOME is set: the agent registers its own tools and loads the built-in plugins' definitions
+  await import("./agent");
   const p = await import("../../plugins");
-  const start = async () => {
-    await p.stopPlugins();
-    await p.startPlugins(p.memoryStore(), { KUBEDECK_AUTH_SECRET: "x".repeat(40) });
-  };
-  await start();
-  if (!(await p.listPlugins(false)).some((x) => x.id === "grafana")) {
-    // a stand-in with the Grafana MCP plugin's settings, where the MCP plugins do not define it
-    p.definePlugin({
-      id: "grafana", name: "Grafana", description: "stand-in", category: "observability", kind: "builtin",
-      fields: [{ key: "url", label: "URL", kind: "url" }, { key: "token", label: "Token", kind: "secret" }],
-      start: () => ({}),
-    });
-    await start();
-  }
-  const on = async (id: string, url: string | undefined) => { if (url) await p.updatePlugin(id, { enabled: true, values: { url } }, "test"); };
-  await on("tempo", urls.tempoUrl);
-  await on("loki", urls.lokiUrl);
-  await on("grafana", urls.mcpUrl);
+  await p.stopPlugins();
+  const env: NodeJS.ProcessEnv = { KUBEDECK_AUTH_SECRET: "x".repeat(40) };
+  if (urls.tempoUrl) env.KUBEDECK_TEMPO_URL = urls.tempoUrl;
+  if (urls.lokiUrl) env.KUBEDECK_LOKI_URL = urls.lokiUrl;
+  if (urls.mcpUrl) env.KUBEDECK_GRAFANA_MCP_URL = urls.mcpUrl;
+  await p.startPlugins(p.memoryStore(), env);
 }
 
 interface PreparedCall {
@@ -160,7 +150,7 @@ async function snapshotOf(full = false) {
 
 describe("what one agent call offers the model", () => {
   it("with nothing set up", async () => {
-    await writeSettings({});
+    await setUp({});
     const d = await snapshotOf();
     expect(d.offered).toEqual(["k8s_list", "k8s_describe", "k8s_logs", "kubectl", "bash", "monitor_logs", "ask_human", "present_dashboard"]);
     expect(d.observabilityPrompt).toBe("");
@@ -168,7 +158,7 @@ describe("what one agent call offers the model", () => {
   });
 
   it("with Tempo only", async () => {
-    await writeSettings({ tempoUrl: "http://tempo.invalid" });
+    await setUp({ tempoUrl: "http://tempo.invalid" });
     const d = await snapshotOf();
     expect(d.offered.slice(8)).toEqual(["traces_stats", "traces_search", "trace_get"]);
     expect(d.observabilityPrompt).toMatch(/^## Traces \(Tempo\)/);
@@ -176,7 +166,7 @@ describe("what one agent call offers the model", () => {
   });
 
   it("with Tempo, Loki and a Grafana MCP server", async () => {
-    await writeSettings({ tempoUrl: "http://tempo.invalid", lokiUrl: "http://loki.invalid", mcpUrl });
+    await setUp({ tempoUrl: "http://tempo.invalid", lokiUrl: "http://loki.invalid", mcpUrl });
     const d = await snapshotOf(true);
     expect(d.offered.slice(8)).toEqual(["traces_stats", "logs_search", "traces_search", "trace_get", "grafana"]);
     expect(d.grafanaDescription).toContain("- list_datasources(type: string): List the data sources.");
@@ -185,7 +175,7 @@ describe("what one agent call offers the model", () => {
   });
 
   it("with a Grafana MCP server that does not answer", async () => {
-    await writeSettings({ mcpUrl: deadUrl });
+    await setUp({ mcpUrl: deadUrl });
     const d = await snapshotOf();
     expect(d.offered).not.toContain("grafana");
     expect(d.observabilityPrompt).toMatch(/^## Grafana\nThe Grafana MCP server is configured but unreachable/);

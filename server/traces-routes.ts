@@ -10,10 +10,9 @@ import {
   TRACE_GROUP_BY,
   TRACE_SINCE,
   type TraceGroupBy,
-  type GrafanaMcpStatus,
   type TraceStatus,
 } from "@shared/traces";
-import { grafanaMcpConfigured, grafanaTools } from "./grafana-mcp";
+import { grafanaMcpStatus } from "./mcp";
 import { logQuery, lokiConfigured, LokiError, queryLogs, type LogScope } from "./loki";
 import { currentIdentity } from "./identity";
 import { spawnCommand } from "./kubectl-run";
@@ -210,15 +209,9 @@ export function registerTracesRoutes(app: Express): void {
     } catch (err) { fail(res, err); }
   });
 
+  // the Grafana plugin's connection (Settings → Plugins has the same, and more)
   app.get(tracesPaths.grafanaMcp, async (_req, res) => {
-    const o = getObservability();
-    if (!grafanaMcpConfigured(o)) return res.json({ configured: false, ok: false, tools: [] } satisfies GrafanaMcpStatus);
-    try {
-      const tools = await grafanaTools(o);
-      res.json({ configured: true, ok: true, tools: tools.map((t) => t.name) } satisfies GrafanaMcpStatus);
-    } catch (err) {
-      res.json({ configured: true, ok: false, tools: [], message: err instanceof Error ? err.message : String(err) } satisfies GrafanaMcpStatus);
-    }
+    res.json(await grafanaMcpStatus());
   });
 
   app.get(tracesPaths.search, async (req, res) => {

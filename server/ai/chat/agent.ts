@@ -18,6 +18,9 @@ import { allTools, kubeScopeSchema, toolsForCall } from "../tools";
 // the model sees the tools and the prompt sections in.
 import "./tools";
 import "./observability-tools";
+// Plugins with assistant tools (Grafana, added MCP servers): defined here, they register their tools
+// when the plugin manager starts them, so they come after the tools above.
+import "../../mcp";
 
 /** Hard backstop against tool-call loops (the discovery budget is enforced in kubectl.ts). */
 const MAX_STEPS = 14;

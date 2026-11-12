@@ -6,7 +6,7 @@ exports[`what one agent call offers the model > with Tempo only 1`] = `
     "bash",
     "kubectl",
   ],
-  "grafanaDescription": "Call a read-only tool on the Grafana MCP server (Loki logs, Prometheus metrics, dashboards, alerts).",
+  "grafanaDescription": undefined,
   "observabilityPrompt": "## Traces (Tempo)
 Traces show what a request did across services: use them for latency, errors/5xx, failing calls between services and "what is X calling".
 - traces_stats: req/s, error rate, p50/p95 by service, endpoint, version (rollout old vs new) or pod. Start here for slow / failing / 'did the deploy make it worse'.
@@ -30,7 +30,6 @@ Trace ids are 32 hex characters; quote them in answers.",
   ],
   "scopedTools": [
     "bash",
-    "grafana",
     "k8s_describe",
     "k8s_list",
     "k8s_logs",
@@ -54,7 +53,6 @@ Trace ids are 32 hex characters; quote them in answers.",
     "logs_search",
     "traces_search",
     "trace_get",
-    "grafana",
   ],
 }
 `;
@@ -152,6 +150,7 @@ A consumer/server span with no child spans and a round duration (e.g. 5.00s ever
 Trace ids are 32 hex characters; quote them in answers.
 ## Log history (Loki)
 logs_search reads up to 7 days of logs, including pods that are gone. Prefer it over k8s_logs for errors in the past, crashed or replaced pods, and lines around a trace (around=<ISO time>). errorsOnly finds exceptions fast.
+
 ## Grafana
 The \`grafana\` tool reaches the team's Grafana: Prometheus metrics history (CPU, memory, request rates over time), Loki logs beyond what kubectl keeps, dashboards, firing alerts.
 Use it when kubectl cannot answer (history, trends, logs of pods that are gone). Find the data source uid with list_datasources once, then query.",
@@ -941,7 +940,7 @@ exports[`what one agent call offers the model > with nothing set up 1`] = `
     "bash",
     "kubectl",
   ],
-  "grafanaDescription": "Call a read-only tool on the Grafana MCP server (Loki logs, Prometheus metrics, dashboards, alerts).",
+  "grafanaDescription": undefined,
   "observabilityPrompt": "",
   "offered": [
     "k8s_list",
@@ -955,7 +954,6 @@ exports[`what one agent call offers the model > with nothing set up 1`] = `
   ],
   "scopedTools": [
     "bash",
-    "grafana",
     "k8s_describe",
     "k8s_list",
     "k8s_logs",
@@ -979,7 +977,6 @@ exports[`what one agent call offers the model > with nothing set up 1`] = `
     "logs_search",
     "traces_search",
     "trace_get",
-    "grafana",
   ],
 }
 `;

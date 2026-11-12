@@ -28,8 +28,8 @@ Web mode locally: `KUBEDECK_MODE=web KUBEDECK_PUBLIC_URL=http://localhost:5051 K
   `audit/` the audit log (subscribes to `action.done`; the desktop app keeps it too, in
   `~/.kubedeck/kubedeck.db`, under one local user who never signs in), `db/` the database,
   `auth/` web mode's sign-in (Better Auth, loaded only in web mode), `map.ts` the namespace graph, `tempo.ts` +
-  `traces-routes.ts` traces from Grafana Tempo, `loki.ts` log history, `grafana-mcp.ts` the Grafana MCP client (read tools
-  only), `ai/` the assistant (AI SDK agent, prompts; `ai/tools/` is the tool registry: each module calls `registerTools(owner, …)` with its tools, their risk and a per-call `forCall` for availability, descriptions and prompt sections; the agent only reads the registry). Web mode's sign-in lives in
+  `traces-routes.ts` traces from Grafana Tempo, `loki.ts` log history, `mcp/` the MCP hub (the only MCP client; remote servers only, no stdio) with the Grafana plugin (read tools
+  only, the `grafana` tool) and added MCP server plugins (one `mcp_<name>` tool each), `ai/` the assistant (AI SDK agent, prompts; `ai/tools/` is the tool registry: each module calls `registerTools(owner, …)` with its tools, their risk and a per-call `forCall` for availability, descriptions and prompt sections; the agent only reads the registry). Web mode's sign-in lives in
   `auth/` (the only code that knows Better Auth; admin routes validate groups), `db/` is the database (Kysely: SQLite via
   `node:sqlite`, or Postgres; each module owns its tables, migrations in `db/migrations.ts`), `audit/` the audit log.
   The desktop app never loads `auth/` or `db/` (dynamic imports only).
@@ -57,11 +57,11 @@ a reason: fix the code rather than growing them.
 
 - `client/src` never imports `server/`, `server/` never imports `client/`, `shared/` imports neither.
 - Gateway-only packages: `better-auth` in `server/auth`; `kysely`, `pg`, `node:sqlite` in `server/db`;
-  `@ai-sdk/mcp` in `server/grafana-mcp.ts` / `server/mcp`; `ai` in `server/ai` and `client/src/ai`;
+  `@ai-sdk/mcp` in `server/mcp`; `ai` in `server/ai` and `client/src/ai`;
   `@ai-sdk/*` providers in `server/ai`; `@ai-sdk/react` and `@assistant-ui/*` in `client/src/ai`.
 - `child_process` only in the files listed in `CHILD_PROCESS_ALLOWED`; every spawn there passes its
   arguments through `asUser()` and none uses a shell.
-- `server/auth`, `server/db`, `server/audit`, `server/events`, `server/ai/tools`: code outside the
+- `server/auth`, `server/db`, `server/audit`, `server/events`, `server/ai/tools`, `server/plugins`, `server/mcp`: code outside the
   folder imports only its `index.ts`.
 - A table is queried only by its owner (`TABLE_OWNERS`: `audit_log` → `server/audit`); Better Auth's
   tables only by Better Auth. A new table needs an entry there.
