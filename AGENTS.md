@@ -10,7 +10,8 @@ through `kubectl`.
 |---|---|
 | `npm run dev` | server + client with hot reload (desktop mode) on `PORT` (default 5000) |
 | `npm run electron:dev` | the desktop app |
-| `npm test` | vitest (server and client) |
+| `npm test` | vitest (server and client), including the architecture check |
+| `npm run check:arch` | only the architecture check (`server/architecture.test.ts`) |
 | `npm run check` | TypeScript |
 | `npm run build` | production bundle in `dist/` |
 | `script/docker-build.sh [--push]` | web image; `--push` builds linux/amd64 + linux/arm64 |
@@ -42,6 +43,24 @@ Web mode locally: `KUBEDECK_MODE=web KUBEDECK_PUBLIC_URL=http://localhost:5051 K
   `exec`, `--as`, `--token`… from the palette or the assistant (`webExecAllowed`, `webAgentRefusal`).
 - Never add a `HEALTHCHECK` to the Dockerfile; probes live in the pod spec.
 - Tests run against real code; no mocked LLMs or clusters.
+
+### Architecture rules
+
+Only gateways reach outside, each module has one front door, each module owns its tables.
+`server/architecture.test.ts` enforces this on every `npm test` (and in CI); a failure names the
+file, the import, the rule and the fix. Allowlists in that file hold today's exceptions, each with
+a reason: fix the code rather than growing them.
+
+- `client/src` never imports `server/`, `server/` never imports `client/`, `shared/` imports neither.
+- Gateway-only packages: `better-auth` in `server/auth`; `kysely`, `pg`, `node:sqlite` in `server/db`;
+  `@ai-sdk/mcp` in `server/grafana-mcp.ts` / `server/mcp`; `ai` in `server/ai` and `client/src/ai`;
+  `@ai-sdk/*` providers in `server/ai`; `@ai-sdk/react` and `@assistant-ui/*` in `client/src/ai`.
+- `child_process` only in the files listed in `CHILD_PROCESS_ALLOWED`; every spawn there passes its
+  arguments through `asUser()` and none uses a shell.
+- `server/auth`, `server/db`, `server/audit`, `server/events`, `server/ai/tools`: code outside the
+  folder imports only its `index.ts`.
+- A table is queried only by its owner (`TABLE_OWNERS`: `audit_log` → `server/audit`); Better Auth's
+  tables only by Better Auth. A new table needs an entry there.
 
 ## Understanding the code
 
