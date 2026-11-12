@@ -1,0 +1,985 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`what one agent call offers the model > with Tempo only 1`] = `
+{
+  "approvalTools": [
+    "bash",
+    "kubectl",
+  ],
+  "grafanaDescription": "Call a read-only tool on the Grafana MCP server (Loki logs, Prometheus metrics, dashboards, alerts).",
+  "observabilityPrompt": "## Traces (Tempo)
+Traces show what a request did across services: use them for latency, errors/5xx, failing calls between services and "what is X calling".
+- traces_stats: req/s, error rate, p50/p95 by service, endpoint, version (rollout old vs new) or pod. Start here for slow / failing / 'did the deploy make it worse'.
+- traces_search: example traces (errorsOnly, minDuration, workload, or a TraceQL \`where\`). Then trace_get on 1–2 of them.
+- trace_get: one trace with errors (exception messages) and the call tree. Name the failing span, its service and the downstream it called.
+When a failing span has no exception message, read the failing pod's logs at that time yourself before answering (logs_search with pod and around=<trace start> when Loki is set up, else k8s_logs); do not ask first.
+A consumer/server span with no child spans and a round duration (e.g. 5.00s every time) usually measures a poll or timeout wait, not slow work: say that instead of calling the service slow, unless trace_get shows the time spent in child calls.
+Trace ids are 32 hex characters; quote them in answers.",
+  "offered": [
+    "k8s_list",
+    "k8s_describe",
+    "k8s_logs",
+    "kubectl",
+    "bash",
+    "monitor_logs",
+    "ask_human",
+    "present_dashboard",
+    "traces_stats",
+    "traces_search",
+    "trace_get",
+  ],
+  "scopedTools": [
+    "bash",
+    "grafana",
+    "k8s_describe",
+    "k8s_list",
+    "k8s_logs",
+    "kubectl",
+    "logs_search",
+    "monitor_logs",
+    "trace_get",
+    "traces_search",
+    "traces_stats",
+  ],
+  "toolNames": [
+    "k8s_list",
+    "k8s_describe",
+    "k8s_logs",
+    "kubectl",
+    "bash",
+    "monitor_logs",
+    "ask_human",
+    "present_dashboard",
+    "traces_stats",
+    "logs_search",
+    "traces_search",
+    "trace_get",
+    "grafana",
+  ],
+}
+`;
+
+exports[`what one agent call offers the model > with Tempo, Loki and a Grafana MCP server 1`] = `
+{
+  "approvalTools": [
+    "bash",
+    "kubectl",
+  ],
+  "basePrompt": "You are KubeDeck AI — a senior SRE / platform engineer with live kubectl access.
+
+## Core method
+1. ALWAYS inspect the cluster with tools before answering about state, health, performance, or failures.
+2. Prefer a SHORT data pass: 1–3 compact kubectl calls, then synthesize. Do NOT keep re-querying.
+3. Never invent pods, events, metrics, or IP addresses.
+4. Be decisive once you have list/status data.
+
+## Speed: batch independent calls
+When you need several independent facts (pods, deployments, events, …), call ALL of those tools in the SAME step —
+they run in parallel. Do not fetch them one step at a time.
+
+## Access limits (RBAC)
+- A result containing ACCESS_DENIED / Forbidden is FINAL for that resource. Never retry it in other namespaces,
+  with other flags, or via bash/jsonpath.
+- Say plainly what the user cannot access, then answer from the data you do have.
+
+## Anti-loop (CRITICAL — never break these)
+- Never say "I need the full output" / "let me try again" / "let me re-run". Truncated output is enough.
+- Never re-run the same or nearly identical kubectl/bash command. Tools will refuse and return prior data.
+- Once you have the numbers you need, answer (or call present_dashboard for health/dashboard requests) and stop.
+- If a command returns data OR says ALREADY_HAVE_DATA / STOP, immediately present_dashboard or answer — no more discovery loops.
+
+## Query efficiently (ask the cluster for the answer, not for everything)
+- Counts / "which are unhealthy" / "what restarts most": k8s_list with view="summary". It returns EXACT totals,
+  counts by STATUS, not-ready items and top restarts computed from the full output. Never count rows yourself.
+- Filter at the source instead of reading everything:
+  fieldSelector (status.phase!=Running, spec.nodeName=<node>, involvedObject.name=<pod>) and labelSelector (app=api).
+- Need specific fields? kubectl with -o custom-columns=NAME:.metadata.name,IMAGE:.spec.containers[*].image
+  or a small -o jsonpath. One well-shaped query beats a full dump.
+- Aggregations no tool covers: the bash tool with kubectl piped into grep / awk / sort / uniq -c / wc -l / jq,
+  e.g. \`kubectl get pods --no-headers | awk '{print $3}' | sort | uniq -c\`.
+  The kubectl tool itself never runs pipes or shell syntax.
+- Logs: k8s_logs with tail/since, and grep for the error you are after (monitor_logs supports grep).
+- When only names are asked ("list the X"), use view="names".
+
+## Health check (typical single pass)
+1. k8s_list pods view="summary" and k8s_list deployments view="summary" — in the SAME step.
+2. Only if needed: describe / logs for the 1–2 worst resources.
+3. present_dashboard (for health/briefing requests) or a short verdict. Done.
+
+## Tools
+- k8s_list: list / summarize resources (view: table | summary | names).
+- k8s_describe: describe one resource.
+- k8s_logs: fetch pod/deployment logs (tail).
+- kubectl: any single kubectl command without the prefix (no pipes).
+- bash: kubectl piped into text filters, for aggregations.
+- monitor_logs: live tail for intermittent issues.
+- ask_human: only for genuine ambiguity (entrypoint, target name you cannot infer).
+- present_dashboard: visual board after you have numbers. Required for health/dashboard/performance.
+
+## present_dashboard rules
+- Use only tool-collected numbers (never fabricate).
+- One board per user question when possible.
+- Issues: severity critical|warning|info with resource names.
+
+## Safety
+- BLOCKED: delete, drain, cordon, taint.
+- Mutating commands (scale, apply, rollout restart, patch, …) pause automatically for the user's approve/deny in the UI. Just call the tool — do NOT use ask_human to confirm them first, and never try to bypass approval.
+- A denied tool call carries a reason. "Denied by user" means the user clicked Deny: acknowledge their choice, do not retry it, and offer an alternative if useful. A reason starting with "Blocked:" means KubeDeck's safety policy refused it (e.g. delete, drain): say that, and tell the user they can run it themselves.
+
+## Response style
+- Lead with verdict, then evidence. Concise markdown.
+- Cite concrete resource names from tool output.
+
+## Mode: Chat
+General Kubernetes operator assistant. Answer clearly; use tools whenever cluster facts are needed.
+Prefer k8s_list / k8s_describe for inventory before free-form kubectl.
+
+## Selected scope (set by the user in the header — respect it)
+- Cluster context: docker-desktop
+- Namespace: e2. Every command is already scoped to it; do NOT use -A / --all-namespaces or other namespaces unless the user names one. "this namespace", "here" and "the cluster" mean e2.
+- Never mention or switch to another cluster unless asked.",
+  "grafanaDescription": "Call one read-only tool on the team's Grafana (MCP). Pass {tool, arguments}. Use it for Loki logs, Prometheus metrics, dashboards, alert rules and incidents; most query tools need a datasourceUid: get it from list_datasources first.
+Tools (* = required):
+- list_datasources(type: string): List the data sources.
+- query_prometheus(datasourceUid*: string, expr*: string): Run a PromQL query.",
+  "observabilityPrompt": "## Traces (Tempo)
+Traces show what a request did across services: use them for latency, errors/5xx, failing calls between services and "what is X calling".
+- traces_stats: req/s, error rate, p50/p95 by service, endpoint, version (rollout old vs new) or pod. Start here for slow / failing / 'did the deploy make it worse'.
+- traces_search: example traces (errorsOnly, minDuration, workload, or a TraceQL \`where\`). Then trace_get on 1–2 of them.
+- trace_get: one trace with errors (exception messages) and the call tree. Name the failing span, its service and the downstream it called.
+When a failing span has no exception message, read the failing pod's logs at that time yourself before answering (logs_search with pod and around=<trace start> when Loki is set up, else k8s_logs); do not ask first.
+A consumer/server span with no child spans and a round duration (e.g. 5.00s every time) usually measures a poll or timeout wait, not slow work: say that instead of calling the service slow, unless trace_get shows the time spent in child calls.
+Trace ids are 32 hex characters; quote them in answers.
+## Log history (Loki)
+logs_search reads up to 7 days of logs, including pods that are gone. Prefer it over k8s_logs for errors in the past, crashed or replaced pods, and lines around a trace (around=<ISO time>). errorsOnly finds exceptions fast.
+## Grafana
+The \`grafana\` tool reaches the team's Grafana: Prometheus metrics history (CPU, memory, request rates over time), Loki logs beyond what kubectl keeps, dashboards, firing alerts.
+Use it when kubectl cannot answer (history, trends, logs of pods that are gone). Find the data source uid with list_datasources once, then query.",
+  "offered": [
+    "k8s_list",
+    "k8s_describe",
+    "k8s_logs",
+    "kubectl",
+    "bash",
+    "monitor_logs",
+    "ask_human",
+    "present_dashboard",
+    "traces_stats",
+    "logs_search",
+    "traces_search",
+    "trace_get",
+    "grafana",
+  ],
+  "scopedTools": [
+    "bash",
+    "grafana",
+    "k8s_describe",
+    "k8s_list",
+    "k8s_logs",
+    "kubectl",
+    "logs_search",
+    "monitor_logs",
+    "trace_get",
+    "traces_search",
+    "traces_stats",
+  ],
+  "toolNames": [
+    "k8s_list",
+    "k8s_describe",
+    "k8s_logs",
+    "kubectl",
+    "bash",
+    "monitor_logs",
+    "ask_human",
+    "present_dashboard",
+    "traces_stats",
+    "logs_search",
+    "traces_search",
+    "trace_get",
+    "grafana",
+  ],
+  "tools": [
+    {
+      "description": "List Kubernetes resources. resource e.g. pods, deployments, services, nodes, events. view='summary' returns EXACT counts computed by KubeDeck (total, by STATUS, not ready, restarts, per namespace) — use it for 'how many / which are unhealthy / what restarts most' instead of reading rows. view='names' returns just names. view='table' (default) returns rows. Filter at the source: fieldSelector (status.phase!=Running, spec.nodeName=x) and labelSelector. Namespace auto-scoped unless allNamespaces=true.",
+      "executes": true,
+      "input": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "allNamespaces": {
+            "description": "List across all namespaces (-A); ignored when the user selected a namespace",
+            "type": "boolean",
+          },
+          "fieldSelector": {
+            "description": "Field selector, e.g. status.phase=Failed",
+            "pattern": "^[\\w.\\-\\/:,=!@]+$",
+            "type": "string",
+          },
+          "labelSelector": {
+            "description": "Label selector, e.g. app=api or 'app in (a,b)'",
+            "maxLength": 200,
+            "pattern": "^[\\w.\\-\\/:,=!() ]+$",
+            "type": "string",
+          },
+          "name": {
+            "description": "Optional specific name filter",
+            "pattern": "^[\\w.\\-\\/:,=!@]+$",
+            "type": "string",
+          },
+          "resource": {
+            "description": "Resource type: pods, deployments, services, nodes, jobs, events, …",
+            "pattern": "^[\\w.\\-\\/:,=!@]+$",
+            "type": "string",
+          },
+          "view": {
+            "description": "table (default) | summary (exact counts) | names",
+            "enum": [
+              "table",
+              "summary",
+              "names",
+            ],
+            "type": "string",
+          },
+          "wide": {
+            "description": "Use -o wide (more columns); table view only",
+            "type": "boolean",
+          },
+        },
+        "required": [
+          "resource",
+        ],
+        "type": "object",
+      },
+      "name": "k8s_list",
+      "scoped": true,
+    },
+    {
+      "description": "Describe a single resource (status, events summary, conditions). Prefer over huge -o yaml for diagnosis.",
+      "executes": true,
+      "input": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Resource name",
+            "pattern": "^[\\w.\\-\\/:,=!@]+$",
+            "type": "string",
+          },
+          "namespace": {
+            "description": "Namespace override if not the session default",
+            "pattern": "^[\\w.\\-\\/:,=!@]+$",
+            "type": "string",
+          },
+          "resource": {
+            "description": "Resource type, e.g. pod, deployment",
+            "pattern": "^[\\w.\\-\\/:,=!@]+$",
+            "type": "string",
+          },
+        },
+        "required": [
+          "resource",
+          "name",
+        ],
+        "type": "object",
+      },
+      "name": "k8s_describe",
+      "scoped": true,
+    },
+    {
+      "description": "Fetch recent logs from a pod (or deploy/NAME, svc/NAME). Use previous=true for the last crashed container.",
+      "executes": true,
+      "input": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "container": {
+            "pattern": "^[\\w.\\-\\/:,=!@]+$",
+            "type": "string",
+          },
+          "name": {
+            "description": "Pod name or deploy/x / svc/x",
+            "pattern": "^[\\w.\\-\\/:,=!@]+$",
+            "type": "string",
+          },
+          "namespace": {
+            "pattern": "^[\\w.\\-\\/:,=!@]+$",
+            "type": "string",
+          },
+          "previous": {
+            "description": "Logs from previous crashed container",
+            "type": "boolean",
+          },
+          "since": {
+            "description": "Relative duration e.g. 15m, 1h",
+            "pattern": "^[\\w.\\-\\/:,=!@]+$",
+            "type": "string",
+          },
+          "tail": {
+            "description": "Lines to fetch (default 100)",
+            "exclusiveMinimum": 0,
+            "maximum": 500,
+            "type": "integer",
+          },
+        },
+        "required": [
+          "name",
+        ],
+        "type": "object",
+      },
+      "name": "k8s_logs",
+      "scoped": true,
+    },
+    {
+      "description": "Free-form kubectl (WITHOUT the 'kubectl' prefix). Prefer k8s_list / k8s_describe / k8s_logs first. Context and namespace are auto-injected; -A is narrowed to the selected namespace. Deletes/drains are blocked. Mutating commands require human approval.",
+      "executes": true,
+      "input": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "description": "The kubectl command to run (without the 'kubectl' prefix)",
+            "type": "string",
+          },
+        },
+        "required": [
+          "command",
+        ],
+        "type": "object",
+      },
+      "name": "kubectl",
+      "scoped": true,
+    },
+    {
+      "description": "kubectl piped into text filters, for answers no other tool gives directly: counts by a field, grouping, searching output (e.g. kubectl get pods --no-headers | awk '{print $3}' | sort | uniq -c). Only kubectl plus filters reading stdin (jq, grep, awk, sed, sort, head, tail, wc, cut, uniq, tr, column); no files. Context/namespace auto-injected. Mutating kubectl inside bash requires human approval.",
+      "executes": true,
+      "input": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "description": "The shell command to execute",
+            "type": "string",
+          },
+        },
+        "required": [
+          "command",
+        ],
+        "type": "object",
+      },
+      "name": "bash",
+      "scoped": true,
+    },
+    {
+      "description": "Continuously tail new log lines from a pod. Returns only lines emitted since the previous call (per session). Use this for watching, reproducing intermittent issues, or end-to-end debugging where you need fresh data. Optional 'grep' filters lines to those matching a pattern (case-insensitive). Optional 'sinceSeconds' (default 60) is only used on the very first call.",
+      "executes": true,
+      "input": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "container": {
+            "description": "Container name (for multi-container pods)",
+            "pattern": "^[\\w.\\-\\/:,=!@]+$",
+            "type": "string",
+          },
+          "grep": {
+            "description": "Case-insensitive substring/regex to filter lines",
+            "maxLength": 200,
+            "type": "string",
+          },
+          "namespace": {
+            "description": "Namespace",
+            "pattern": "^[\\w.\\-\\/:,=!@]+$",
+            "type": "string",
+          },
+          "pod": {
+            "description": "Pod name (or 'deploy/<name>' / 'svc/<name>')",
+            "pattern": "^[\\w.\\-\\/:,=!@]+$",
+            "type": "string",
+          },
+          "sinceSeconds": {
+            "description": "Initial lookback window in seconds (default 60)",
+            "exclusiveMinimum": 0,
+            "maximum": 86400,
+            "type": "integer",
+          },
+        },
+        "required": [
+          "pod",
+        ],
+        "type": "object",
+      },
+      "name": "monitor_logs",
+      "scoped": true,
+    },
+    {
+      "description": "Ask the human user a clarifying question and PAUSE the agent until they reply. Use ONLY when you genuinely need information you cannot infer (e.g. 'which pod is the entrypoint?', 'what request id should I trace?', 'should I include the staging namespace too?'). Prefer up to 4 short options when possible. Do NOT use this for confirmations of obvious actions.",
+      "executes": false,
+      "input": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "options": {
+            "description": "Optional short answer choices",
+            "items": {
+              "type": "string",
+            },
+            "maxItems": 6,
+            "type": "array",
+          },
+          "question": {
+            "description": "The question to ask the user (one sentence)",
+            "type": "string",
+          },
+        },
+        "required": [
+          "question",
+        ],
+        "type": "object",
+      },
+      "name": "ask_human",
+      "scoped": false,
+    },
+    {
+      "description": "Render a visual dashboard card in the chat: KPI metrics, charts (bar/line/area/pie), ranked issues, and optional tables. REQUIRED for deployment/cluster health and dashboard requests after 1–2 kubectl gathers. Use real numbers only. Then stop calling tools and give a short summary.",
+      "executes": true,
+      "input": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "charts": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "data": {
+                  "description": "Array of row objects, e.g. [{name:'api', restarts:12}]",
+                  "items": {
+                    "additionalProperties": {
+                      "type": [
+                        "string",
+                        "number",
+                        "null",
+                      ],
+                    },
+                    "type": "object",
+                  },
+                  "maxItems": 40,
+                  "minItems": 1,
+                  "type": "array",
+                },
+                "series": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                      },
+                      "label": {
+                        "type": "string",
+                      },
+                    },
+                    "required": [
+                      "key",
+                    ],
+                    "type": "object",
+                  },
+                  "maxItems": 6,
+                  "minItems": 1,
+                  "type": "array",
+                },
+                "title": {
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "bar",
+                    "line",
+                    "area",
+                    "pie",
+                  ],
+                  "type": "string",
+                },
+                "xKey": {
+                  "description": "Category/time key for cartesian charts; default 'name'",
+                  "type": "string",
+                },
+              },
+              "required": [
+                "type",
+                "series",
+                "data",
+              ],
+              "type": "object",
+            },
+            "maxItems": 4,
+            "type": "array",
+          },
+          "issues": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "detail": {
+                  "type": "string",
+                },
+                "resource": {
+                  "description": "e.g. pod/foo or deploy/bar",
+                  "type": "string",
+                },
+                "severity": {
+                  "enum": [
+                    "critical",
+                    "warning",
+                    "info",
+                  ],
+                  "type": "string",
+                },
+                "title": {
+                  "type": "string",
+                },
+              },
+              "required": [
+                "severity",
+                "title",
+              ],
+              "type": "object",
+            },
+            "maxItems": 20,
+            "type": "array",
+          },
+          "metrics": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "label": {
+                  "type": "string",
+                },
+                "tone": {
+                  "enum": [
+                    "good",
+                    "warn",
+                    "bad",
+                    "neutral",
+                  ],
+                  "type": "string",
+                },
+                "unit": {
+                  "type": "string",
+                },
+                "value": {
+                  "type": [
+                    "string",
+                    "number",
+                  ],
+                },
+              },
+              "required": [
+                "label",
+                "value",
+              ],
+              "type": "object",
+            },
+            "maxItems": 12,
+            "type": "array",
+          },
+          "score": {
+            "description": "Optional health score 0–100",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "number",
+          },
+          "summary": {
+            "description": "1–2 sentence executive read",
+            "type": "string",
+          },
+          "tables": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "columns": {
+                  "items": {
+                    "type": "string",
+                  },
+                  "maxItems": 8,
+                  "minItems": 1,
+                  "type": "array",
+                },
+                "rows": {
+                  "items": {
+                    "items": {
+                      "type": "string",
+                    },
+                    "type": "array",
+                  },
+                  "maxItems": 40,
+                  "type": "array",
+                },
+                "title": {
+                  "type": "string",
+                },
+              },
+              "required": [
+                "columns",
+                "rows",
+              ],
+              "type": "object",
+            },
+            "maxItems": 3,
+            "type": "array",
+          },
+          "title": {
+            "description": "Short board title, e.g. 'Namespace health'",
+            "type": "string",
+          },
+        },
+        "required": [
+          "title",
+        ],
+        "type": "object",
+      },
+      "name": "present_dashboard",
+      "scoped": false,
+    },
+    {
+      "description": "Request rate, error rate and p50/p95 latency from traces (Tempo), grouped by service (default), endpoint (span name), version (ReplicaSet: compares a rollout's new pods with the old) or pod. Optionally for one workload. Start here for 'what is slow / failing / did the rollout make it worse', then traces_search for examples.",
+      "executes": true,
+      "input": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "groupBy": {
+            "description": "service | endpoint | version | pod; default service",
+            "enum": [
+              "service",
+              "endpoint",
+              "version",
+              "pod",
+            ],
+            "type": "string",
+          },
+          "namespace": {
+            "description": "Namespace; default the one selected in the header",
+            "pattern": "^[\\w.\\-]+$",
+            "type": "string",
+          },
+          "since": {
+            "description": "Window, default 1h; Tempo measures at most 3h",
+            "enum": [
+              "15m",
+              "1h",
+              "6h",
+              "24h",
+            ],
+            "type": "string",
+          },
+          "workloadKind": {
+            "enum": [
+              "deployment",
+              "statefulset",
+              "daemonset",
+              "replicaset",
+              "job",
+              "cronjob",
+              "pod",
+              "service",
+            ],
+            "type": "string",
+          },
+          "workloadName": {
+            "pattern": "^[\\w.\\-]+$",
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "name": "traces_stats",
+      "scoped": true,
+    },
+    {
+      "description": "Search log history in Loki: a namespace, a workload (all its pods, including pods that no longer exist) or one pod, over up to 7 days. Use it for pods that crashed or were replaced, errors kubectl's tail no longer has, or lines around a trace's time. errorsOnly keeps error/exception/traceback lines.",
+      "executes": true,
+      "input": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "around": {
+            "description": "ISO time (e.g. a trace's start): search ±2 minutes around it instead of \`since\`",
+            "type": "string",
+          },
+          "contains": {
+            "description": "Case-insensitive text a line must contain",
+            "maxLength": 200,
+            "type": "string",
+          },
+          "errorsOnly": {
+            "type": "boolean",
+          },
+          "limit": {
+            "description": "Default 80 (the newest)",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer",
+          },
+          "namespace": {
+            "description": "Namespace; default the one selected in the header",
+            "pattern": "^[\\w.\\-]+$",
+            "type": "string",
+          },
+          "pod": {
+            "description": "One pod (may no longer exist)",
+            "pattern": "^[\\w.\\-]+$",
+            "type": "string",
+          },
+          "since": {
+            "description": "Default 1h",
+            "enum": [
+              "15m",
+              "1h",
+              "6h",
+              "24h",
+              "7d",
+            ],
+            "type": "string",
+          },
+          "workloadKind": {
+            "enum": [
+              "deployment",
+              "statefulset",
+              "daemonset",
+              "replicaset",
+              "job",
+              "cronjob",
+              "pod",
+              "service",
+            ],
+            "type": "string",
+          },
+          "workloadName": {
+            "pattern": "^[\\w.\\-]+$",
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "name": "logs_search",
+      "scoped": true,
+    },
+    {
+      "description": "Find traces (Tempo) in the selected cluster: by workload or service, failing ones (errorsOnly), slow ones (minDuration), or any TraceQL condition (where, e.g. span.http.route = "/login" or span.http.response.status_code >= 500). Matches requests and consumed messages unless allSpans. Returns trace ids; read one with trace_get.",
+      "executes": true,
+      "input": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "allSpans": {
+            "description": "Match every span, not only requests and consumed messages",
+            "type": "boolean",
+          },
+          "errorsOnly": {
+            "type": "boolean",
+          },
+          "limit": {
+            "description": "Default 15",
+            "maximum": 20,
+            "minimum": 1,
+            "type": "integer",
+          },
+          "minDuration": {
+            "description": "e.g. 500ms, 2s",
+            "pattern": "^\\d+(\\.\\d+)?(ms|s|m)$",
+            "type": "string",
+          },
+          "namespace": {
+            "description": "Namespace; default the one selected in the header",
+            "pattern": "^[\\w.\\-]+$",
+            "type": "string",
+          },
+          "since": {
+            "description": "Window, default 1h",
+            "enum": [
+              "15m",
+              "1h",
+              "6h",
+              "24h",
+            ],
+            "type": "string",
+          },
+          "where": {
+            "description": "Extra TraceQL condition on span./resource. attributes; no braces or pipes",
+            "maxLength": 300,
+            "type": "string",
+          },
+          "workloadKind": {
+            "description": "deployment, statefulset, daemonset, pod, service, …",
+            "enum": [
+              "deployment",
+              "statefulset",
+              "daemonset",
+              "replicaset",
+              "job",
+              "cronjob",
+              "pod",
+              "service",
+            ],
+            "type": "string",
+          },
+          "workloadName": {
+            "pattern": "^[\\w.\\-]+$",
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "name": "traces_search",
+      "scoped": true,
+    },
+    {
+      "description": "Read one trace (Tempo) by id: services involved, errors with exception messages, the slowest spans and the call tree.",
+      "executes": true,
+      "input": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "traceId": {
+            "description": "Trace id from traces_search or the user",
+            "pattern": "^[0-9a-fA-F]{16,32}$",
+            "type": "string",
+          },
+        },
+        "required": [
+          "traceId",
+        ],
+        "type": "object",
+      },
+      "name": "trace_get",
+      "scoped": true,
+    },
+    {
+      "description": "Call one read-only tool on the team's Grafana (MCP). Pass {tool, arguments}. Use it for Loki logs, Prometheus metrics, dashboards, alert rules and incidents; most query tools need a datasourceUid: get it from list_datasources first.
+Tools (* = required):
+- list_datasources(type: string): List the data sources.
+- query_prometheus(datasourceUid*: string, expr*: string): Run a PromQL query.",
+      "executes": true,
+      "input": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "arguments": {
+            "additionalProperties": {},
+            "description": "The tool's arguments as an object",
+            "type": "object",
+          },
+          "tool": {
+            "description": "Grafana MCP tool name from the list",
+            "pattern": "^[a-z][a-z0-9_]{1,63}$",
+            "type": "string",
+          },
+        },
+        "required": [
+          "tool",
+        ],
+        "type": "object",
+      },
+      "name": "grafana",
+      "scoped": true,
+    },
+  ],
+}
+`;
+
+exports[`what one agent call offers the model > with a Grafana MCP server that does not answer 1`] = `
+{
+  "approvalTools": [
+    "bash",
+    "kubectl",
+  ],
+  "grafanaDescription": "Call a read-only tool on the Grafana MCP server (Loki logs, Prometheus metrics, dashboards, alerts).",
+  "observabilityPrompt": "## Grafana
+The Grafana MCP server is configured but unreachable right now (Cannot reach the Grafana MCP server at <dead-mcp-url>: fetch failed). Say so if the user asks for Grafana data.",
+  "offered": [
+    "k8s_list",
+    "k8s_describe",
+    "k8s_logs",
+    "kubectl",
+    "bash",
+    "monitor_logs",
+    "ask_human",
+    "present_dashboard",
+  ],
+  "scopedTools": [
+    "bash",
+    "grafana",
+    "k8s_describe",
+    "k8s_list",
+    "k8s_logs",
+    "kubectl",
+    "logs_search",
+    "monitor_logs",
+    "trace_get",
+    "traces_search",
+    "traces_stats",
+  ],
+  "toolNames": [
+    "k8s_list",
+    "k8s_describe",
+    "k8s_logs",
+    "kubectl",
+    "bash",
+    "monitor_logs",
+    "ask_human",
+    "present_dashboard",
+    "traces_stats",
+    "logs_search",
+    "traces_search",
+    "trace_get",
+    "grafana",
+  ],
+}
+`;
+
+exports[`what one agent call offers the model > with nothing set up 1`] = `
+{
+  "approvalTools": [
+    "bash",
+    "kubectl",
+  ],
+  "grafanaDescription": "Call a read-only tool on the Grafana MCP server (Loki logs, Prometheus metrics, dashboards, alerts).",
+  "observabilityPrompt": "",
+  "offered": [
+    "k8s_list",
+    "k8s_describe",
+    "k8s_logs",
+    "kubectl",
+    "bash",
+    "monitor_logs",
+    "ask_human",
+    "present_dashboard",
+  ],
+  "scopedTools": [
+    "bash",
+    "grafana",
+    "k8s_describe",
+    "k8s_list",
+    "k8s_logs",
+    "kubectl",
+    "logs_search",
+    "monitor_logs",
+    "trace_get",
+    "traces_search",
+    "traces_stats",
+  ],
+  "toolNames": [
+    "k8s_list",
+    "k8s_describe",
+    "k8s_logs",
+    "kubectl",
+    "bash",
+    "monitor_logs",
+    "ask_human",
+    "present_dashboard",
+    "traces_stats",
+    "logs_search",
+    "traces_search",
+    "trace_get",
+    "grafana",
+  ],
+}
+`;

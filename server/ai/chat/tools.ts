@@ -28,8 +28,7 @@ import {
   recordCall,
   truncate,
 } from "./kubectl";
-import { observabilityTools } from "./observability-tools";
-import { kubeScopeSchema, type KubeScope } from "./scope";
+import { kubeScopeSchema, registerTools, type KubeScope } from "../tools";
 
 export const dashboardSchema = z.object({
   title: z.string().describe("Short board title, e.g. 'Namespace health'"),
@@ -108,7 +107,7 @@ const labelSelector = z
   .regex(/^[\w.\-\/:,=!() ]+$/, "labelSelector may only contain letters, digits and . - _ / : , = ! ( ) and spaces");
 
 
-export { kubeScopeSchema, type KubeScope } from "./scope";
+export { kubeScopeSchema, type KubeScope } from "../tools";
 
 const BLOCKED_REASON =
   "Blocked: this command is destructive or outside what the assistant may run. Use the KubeDeck UI or run it yourself.";
@@ -191,7 +190,7 @@ function shellQuote(s: string): string {
 }
 
 /**
- * The agent's tools. Cluster tools receive the request's scope as `context` (see `kubeScopeSchema`);
+ * The agent's Kubernetes tools (registered below). Cluster tools receive the request's scope as `context` (see `kubeScopeSchema`);
  * whether a command may run is decided by `kubeToolApproval`, not inside the tools.
  * `ask_human` has no `execute`: the client shows the question and sends the answer back as its output.
  */
@@ -360,20 +359,20 @@ export const kubeTools = {
     // the input is the payload the client renders; echo it back as the result
     execute: async (input) => JSON.stringify(input),
   }),
-
-  // traces (Tempo) and the Grafana MCP server; switched on per request by observabilityForCall
-  ...observabilityTools,
 };
 
 export type KubeTools = typeof kubeTools;
 
-/** Names of the tools that need the cluster scope as their context. */
-const SCOPED_TOOLS = [
-  "k8s_list", "k8s_describe", "k8s_logs", "kubectl", "bash", "monitor_logs",
-  "traces_stats", "traces_search", "trace_get", "logs_search", "grafana",
-] as const;
-
-/** The per-tool context map for one request: every cluster tool gets the same scope. */
-export function kubeToolsContext(scope: KubeScope) {
-  return Object.fromEntries(SCOPED_TOOLS.map((name) => [name, scope])) as Record<(typeof SCOPED_TOOLS)[number], KubeScope>;
-}
+// Always on: the assistant's own tools need nothing set up.
+registerTools("kubernetes", {
+  tools: {
+    k8s_list: { tool: kubeTools.k8s_list, scoped: true },
+    k8s_describe: { tool: kubeTools.k8s_describe, scoped: true },
+    k8s_logs: { tool: kubeTools.k8s_logs, scoped: true },
+    kubectl: { tool: kubeTools.kubectl, scoped: true, risk: "change", approval: kubeToolApproval.kubectl },
+    bash: { tool: kubeTools.bash, scoped: true, risk: "change", approval: kubeToolApproval.bash },
+    monitor_logs: { tool: kubeTools.monitor_logs, scoped: true },
+    ask_human: { tool: kubeTools.ask_human },
+    present_dashboard: { tool: kubeTools.present_dashboard },
+  },
+});
