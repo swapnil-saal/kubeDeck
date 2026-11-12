@@ -1,8 +1,7 @@
 import { StatusBadge } from "./StatusBadge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Search, AlertTriangle, ShieldOff, Columns3, RotateCcw, Inbox, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
-import { useState, useMemo, useEffect, useCallback, useRef } from "react";
-import { m as motion } from "framer-motion";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { K8sError } from "@/hooks/use-k8s";
 import { cycleSort, loadSort, saveSort, sortRows, type SortState } from "@/lib/table-sort";
@@ -60,7 +59,7 @@ const ROW_PAGE = 200;
 
 /**
  * A key per row that survives refetches, sorting and filtering: namespace/name, with a counter only
- * for the rare repeat. Keys that change make React remount the row, which replays its fade-in.
+ * for the rare repeat. Keys that change would make React remount the row.
  */
 export function rowKeys(rows: { name: string; namespace?: string }[]): string[] {
   const seen = new Map<string, number>();
@@ -136,19 +135,6 @@ function useHeldWhileLoading<T>(data: T[] | undefined, loading: boolean) {
   const stale = !data && loading && !!lastData;
   const shownData = stale ? lastData : data;
   return { shownData, stale, isLoading: loading && !shownData };
-}
-
-/**
- * True until the table first has rows: they fade in then, and rows that arrive later (a refetch,
- * a new scope, a sort or filter) just appear, so the list never re-animates under the reader.
- */
-function useFirstFill(hasRows: boolean): boolean {
-  const filled = useRef(false);
-  const before = !filled.current;
-  useEffect(() => {
-    if (hasRows) filled.current = true;
-  }, [hasRows]);
-  return before;
 }
 
 /**
@@ -264,7 +250,6 @@ export function ResourceTable<T extends { name: string; namespace?: string; stat
   const shownRows = filteredData?.slice(0, rowLimit);
   const moreRows = (filteredData?.length ?? 0) - (shownRows?.length ?? 0);
   const keys = useMemo(() => rowKeys(shownRows ?? []), [shownRows]);
-  const fadeIn = useFirstFill(shownRows !== undefined);
   const skeletonCols = skeletonColumnIds(visibleCols);
 
   return (
@@ -413,7 +398,7 @@ export function ResourceTable<T extends { name: string; namespace?: string; stat
                 })}
               </tr>
             </thead>
-            <tbody aria-busy={loading || undefined} className={`transition-opacity duration-150 ${stale ? "opacity-50" : ""}`}>
+            <tbody aria-busy={loading || undefined} className={stale ? "opacity-50" : undefined}>
               {isLoading ? (
                 Array.from({ length: 8 }).map((_, i) => (
                   <tr key={i} className="border-b border-border/50">
@@ -443,13 +428,7 @@ export function ResourceTable<T extends { name: string; namespace?: string; stat
                 </tr>
               ) : (
                 shownRows?.map((item, i) => (
-                  <motion.tr
-                    key={keys[i]}
-                    initial={fadeIn ? { opacity: 0 } : false}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: Math.min(i * 0.01, 0.3), duration: 0.15 }}
-                    className="group border-b border-border/50 hover:bg-primary/[0.03] transition-colors cursor-default"
-                  >
+                  <tr key={keys[i]} className="group cursor-default border-b border-border/50 hover:bg-primary/[0.03]">
                     {visibleCols.map(({ col, id }) => (
                       <td
                         key={id}
@@ -466,7 +445,7 @@ export function ResourceTable<T extends { name: string; namespace?: string; stat
                         </div>
                       </td>
                     ))}
-                  </motion.tr>
+                  </tr>
                 ))
               )}
             </tbody>
