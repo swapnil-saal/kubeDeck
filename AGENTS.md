@@ -29,7 +29,7 @@ Web mode locally: `KUBEDECK_MODE=web KUBEDECK_PUBLIC_URL=http://localhost:5051 K
   `~/.kubedeck/kubedeck.db`, under one local user who never signs in), `db/` the database,
   `auth/` web mode's sign-in (Better Auth, loaded only in web mode), `map.ts` the namespace graph, `tempo.ts` +
   `traces-routes.ts` traces from Grafana Tempo, `loki.ts` log history, `grafana-mcp.ts` the Grafana MCP client (read tools
-  only), `ai/` the assistant (AI SDK agent, tools, prompts). Web mode's sign-in lives in
+  only), `ai/` the assistant (AI SDK agent, prompts; `ai/tools/` is the tool registry: each module calls `registerTools(owner, …)` with its tools, their risk and a per-call `forCall` for availability, descriptions and prompt sections; the agent only reads the registry). Web mode's sign-in lives in
   `auth/` (the only code that knows Better Auth; admin routes validate groups), `db/` is the database (Kysely: SQLite via
   `node:sqlite`, or Postgres; each module owns its tables, migrations in `db/migrations.ts`), `audit/` the audit log.
   The desktop app never loads `auth/` or `db/` (dynamic imports only).
