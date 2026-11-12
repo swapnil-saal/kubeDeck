@@ -54,6 +54,8 @@ describe("describeAudit", () => {
     expect(say("PUT", "/api/plugins/tempo")).toBe("Changed plugin tempo");
     expect(say("DELETE", "/api/plugins/mcp-runbooks")).toBe("Removed plugin mcp-runbooks");
     expect(say("POST", "/api/plugins/loki/test")).toBe("Tested plugin loki");
+    expect(say("PUT", "/api/plugins/ai")).toBe("Changed the AI provider");
+    expect(say("POST", "/api/plugins/ai/test")).toBe("Tested the AI provider");
     expect(say("PUT", "/api/settings")).toBe("Changed KubeDeck's settings");
   });
 

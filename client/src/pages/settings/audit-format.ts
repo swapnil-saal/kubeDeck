@@ -51,6 +51,9 @@ function userAction(method: string, rest: string[], emailOf?: EmailOf): AuditAct
 function pluginAction(method: string, rest: string[]): AuditAction | null {
   const [id, sub] = rest.map(decode);
   if (!id) return method === "POST" ? { lead: "Added a plugin" } : null;
+  // the AI provider is kept as the "ai" plugin, but people know it as the AI settings
+  if (id === "ai" && !sub && (method === "PUT" || method === "PATCH")) return { lead: "Changed the AI provider" };
+  if (id === "ai" && sub === "test") return { lead: "Tested the AI provider" };
   if (sub === "test") return { lead: "Tested plugin", target: id };
   if (sub) return null;
   if (method === "PUT" || method === "PATCH") return { lead: "Changed plugin", target: id };
