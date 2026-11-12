@@ -163,6 +163,6 @@ kubectl -n kubedeck rollout status deploy/kubedeck
 
 ## What has and has not been tested
 
-Tested: sign-in, admin-only user management, group changes, blocking and the audit log end to end over HTTP with a real SQLite database; impersonation against a real kind cluster (a `shop-viewers` user reads `shop` only, a `shop-editors` user can scale there); the production bundle runs with SQLite; the manifest parses.
+Tested: sign-in, admin-only user management, group changes, blocking and the audit log end to end over HTTP, against both SQLite and Postgres 17; the production bundle running against each; the image deployed with this manifest to a kind cluster (Kubernetes 1.31): the pod runs as uid 1000, keeps the database on its volume across restarts (accounts, sessions and the audit log survive), and with a service account that may only impersonate, a person in no group sees nothing, a `shop-viewers` person reads `shop` only and cannot scale there.
 
-**Not yet tested end to end:** a deployment of the image on a cluster with the volume, and Postgres. Check the first deploy against step 6.
+**Not yet tested end to end:** Postgres with several replicas behind an ingress, and the published multi-arch image of this version (it is not released yet).
