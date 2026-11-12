@@ -106,13 +106,3 @@ export function useTrace(traceId: string | null, context: string) {
     retry: false,
   });
 }
-
-export function useTempoClusters(enabled: boolean) {
-  return useQuery({
-    queryKey: [tracesPaths.clusters],
-    queryFn: () => getJson<{ clusters: string[] }>(tracesPaths.clusters, {}),
-    enabled,
-    staleTime: 5 * 60_000,
-    retry: false,
-  });
-}

@@ -13,3 +13,7 @@ export async function requestJson<T>(method: string, url: string, body?: unknown
   if (!res.ok) throw new Error((data as { message?: string }).message || `HTTP ${res.status}`);
   return data as T;
 }
+
+/** A query function: GET `url` and check the answer against `schema`. */
+export const getParsed = <T>(schema: { parse: (data: unknown) => T }, url: string) => async (): Promise<T> =>
+  schema.parse(await requestJson("GET", url));
