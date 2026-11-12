@@ -9,6 +9,7 @@ import { useRemovePlugin, useUpdatePlugin } from "@/hooks/use-plugins";
 import { cn } from "@/lib/utils";
 import { InlineConfirm } from "../InlineConfirm";
 import { PluginForm } from "./PluginForm";
+import { pluginIcon } from "./plugin-icons";
 import { StatusLine, StatusPill } from "./PluginStatus";
 
 const TOOLS_SHOWN = 10;
@@ -19,14 +20,15 @@ function Provides({ provides }: { provides: PluginInfo["provides"] }) {
   if (!tools.length && !features.length) return null;
   const shown = all ? tools : tools.slice(0, TOOLS_SHOWN);
   return (
-    <div className="mt-2 space-y-1.5">
+    <div className="mt-2.5 space-y-1.5">
       {features.length > 0 && <p className="text-xs text-foreground/80"><span className="text-muted-foreground">Adds </span>{features.join(", ")}</p>}
       {tools.length > 0 && (
         <ul aria-label="Assistant tools" className="flex flex-wrap items-center gap-1">
+          <li aria-hidden className="mr-0.5 text-[11px] text-muted-foreground">Tools</li>
           {shown.map((t) => <li key={t} className="rounded-md border border-border bg-secondary/50 px-1.5 py-0.5 font-mono text-[11px]">{t}</li>)}
           {tools.length > TOOLS_SHOWN && (
             <li>
-              <button type="button" onClick={() => setAll((v) => !v)} className="px-1 text-[11px] font-medium text-primary hover:underline">
+              <button type="button" onClick={() => setAll((v) => !v)} className="rounded px-1 text-[11px] font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                 {all ? "Show fewer" : `+${tools.length - TOOLS_SHOWN} more`}
               </button>
             </li>
@@ -98,22 +100,33 @@ function RowActions({ plugin, open, onToggle }: { plugin: PluginInfo; open: bool
 export function PluginRow({ plugin, canManage, open, onToggle }: { plugin: PluginInfo; canManage: boolean; open: boolean; onToggle: () => void }) {
   const { status } = plugin;
   const problem = (status.state === "error" || status.state === "unconfigured") && status.message;
+  const Icon = pluginIcon(plugin);
+  const live = plugin.enabled && status.state === "ok";
   return (
-    <li className="py-4 first:pt-0 last:pb-0">
+    <li aria-label={plugin.name} className="rounded-xl border border-border bg-card p-4">
       <div className="flex items-start gap-3">
+        <span
+          aria-hidden
+          className={cn(
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+            live ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground",
+          )}
+        >
+          <Icon className="h-[18px] w-[18px]" />
+        </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <h3 className="text-sm font-semibold">{plugin.name}</h3>
+            <h4 className="text-sm font-semibold">{plugin.name}</h4>
             <StatusPill status={status} connects={plugin.fields.length > 0} />
           </div>
-          <p className="mt-0.5 text-xs text-muted-foreground">{plugin.description}</p>
-          {problem && <div className="mt-1.5"><StatusLine status={status} /></div>}
+          <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{plugin.description}</p>
+          {problem && <div className="mt-2"><StatusLine status={status} /></div>}
           <Provides provides={plugin.provides} />
+          {canManage && <RowActions plugin={plugin} open={open} onToggle={onToggle} />}
         </div>
         {canManage && <EnabledSwitch plugin={plugin} />}
       </div>
-      {canManage && <RowActions plugin={plugin} open={open} onToggle={onToggle} />}
-      {canManage && open && <div className="mt-3"><PluginForm plugin={plugin} /></div>}
+      {canManage && open && <div className="mt-4 border-t border-border/60 pt-4"><PluginForm plugin={plugin} /></div>}
     </li>
   );
 }

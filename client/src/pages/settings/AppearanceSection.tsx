@@ -118,8 +118,6 @@ export function AppearanceSection() {
       <SettingsCard title="Light palette" description="Used whenever KubeDeck is light.">
         <PaletteGrid mode="light" selected={palettes.light} onSelect={(id) => palettes.choose("light", id)} />
       </SettingsCard>
-
-      <p className="px-1 text-xs text-muted-foreground">Appearance is saved in this browser only.</p>
     </div>
   );
 }

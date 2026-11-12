@@ -21,9 +21,9 @@ export function AboutSection() {
   const mode = useServerMode();
   return (
     <div className="space-y-6">
-      <SettingsCard title="About KubeDeck">
+      <SettingsCard>
         <KubeDeckLogo size="xl" />
-        <div className="mt-3 divide-y divide-border/60">
+        <div className="mt-4 divide-y divide-border/60">
           <Row label="Version"><span className="font-mono tabular-nums">{__APP_VERSION__}</span></Row>
           <Row label="Running as">{mode.mode === "web" ? `shared web service${mode.readOnly ? " (read-only)" : ""}` : "desktop app"}</Row>
           {mode.mode === "web" && (
