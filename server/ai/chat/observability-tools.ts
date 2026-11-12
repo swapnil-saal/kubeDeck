@@ -11,7 +11,7 @@ import { getObservability } from "../../settings";
 import { logQuery, lokiConfigured, queryLogs } from "../../loki";
 import { getTrace, groupStats, searchQuery, searchTraces, tempoConfigured, TempoError, type TraceScope } from "../../tempo";
 import { mayReadNamespace, resolveCluster } from "../../traces-routes";
-import { kubeScopeSchema, type KubeScope } from "./scope";
+import { kubeScopeSchema, registerTools, type KubeScope, type ToolsetCall } from "../tools";
 
 const name = z.string().regex(/^[\w.\-]+$/, "a plain name");
 const fmtMs = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(ms >= 10_000 ? 0 : 1)}s` : `${ms < 10 ? ms.toFixed(1) : Math.round(ms)}ms`);
@@ -238,7 +238,7 @@ export const observabilityTools = {
   }),
 
   grafana: tool({
-    // replaced per request with the tools the server actually offers (see grafanaToolDescription)
+    // replaced per request with the tools the server actually offers (see observabilityForCall)
     description: "Call a read-only tool on the Grafana MCP server (Loki logs, Prometheus metrics, dashboards, alerts).",
     inputSchema: z.object({
       tool: z.string().regex(/^[a-z][a-z0-9_]{1,63}$/).describe("Grafana MCP tool name from the list"),
@@ -261,11 +261,11 @@ export const observabilityTools = {
 export const TRACE_TOOL_NAMES = ["traces_stats", "traces_search", "trace_get"] as const;
 
 /**
- * What this request can use: trace tools when Tempo is set up, `grafana` when its MCP server answers,
- * plus the `grafana` description listing the server's read tools. Never slows a chat by more than the
- * MCP connect timeout; an unreachable server just leaves the tool out.
+ * What this request can use: trace tools when Tempo is set up, `logs_search` when Loki is, `grafana`
+ * when its MCP server answers, plus the `grafana` description listing the server's read tools. Never
+ * slows a chat by more than the MCP connect timeout; an unreachable server just leaves the tool out.
  */
-export async function observabilityForCall(): Promise<{ active: string[]; grafanaDescription: string | null; prompt: string }> {
+async function observabilityForCall(): Promise<ToolsetCall> {
   const o = getObservability();
   const active: string[] = [];
   const prompt: string[] = [];
@@ -289,13 +289,13 @@ export async function observabilityForCall(): Promise<{ active: string[]; grafan
       "logs_search reads up to 7 days of logs, including pods that are gone. Prefer it over k8s_logs for errors in the past, crashed or replaced pods, and lines around a trace (around=<ISO time>). errorsOnly finds exceptions fast.",
     );
   }
-  let grafanaDescription: string | null = null;
+  const descriptions: Record<string, string> = {};
   if (grafanaMcpConfigured(o)) {
     try {
       const tools = await grafanaTools(o);
       if (tools.length) {
         active.push("grafana");
-        grafanaDescription =
+        descriptions.grafana =
           "Call one read-only tool on the team's Grafana (MCP). Pass {tool, arguments}. Use it for Loki logs, Prometheus metrics, " +
           "dashboards, alert rules and incidents; most query tools need a datasourceUid: get it from list_datasources first.\nTools (* = required):\n" +
           describeCatalog(tools);
@@ -309,5 +309,17 @@ export async function observabilityForCall(): Promise<{ active: string[]; grafan
       prompt.push("## Grafana", `The Grafana MCP server is configured but unreachable right now (${err instanceof Error ? err.message : String(err)}). Say so if the user asks for Grafana data.`);
     }
   }
-  return { active, grafanaDescription, prompt: prompt.join("\n") };
+  return { active, descriptions, prompt: prompt.join("\n") };
 }
+
+// Switched on per request: settings change, and the MCP server may be down.
+registerTools("observability", {
+  tools: {
+    traces_stats: { tool: observabilityTools.traces_stats, scoped: true },
+    logs_search: { tool: observabilityTools.logs_search, scoped: true },
+    traces_search: { tool: observabilityTools.traces_search, scoped: true },
+    trace_get: { tool: observabilityTools.trace_get, scoped: true },
+    grafana: { tool: observabilityTools.grafana, scoped: true },
+  },
+  forCall: () => observabilityForCall(),
+});

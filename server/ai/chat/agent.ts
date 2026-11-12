@@ -13,11 +13,11 @@ import { formatProviderError } from "../errors";
 import { defaultMaxOutputTokens, getLanguageModel } from "../provider";
 import { describeAccessLimits, resetAgentCallGuards } from "./kubectl";
 import { buildSystemPrompt, parseAgentMode } from "./prompts";
-import { observabilityForCall } from "./observability-tools";
-import { kubeScopeSchema, kubeToolApproval, kubeTools, kubeToolsContext } from "./tools";
-
-/** Tools every request has; trace and Grafana tools are added when they are set up. */
-const BASE_TOOLS = ["k8s_list", "k8s_describe", "k8s_logs", "kubectl", "bash", "monitor_logs", "ask_human", "present_dashboard"] as const;
+import { allTools, kubeScopeSchema, toolsForCall } from "../tools";
+// The modules with assistant tools. Each registers its tools when imported; their order is the order
+// the model sees the tools and the prompt sections in.
+import "./tools";
+import "./observability-tools";
 
 /** Hard backstop against tool-call loops (the discovery budget is enforced in kubectl.ts). */
 const MAX_STEPS = 14;
@@ -42,19 +42,17 @@ function createKubeAgent(model: LanguageModel) {
   return new ToolLoopAgent({
     id: "kubedeck",
     model,
-    tools: kubeTools,
-    // the real scope arrives with each request (prepareCall); this default is never used for a call
-    toolsContext: kubeToolsContext({ context: "", namespace: "", threadId: "", user: "" }),
+    // tools, their scope and approvals are set per request (prepareCall)
+    tools: allTools(),
     callOptionsSchema: agentCallOptionsSchema,
-    toolApproval: kubeToolApproval,
     experimental_toolApprovalSecret: APPROVAL_SECRET,
     stopWhen: isStepCount(MAX_STEPS),
     temperature: 0.25,
-    // Settings can change between requests, so the model and prompt are resolved per call.
-    // Tracing and Grafana are switched on per call: settings change, and the MCP server may be down.
+    // Settings can change between requests, so the model and prompt are resolved per call,
+    // and the registry decides per call which tools are on (a source may be unset or down).
     prepareCall: async ({ options, ...settings }) => {
       const { model: current, provider } = getLanguageModel();
-      const obs = await observabilityForCall();
+      const call = await toolsForCall({ scope: options.scope });
       return {
         ...settings,
         model: current,
@@ -64,11 +62,12 @@ function createKubeAgent(model: LanguageModel) {
           parseAgentMode(options.mode),
           describeAccessLimits(options.scope.threadId),
           options.scope,
-          obs.prompt,
+          call.promptSections.join("\n\n"),
         ),
-        tools: (obs.grafanaDescription ? { ...kubeTools, grafana: { ...kubeTools.grafana, description: obs.grafanaDescription } } : kubeTools) as typeof kubeTools,
-        activeTools: [...BASE_TOOLS, ...obs.active] as (keyof typeof kubeTools)[],
-        toolsContext: kubeToolsContext(options.scope),
+        tools: call.tools,
+        activeTools: call.activeTools,
+        toolsContext: call.toolsContext,
+        toolApproval: call.toolApproval,
       };
     },
   });
@@ -112,7 +111,8 @@ export async function streamKubeAgent(
   abortSignal: AbortSignal,
 ): Promise<void> {
   const kubeAgent = getKubeAgent();
-  const uiMessages = await validateUIMessages<KubeAgentUIMessage>({ messages, tools: kubeAgent.tools });
+  // every registered tool, including ones registered after the agent was built
+  const uiMessages = await validateUIMessages<KubeAgentUIMessage>({ messages, tools: allTools() });
 
   logApprovalResponses(uiMessages, options.scope.threadId, options.scope.user);
 
