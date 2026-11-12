@@ -1,5 +1,5 @@
 /**
- * MCP servers an admin adds under Settings → Plugins. Each one becomes one assistant tool,
+ * MCP servers an admin adds under Settings → MCP servers. Each one becomes one assistant tool,
  * `mcp_<name>`, that forwards to the server's tools: read-only ones by default; with "Allow changes"
  * the others too, each call waiting for the person's approval in the chat. Remote servers only
  * (Streamable HTTP or SSE): KubeDeck never starts a local (stdio) server, which would run arbitrary
@@ -7,9 +7,9 @@
  */
 import type { PluginValues } from "@shared/plugins";
 import { definePluginKind, type PluginDefinition } from "../plugins";
-import { describeCatalog } from "./hub";
+import { describeCatalog, type McpTool } from "./hub";
 import { isReadTool } from "./read-only";
-import { kubeDeckReadOnly, startMcpToolset, type McpCatalog } from "./toolset";
+import { kubeDeckReadOnly, startMcpToolset, type McpCatalog, type McpToolsetOptions } from "./toolset";
 
 /**
  * The assistant's tool for an added server: "mcp-github-tools" → "mcp_github_tools". Plugin ids are
@@ -43,6 +43,23 @@ function describe(name: string, c: McpCatalog): string {
   return lines.filter(Boolean).join("\n");
 }
 
+/**
+ * What the assistant may do with a server's tools: read ones run, others need "Allow changes" (and a
+ * KubeDeck that is not read-only), and an "Only these tools" list leaves out the rest; with the reason
+ * the settings page shows for each tool left out.
+ */
+function accessRule(s: ReturnType<typeof serverSettings>): Pick<McpToolsetOptions, "classify" | "hiddenReason" | "changes"> {
+  const allowed = s.tools.length ? new Set(s.tools) : null;
+  const changes = s.allowChanges && !kubeDeckReadOnly();
+  const listed = (t: McpTool) => !allowed || allowed.has(t.name);
+  return {
+    changes,
+    classify: (t) => (!listed(t) ? null : isReadTool(t) ? "read" : changes ? "change" : null),
+    hiddenReason: (t) => !listed(t) ? "Not in this server's “Only these tools” list."
+      : s.allowChanges ? "It may change things, and this KubeDeck is read-only." : "It may change things, and Allow changes is off.",
+  };
+}
+
 function definition({ id, name }: { id: string; name: string }): PluginDefinition {
   const toolName = mcpToolName(id);
   return {
@@ -54,14 +71,14 @@ function definition({ id, name }: { id: string; name: string }): PluginDefinitio
     fields: [
       { key: "url", label: "Server URL", kind: "url", required: true, placeholder: "https://mcp.example.com/mcp", help: "The server's remote endpoint. Local (stdio) servers are not supported." },
       {
-        key: "transport", label: "Transport", kind: "select",
+        key: "transport", label: "Transport", kind: "select", default: "http",
         options: [{ value: "http", label: "Streamable HTTP" }, { value: "sse", label: "SSE (older servers)" }],
         help: "Streamable HTTP unless the server only speaks the older SSE transport.",
       },
       { key: "token", label: "Token", kind: "secret", help: "Sent as Authorization: Bearer <token>." },
       { key: "headers", label: "Extra headers", kind: "map", help: "Sent with every request. Not secret: put credentials in Token." },
       {
-        key: "allowChanges", label: "Allow changes", kind: "boolean",
+        key: "allowChanges", label: "Allow changes", kind: "boolean", default: false,
         help: "Off: only tools that read. On: other tools too, and every call of one waits for the person's approval in the chat.",
       },
       { key: "tools", label: "Only these tools", kind: "list", help: "Tool names; empty allows every tool the read/change rule allows." },
@@ -71,19 +88,13 @@ function definition({ id, name }: { id: string; name: string }): PluginDefinitio
     validate: (v) => (/^https?:\/\/\S+$/.test(serverSettings(v).url) ? [] : ["Set the server's URL (http or https)."]),
     start(ctx) {
       const s = serverSettings(ctx.values);
-      const allowed = s.tools.length ? new Set(s.tools) : null;
-      const changes = s.allowChanges && !kubeDeckReadOnly();
+      const access = accessRule(s);
       return startMcpToolset({
         owner: `mcp:${id}`,
         toolName,
         source: name,
         target: { url: s.url, transport: s.transport, token: s.token, headers: s.headers, label: `the MCP server "${name}"` },
-        classify: (t) => {
-          if (allowed && !allowed.has(t.name)) return null;
-          if (isReadTool(t)) return "read";
-          return changes ? "change" : null;
-        },
-        changes,
+        ...access,
         description: `Call a tool on the MCP server "${name}".`,
         namePattern: /^[A-Za-z][\w.\-/]{0,127}$/,
         nameHint: `Tool name from the list of "${name}"`,

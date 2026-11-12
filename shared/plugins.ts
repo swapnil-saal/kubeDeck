@@ -35,6 +35,8 @@ export const pluginFieldSchema = z.object({
   placeholder: z.string().optional(),
   help: z.string().optional(),
   options: z.array(z.object({ value: z.string(), label: z.string() })).optional(),
+  /** the value when nothing is saved or pinned (not for secrets); the manager fills it in, so the plugin and its form agree */
+  default: fieldValueSchema.optional(),
 });
 export type PluginField = z.input<typeof pluginFieldSchema>;
 
@@ -46,6 +48,20 @@ export const pluginStatusSchema = z.object({
   detail: z.string().optional(),
 });
 export type PluginStatus = z.infer<typeof pluginStatusSchema>;
+
+/**
+ * One tool of a tool server (an MCP server) as the assistant gets it. read: runs straight away;
+ * approval: offered, and every call waits for the person's approval in the chat; hidden: not offered
+ * (it may change things while "Allow changes" is off, or it is not in the "Only these tools" list).
+ */
+export const pluginToolSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  access: z.enum(["read", "approval", "hidden"]),
+  /** why a hidden tool is not offered, in a sentence */
+  reason: z.string().optional(),
+});
+export type PluginTool = z.infer<typeof pluginToolSchema>;
 
 export const pluginInfoSchema = z.object({
   id: z.string(),
@@ -69,6 +85,12 @@ export const pluginInfoSchema = z.object({
   status: pluginStatusSchema,
   /** what it adds: assistant tools by name, and app features */
   provides: z.object({ tools: z.array(z.string()), features: z.array(z.string()) }),
+  /**
+   * A running tool server's tools as it last listed them, sorted by name; absent before it first
+   * answered, while it is off, or for a plugin that is not a tool server. Sent to everyone who sees the
+   * page: names and access rules are not secret, and every call stays gated by groups and approval.
+   */
+  catalog: z.array(pluginToolSchema).optional(),
 });
 export type PluginInfo = z.infer<typeof pluginInfoSchema>;
 

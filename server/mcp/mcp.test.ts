@@ -10,6 +10,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { toolsForCall, type ToolsForCall } from "../ai/tools";
 import { bindIdentity, setImpersonation } from "../identity";
 import { createPlugin, listPlugins, memoryStore, pluginState, removePlugin, startPlugins, stopPlugins, testPlugin, updatePlugin } from "../plugins";
+import type { PluginInfo } from "@shared/plugins";
 import { loadWebConfig, setWebConfig, type WebUser } from "../web-mode";
 import { grafanaMcpStatus, mcpToolName } from "./index";
 
@@ -109,6 +110,50 @@ describe("an added MCP server", () => {
     await removePlugin(added.id, "admin");
     const after = await toolsForCall({ scope });
     expect(Object.keys(after.tools)).not.toContain("mcp_docs_server");
+  });
+
+  it("starts from its fields' defaults (HTTP, no changes), which the page gets filled in and a save overrides", async () => {
+    const added = await createPlugin("mcp", "Docs", { url }, "admin");
+    expect(added.values).toMatchObject({ url, transport: "http", allowChanges: false });
+    expect(added.fields.find((f) => f.key === "transport")).toMatchObject({ default: "http" });
+    expect(pluginState(added.id).values).toMatchObject({ transport: "http", allowChanges: false });
+    expect(added.values).not.toHaveProperty("token"); // a secret has no default
+    const changed = await updatePlugin(added.id, { values: { transport: "sse" } }, "admin");
+    expect(changed.values.transport).toBe("sse");
+  });
+
+  it("lists its tools with their access for the settings page, to everyone, without asking the server again", async () => {
+    const added = await createPlugin("mcp", "Docs", { url }, "admin");
+    const access = (catalog: PluginInfo["catalog"]) => Object.fromEntries((catalog ?? []).map((t) => [t.name, t.access]));
+    expect(access(added.catalog)).toEqual({
+      delete_doc: "hidden", get_doc: "read", list_datasources: "read", listDocs: "read", summarize: "read", update_dashboard: "hidden",
+    });
+    expect(added.catalog?.map((t) => t.name)).toEqual(["delete_doc", "get_doc", "list_datasources", "listDocs", "summarize", "update_dashboard"]);
+    expect(added.catalog?.find((t) => t.name === "get_doc")).toEqual({ name: "get_doc", description: "Read one document.", access: "read" });
+    expect(added.catalog?.find((t) => t.name === "delete_doc")).toMatchObject({ access: "hidden", reason: "It may change things, and Allow changes is off." });
+
+    // someone who may not manage plugins sees the tools too, but no settings
+    const asked = seen.headers.length;
+    const [forUser] = (await listPlugins(false)).filter((p) => p.id === added.id);
+    expect(forUser.values).toEqual({});
+    expect(access(forUser.catalog)).toEqual(access(added.catalog));
+    expect(seen.headers.length).toBe(asked); // the catalog comes from the cache
+
+    const open = await updatePlugin(added.id, { values: { allowChanges: true, tools: ["get_doc", "delete_doc"] } }, "admin");
+    expect(access(open.catalog)).toMatchObject({ get_doc: "read", delete_doc: "approval", listDocs: "hidden" });
+    expect(open.catalog?.find((t) => t.name === "listDocs")?.reason).toBe("Not in this server's “Only these tools” list.");
+
+    webMode({ KUBEDECK_READ_ONLY: "true" });
+    const ro = await updatePlugin(added.id, { values: { tools: [] } }, "admin");
+    expect(ro.catalog?.find((t) => t.name === "delete_doc")).toMatchObject({ access: "hidden", reason: "It may change things, and this KubeDeck is read-only." });
+
+    const off = await updatePlugin(added.id, { enabled: false }, "admin");
+    expect(off.catalog).toBeUndefined();
+  });
+
+  it("has no catalog before the server ever answered", async () => {
+    const added = await createPlugin("mcp", "Gone", { url: deadUrl }, "admin");
+    expect(added.catalog).toBeUndefined();
   });
 
   it("keeps to the tools allowlist", async () => {
@@ -219,6 +264,15 @@ describe("the Grafana plugin", () => {
     expect(seen.headers.at(-1)).toMatchObject({ authorization: "Bearer g-token" });
     expect(await grafanaMcpStatus()).toMatchObject({ configured: true, ok: true, tools: expect.arrayContaining(["list_datasources", "get_doc"]) });
     expect(await run(call, "grafana", { tool: "update_dashboard" })).toMatch(/^Blocked: "update_dashboard" is not one of the Grafana tools KubeDeck may use \(read-only\)/);
+  });
+
+  it("lists Grafana's tools as read or hidden, never approval", async () => {
+    await stopPlugins();
+    await startPlugins(memoryStore(), { ...ENV, KUBEDECK_GRAFANA_MCP_URL: url });
+    const [info] = (await listPlugins(false)).filter((p) => p.id === "grafana");
+    expect(new Set(info.catalog?.map((t) => t.access))).toEqual(new Set(["read", "hidden"]));
+    expect(info.catalog?.find((t) => t.name === "list_datasources")).toMatchObject({ access: "read" });
+    expect(info.catalog?.find((t) => t.name === "update_dashboard")).toMatchObject({ access: "hidden", reason: "It may change things, and KubeDeck only reads Grafana." });
   });
 
   it("switched off, drops its tool", async () => {

@@ -3,7 +3,7 @@
  * stops them while KubeDeck runs, so switching one on in Settings needs no restart.
  *
  * A plugin's settings are, in order of strength: what the server's environment pins, what an admin
- * saved, then empty. Secret settings are encrypted at rest and never sent to the browser.
+ * saved, then the field's default (or empty). Secret settings are encrypted at rest and never sent to the browser.
  */
 import type { PluginInfo, PluginStatus, PluginUpdate, PluginValues } from "@shared/plugins";
 import { emit, type PluginChanged } from "../events";
@@ -66,11 +66,15 @@ function sealSecrets(def: PluginDefinition, values: PluginValues): PluginValues 
 
 const pinned = (def: PluginDefinition): PluginValues => def.fromEnv?.(env) ?? {};
 
-/** The settings a plugin runs with: saved, overridden by the environment. */
+/** The fields' defaults (never a secret's): what a setting is until someone saves one. */
+const defaults = (def: PluginDefinition): PluginValues =>
+  Object.fromEntries(def.fields.filter((f) => f.default !== undefined && f.kind !== "secret").map((f) => [f.key, f.default!]));
+
+/** The settings a plugin runs with: its defaults, then what was saved, overridden by the environment. */
 function effectiveValues(e: Entry): PluginValues {
   const saved = e.saved ? openSecrets(e.def, e.saved.values) : {};
   const fromEnv = Object.fromEntries(Object.entries(pinned(e.def)).filter(([, v]) => v !== "" && v !== undefined));
-  return { ...saved, ...fromEnv };
+  return { ...defaults(e.def), ...saved, ...fromEnv };
 }
 
 function isEnabled(e: Entry): boolean {
@@ -177,7 +181,21 @@ function info(e: Entry, status: PluginStatus, canManage: boolean): PluginInfo {
     envPinned: Object.entries(env).filter(([, v]) => v !== "" && v !== undefined).map(([k]) => k),
     status,
     provides: { tools: e.def.provides?.tools ?? [], features: e.def.provides?.features ?? [] },
+    // for everyone, not only managers: tool names and their access are not secret (see PluginInfo.catalog)
+    ...catalogOf(e),
   };
+}
+
+/** A running tool server's catalog, from its cache; a failing catalog() costs the page nothing. */
+function catalogOf(e: Entry): Pick<PluginInfo, "catalog"> {
+  if (!e.runtime?.catalog) return {};
+  try {
+    const catalog = e.runtime.catalog();
+    return catalog ? { catalog } : {};
+  } catch (err) {
+    console.warn(`[kubedeck] plugin ${e.def.id}: no tool catalog: ${message(err)}`);
+    return {};
+  }
 }
 
 export async function listPlugins(canManage: boolean): Promise<PluginInfo[]> {
