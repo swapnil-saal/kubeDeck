@@ -4,11 +4,8 @@ export interface ServerMode {
   mode: "desktop" | "web";
   /** a shared KubeDeck refuses scale / restart / edit / delete */
   readOnly: boolean;
-  /**
-   * web mode: "proxy" = users sign in through the login proxy; "builtin" = KubeDeck's own sign-in page;
-   * "none" = no sign-in (KUBEDECK_AUTH=none)
-   */
-  auth?: "proxy" | "builtin" | "none";
+  /** web mode: people sign in with KubeDeck's own accounts */
+  auth?: "builtin";
   /** web mode: "user" = each person's own RBAC (impersonation); "shared" = KubeDeck's service account */
   access?: "user" | "shared";
   user?: { name: string; email: string; groups?: string[]; role?: "admin" | "user" } | null;

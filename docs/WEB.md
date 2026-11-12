@@ -1,49 +1,42 @@
 # KubeDeck web mode
 
-Run KubeDeck as a shared web service behind your login (Keycloak via oauth2-proxy, or any proxy that sets identity headers) instead of as a desktop app.
+Run KubeDeck as a shared web service for a team, next to (or instead of) the desktop app. KubeDeck signs people in itself: an admin creates accounts and puts people in groups, and every action runs in the cluster **as that person**, so Kubernetes RBAC decides what each of them can see and change.
 
 ```
-browser ──HTTPS──▶ ingress ──▶ oauth2-proxy ──(127.0.0.1)──▶ KubeDeck ──▶ Kubernetes API
-                     Keycloak login ▲          X-Forwarded-User/Email/Groups     (service account)
+browser ──HTTPS──▶ ingress ──▶ KubeDeck ──kubectl --as=kubedeck:<email> --as-group=kubedeck:<group>──▶ Kubernetes API
+                   sign-in page │                                                                     RBAC decides
+                                └──▶ database (SQLite file, or Postgres): accounts, sessions, audit log
 ```
-
-KubeDeck never sees passwords. It trusts the identity headers only when the request provably came through the proxy.
 
 ## What is different from the desktop app
 
 | | Desktop | Web mode |
 |---|---|---|
-| Who is allowed | whoever is at the machine | users the proxy signed in (optionally limited to groups) |
-| Cluster identity | your kubeconfig | the server's: a service account (in a pod) or the server's `KUBECONFIG` |
-| Writes (scale, restart, edit, delete) | allowed | allowed (`KUBEDECK_READ_ONLY=true` turns them off) |
-| Browse pod files | yes | yes (`KUBEDECK_POD_FILES=off` turns it off). Only fixed read-only scripts run in the pod; the service account needs `pods/exec` |
-| AI (Ask Deck, diagnose, explain, summaries, command translation) | provider set in Settings | yes, provider set by the server's `KUBEDECK_AI_*` env (`KUBEDECK_AI=off` turns it off). Cluster data the assistant reads goes to that provider |
+| Who is allowed | whoever is at the machine | people with an account an admin created (optionally limited to groups) |
+| Cluster identity | your kubeconfig | each signed-in person, through impersonation: `kubedeck:<email>` in groups `kubedeck:<group>` |
+| Writes (scale, restart, edit, delete) | allowed | allowed where the person's RBAC allows (`KUBEDECK_READ_ONLY=true` turns them off for everyone) |
+| Browse pod files | yes | yes, where the person may `exec` (`KUBEDECK_POD_FILES=off` turns it off). Only fixed read-only scripts run in the pod |
+| AI (Ask Deck, diagnose, explain, summaries, command translation) | provider set in Settings | provider set by the server's `KUBEDECK_AI_*` env (`KUBEDECK_AI=off` turns it off). The assistant acts as the signed-in person. Cluster data it reads goes to that provider |
 | Port-forward | yes | no: the port would open inside the server, not on the user's machine |
-| Settings | edited in the app | none: configuration comes from the environment |
-| kubectl palette and assistant | any verb | no `config`, `auth`, `exec`, `cp`, `port-forward`, `proxy`, `attach`, `debug`, and no `--token/--server/--kubeconfig/--as` flags, so nobody steps outside the server's identity. The assistant's pipelines run without a shell. When read-only, both only read |
-| Audit | – | one JSON line on stdout per write (including palette and assistant requests), with the user; assistant approvals and changes are logged with the user too |
+| Settings | edited in the app | configuration comes from the environment; admins manage **Users** and read the **Audit log** |
+| kubectl palette and assistant | any verb | no `config`, `auth`, `exec`, `cp`, `port-forward`, `proxy`, `attach`, `debug`, and no `--token/--server/--kubeconfig/--as` flags, so nobody steps outside their own identity. The assistant's pipelines run without a shell. When read-only, both only read |
+| Audit | – | every change (UI, palette, assistant) in **Settings → Audit log** and as a JSON line on stdout, with the person and their groups |
+
+What a person sees follows their RBAC: kinds they may not list are left out of the sidebar, and actions they may not take are not shown.
 
 ## Settings (environment variables)
-
-What a user sees follows the cluster identity's RBAC: kinds it may not list are left out of the sidebar, and actions it may not take (edit, scale, restart, delete, exec…) are not shown at all.
-
 
 | Variable | Meaning |
 |---|---|
 | `KUBEDECK_MODE=web` | turn web mode on |
-| `KUBEDECK_PUBLIC_URL` | the URL users open, e.g. `https://kubedeck.example.com`. Requests for any other hostname are refused |
-| `KUBEDECK_PROXY_SECRET` | ≥16 chars; the proxy must send it as `X-KubeDeck-Proxy-Secret` |
-| `KUBEDECK_TRUST_PROXY_NETWORK=1` | alternative to the secret when only the proxy can reach the server (e.g. sidecar, KubeDeck on `127.0.0.1`) |
-| `KUBEDECK_ALLOWED_GROUPS` | comma list; the user must be in one (groups come from `X-Forwarded-Groups`) |
-| `KUBEDECK_ACCESS=impersonate` | **per-user permissions**: act as each signed-in user (`kubectl --as`), so their own RBAC applies. See below |
-| `KUBEDECK_IMPERSONATE_USER` | `email` (default) or `name`: which proxy header becomes the Kubernetes user name |
-| `KUBEDECK_IMPERSONATE_PREFIX` / `KUBEDECK_IMPERSONATE_GROUP_PREFIX` | prepended to user / group names, to match the API server's OIDC prefixes (e.g. `oidc:`) |
-| `KUBEDECK_AUTH=builtin` | **KubeDeck's own sign-in**: accounts and groups an admin manages, no proxy needed; each user acts with their groups' RBAC. See below |
-| `KUBEDECK_AUTH_SECRET` | builtin sign-in: ≥32 random characters that sign sessions (`openssl rand -base64 32`); keep it stable across restarts |
-| `KUBEDECK_ADMIN_EMAIL` / `KUBEDECK_ADMIN_PASSWORD` / `KUBEDECK_ADMIN_NAME` | builtin sign-in: the first admin, created at start if that email does not exist yet (an existing account is never changed) |
-| `KUBEDECK_DATABASE_URL` | builtin sign-in and the stored audit log: `sqlite:/data/kubedeck.db` (default `~/.kubedeck/kubedeck.db`; one replica, on a volume) or `postgres://user:pass@host:5432/kubedeck` (several replicas). Set it in proxy mode too to keep the audit log in a table |
+| `KUBEDECK_PUBLIC_URL` | the URL people open, e.g. `https://kubedeck.example.com`. Requests for any other hostname are refused |
+| `KUBEDECK_AUTH_SECRET` | **required**: ≥32 random characters that sign sessions (`openssl rand -base64 32`). Keep it stable: changing it signs everyone out |
+| `KUBEDECK_ADMIN_EMAIL` / `KUBEDECK_ADMIN_PASSWORD` / `KUBEDECK_ADMIN_NAME` | the first admin, created at start if that email does not exist yet (an existing account is never changed). Password ≥12 characters |
+| `KUBEDECK_DATABASE_URL` | `sqlite:/data/kubedeck.db` (default `~/.kubedeck/kubedeck.db`; one replica, on a volume) or `postgres://user:pass@host:5432/kubedeck` (several replicas) |
 | `KUBEDECK_PROXY_HOPS` | how many proxies in front of KubeDeck you trust to set `X-Forwarded-For` (e.g. `1` behind an ingress), so the sign-in rate limit and the audit log see each person's address |
-| `KUBEDECK_AUTH=none` | **no login at all**, for private test clusters: no proxy needed, everyone who reaches the URL is `anonymous`. See below |
+| `KUBEDECK_ALLOWED_GROUPS` | comma list; a person must be in one of these KubeDeck groups to use KubeDeck at all |
+| `KUBEDECK_IMPERSONATE_PREFIX` / `KUBEDECK_IMPERSONATE_GROUP_PREFIX` | prepended to user / group names sent to Kubernetes (default `kubedeck:`; the group prefix cannot be empty) |
+| `KUBEDECK_ACCESS=shared` | turns impersonation off: everyone acts as KubeDeck's own service account, whatever their groups. Avoid it |
 | `KUBEDECK_READ_ONLY` | `false` (default) or `true`: refuse every change, from the UI, the palette and the assistant |
 | `KUBEDECK_AI` | `on` (default) or `off` |
 | `KUBEDECK_POD_FILES` | `on` (default) or `off` |
@@ -60,11 +53,11 @@ What a user sees follows the cluster identity's RBAC: kinds it may not list are 
 | `HOST` | bind address (default `0.0.0.0` in web mode) |
 | `KUBECONFIG` | optional; with no kubeconfig inside a pod, KubeDeck builds one context, `in-cluster`, from the pod's service account |
 
-KubeDeck **refuses to start** in web mode unless it has a proxy secret or network-trust flag (or `KUBEDECK_AUTH=builtin` with a ≥32-character `KUBEDECK_AUTH_SECRET`, or `KUBEDECK_AUTH=none`), a public URL, and (if a proxy secret is set) one of ≥16 characters.
+KubeDeck **refuses to start** in web mode without a public URL or a ≥32-character `KUBEDECK_AUTH_SECRET`; the message says what to set.
 
-### KubeDeck's own sign-in (`KUBEDECK_AUTH=builtin`)
+## Accounts, groups and RBAC
 
-For a team without an SSO proxy. KubeDeck shows a sign-in page; an admin creates accounts and puts people in groups under **Settings → Users** (there is no self sign-up). It needs a database: a SQLite file on a small volume for one replica, Postgres for several.
+KubeDeck shows a sign-in page. There is no self sign-up: an admin adds people under **Settings → Users**, sets their password (or generates one), and puts them in groups.
 
 - **What someone may do comes from the cluster, not from KubeDeck.** Every kubectl call runs as `kubedeck:<email>` with each of their groups as `kubedeck:<group>`, so bind those groups to roles:
 
@@ -73,61 +66,37 @@ For a team without an SSO proxy. KubeDeck shows a sign-in page; an admin creates
   kubectl create clusterrolebinding kubedeck-viewers --clusterrole=view --group=kubedeck:viewers
   ```
 
-  Someone in no bound group sees nothing. Group changes apply on their next request. The `kubedeck:` prefix (change it with `KUBEDECK_IMPERSONATE_PREFIX` / `KUBEDECK_IMPERSONATE_GROUP_PREFIX`, never empty for groups) keeps a KubeDeck group from ever being a built-in one such as `system:masters`.
-- **KubeDeck's service account needs `impersonate`** on `users` and `groups` (the `kubedeck-impersonator` role in the manifest) and nothing else. `KUBEDECK_ACCESS=shared` turns impersonation off (everyone acts as the service account); avoid it.
-- **The KubeDeck role is separate:** an admin manages users and reads **Settings → Audit log**, with no cluster access of their own beyond their groups. An admin cannot remove their own admin role, block or delete themselves.
-- Sessions last 12 hours. Five wrong passwords are not a lockout: sign-in is rate limited per address (10 tries a minute). Blocking an account signs it out at once.
-- Back up the database: it holds the accounts (passwords are hashed with scrypt) and the audit log.
-
-### Per-user permissions (`KUBEDECK_ACCESS=impersonate`)
-
-By default every signed-in user acts with KubeDeck's service account. With `KUBEDECK_ACCESS=impersonate`, KubeDeck adds `--as=<user> --as-group=<group>…` (plus `system:authenticated`) to every kubectl call it makes for a request, using the user and groups the login proxy reported. The API server then applies that person's RBAC to everything: lists, details, changes, pod files, the map and the assistant's commands. Buttons the person may not use are disabled with the reason.
-
-- Bind roles to your users and groups as the API server knows them. If the API server trusts Keycloak with `--oidc-username-prefix=oidc:`, set `KUBEDECK_IMPERSONATE_PREFIX=oidc:` (same for groups) so the names match.
-- Give KubeDeck's service account only `impersonate` on `users` and `groups` (the `kubedeck-impersonator` role, commented in the manifest) and remove `kubedeck-reader` / `kubedeck-operator`.
-- The API server does not need to trust Keycloak: KubeDeck vouches for the identity, so keep the login proxy in front (it cannot be combined with `KUBEDECK_AUTH=none`).
-- A kubectl call made outside a user's request runs as `system:anonymous`, never as the service account.
-
-### No sign-in (`KUBEDECK_AUTH=none`)
-
-For a private test cluster where you do not want a login yet: run KubeDeck alone (no oauth2-proxy), with `HOST=0.0.0.0`, `KUBEDECK_AUTH=none` and `KUBEDECK_PUBLIC_URL` set to the address people open (an IP is fine). Every request is the user `anonymous`; identity headers are ignored; the host check still applies; audit lines carry the caller's IP. The header shows a **No sign-in** badge and the server logs a warning at startup.
-
-Anyone who can reach the URL gets the cluster access of KubeDeck's kubeconfig or service account, including changes and pod files unless you turn them off. Prefer `KUBEDECK_READ_ONLY=true`, keep it on a network only your team reaches, and switch to a login proxy before wider use. `KUBEDECK_ALLOWED_GROUPS` cannot be used with it.
+  Someone in no bound group sees nothing. Group changes apply on their next request. The `kubedeck:` prefix keeps a KubeDeck group from ever being a built-in one such as `system:masters`.
+- **KubeDeck's service account needs only `impersonate`** on `users` and `groups` (the `kubedeck-impersonator` role in the manifest). A kubectl call made outside a person's request runs as `system:anonymous`, never as the service account.
+- **The KubeDeck role is separate:** an admin manages users and reads the audit log, with no cluster access of their own beyond their groups. An admin cannot remove their own admin role, block or delete themselves.
+- Sessions last 12 hours. Sign-in is rate limited per address (10 tries a minute). Blocking an account signs it out at once; so does **Sign out everywhere**.
+- Back up the database: it holds the accounts (passwords hashed with scrypt) and the audit log.
 
 ### Traces and Grafana
 
 Traces come from Tempo, found by the OpenTelemetry resource attributes the OTel operator or collector puts on every span (`k8s.cluster.name`, `k8s.namespace.name`, `k8s.deployment.name`, `k8s.pod.name`, `service.name`). A kube context is matched to its Tempo cluster by `KUBEDECK_TEMPO_CLUSTERS`, then by name, then by the one cluster whose traces carry the namespace on screen.
 
 - **What you get:** on a workload's Traces tab, its endpoints with requests, error % and p95 (click p95 for requests that slow), a rollout check on Deployments (new ReplicaSet vs the old ones), and each trace in a side panel with the pod's log lines from Loki at that moment. Overview → Traces does the same per service for the namespace. Tempo answers metrics for at most 3h by default; longer windows are measured over that.
-- **Who sees which traces:** a namespace's traces (and its Loki logs) are shown only to someone whose identity may `list pods` there (the signed-in user with impersonation, otherwise KubeDeck's service account). One trace that crosses namespaces loses the spans from namespaces the user cannot read.
-- **Grafana MCP:** the assistant gets only Grafana's read tools (searches, queries, lists, `generate_deeplink`); anything that creates, updates or deletes, raw SQL and the generic API tool are never offered. Run the MCP server with `--disable-write` anyway. Grafana data is not filtered per user: every user of this KubeDeck reads what the MCP server's Grafana token can read.
+- **Who sees which traces:** a namespace's traces (and its Loki logs) are shown only to someone who may `list pods` there. One trace that crosses namespaces loses the spans from namespaces the person cannot read.
+- **Grafana MCP:** the assistant gets only Grafana's read tools (searches, queries, lists, `generate_deeplink`); anything that creates, updates or deletes, raw SQL and the generic API tool are never offered. Run the MCP server with `--disable-write` anyway. Grafana data is not filtered per person: everyone reads what the MCP server's Grafana token can read.
 
 ## Deploy
 
-Full runbook with every command: **[DEPLOYMENT.md](DEPLOYMENT.md)**. In short:
-
-1. Use `swapnilsaal/kubedeck:<version>-web` (amd64 + arm64), or build your own: `docker buildx build --platform linux/amd64,linux/arm64 -t <registry>/kubedeck:<version>-web --push .` (the `Dockerfile` has no `HEALTHCHECK`; probes live in the pod spec).
-2. In Keycloak create an OIDC client for `https://<your-host>/oauth2/callback` and add a `groups` claim mapper if you want group limits.
-3. Edit `deploy/kubernetes/kubedeck.yaml` (every `CHANGE_ME` and `kubedeck.example.com`) and apply it.
-
-The manifest runs oauth2-proxy as a sidecar and binds KubeDeck to `127.0.0.1`, so nothing except the sidecar can reach it. The service account gets `kubedeck-reader` (reads, **no secrets**) and `kubedeck-operator` (changes to workloads and `pods/exec` for pod files). For a look-only KubeDeck, delete `kubedeck-operator` and set `KUBEDECK_READ_ONLY=true`.
-
-### Who sees what
-
-With one service account, **every signed-in user sees what that account sees** (unless you turn on per-user permissions, above). The proxy decides who may *enter*; Kubernetes RBAC for the service account decides what they can *read*. The same goes for changes and the assistant: what the account may do, every signed-in user may do. To limit people differently, run several KubeDeck instances with different service accounts, or ask for per-user impersonation (not built yet).
+Full runbook with every command: **[DEPLOYMENT.md](DEPLOYMENT.md)**. In short: create a Secret with the session secret and the first admin, apply `deploy/kubernetes/kubedeck.yaml` (one replica, SQLite on a 1 GB volume, a service account that may only impersonate), bind your groups to roles, sign in and add people.
 
 ## Limits to know
 
 - Alerts and the log explorer work, but alerts only run while a browser tab is open. With AI off, issues on the home screen open the pod or deployment instead of asking the assistant.
-- Chat history stays in each user's browser; the server keeps none.
-- If you put your own ingress-level oauth2-proxy in front instead of the sidecar, have it send `X-KubeDeck-Proxy-Secret` (ingress-nginx `configuration-snippet`) and set `KUBEDECK_PROXY_SECRET`; do **not** use the network-trust flag unless a NetworkPolicy really restricts access.
-- `X-Forwarded-Groups` is trusted exactly as much as the proxy that sets it.
+- Chat history stays in each person's browser; the server keeps none.
+- With SQLite, run exactly one replica (the manifest uses the `Recreate` strategy). For more, use Postgres.
 
 ## Try it locally
 
+```sh
+KUBEDECK_MODE=web KUBEDECK_PUBLIC_URL=http://localhost:5051 \
+KUBEDECK_AUTH_SECRET="$(openssl rand -base64 32)" \
+KUBEDECK_ADMIN_EMAIL=you@example.com KUBEDECK_ADMIN_PASSWORD='choose-a-long-one' \
+PORT=5051 npm run dev
 ```
-KUBEDECK_MODE=web KUBEDECK_PUBLIC_URL=https://kubedeck.example.com \
-KUBEDECK_PROXY_SECRET=0123456789abcdef0123 PORT=5301 npm run dev
-curl -H 'Host: kubedeck.example.com' -H 'X-KubeDeck-Proxy-Secret: 0123456789abcdef0123' \
-     -H 'X-Forwarded-Email: you@example.com' http://127.0.0.1:5301/api/mode
-```
+
+Open http://localhost:5051 and sign in. Your own kubeconfig must be allowed to impersonate (a local kind or Docker Desktop cluster is), and your groups need bindings; `deploy/demo/kubedeck-demo.yaml` creates demo workloads and binds the groups `viewers`, `admins`, `shop-viewers`, `shop-editors` and `ops-editors`.

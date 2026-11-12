@@ -602,7 +602,7 @@ spec:
     - matches: [{ method: { service: shop.Inventory, method: GetStock } }]
       backendRefs: [{ name: api, port: 80 }]
 
-# ── groups for KubeDeck's built-in login (KUBEDECK_AUTH=builtin) ─
+# ── groups for KubeDeck's web sign-in ─
 # A user an admin puts in group "shop-viewers" acts as kubedeck:shop-viewers, and so on.
 ---
 apiVersion: rbac.authorization.k8s.io/v1

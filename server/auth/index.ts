@@ -1,12 +1,11 @@
 /**
- * KubeDeck's own login (KUBEDECK_AUTH=builtin), built on Better Auth. This module is the only code
+ * KubeDeck's sign-in for web mode, built on Better Auth. This module is the only code
  * that knows Better Auth exists: the rest of the server sees a `WebUser` (name, email, groups, role).
  *
  * Who someone is comes from here; what they may do in a cluster comes from Kubernetes RBAC, because
  * every kubectl call runs as them (`--as` / `--as-group`, see identity.ts). The KubeDeck role only
  * says who may manage users and read the audit log.
  *
- *   KUBEDECK_AUTH=builtin
  *   KUBEDECK_AUTH_SECRET=<32+ random characters>      signs sessions; keep it stable across restarts
  *   KUBEDECK_ADMIN_EMAIL / KUBEDECK_ADMIN_PASSWORD     first admin, created on start if missing
  */
@@ -34,8 +33,8 @@ export function loadAuthConfig(env: NodeJS.ProcessEnv = process.env): AuthConfig
 /** Problems that must stop the server: a guessable secret lets anyone forge a session. */
 export function authConfigProblems(c: AuthConfig): string[] {
   const problems: string[] = [];
-  if (c.secret.length < 32) problems.push("KUBEDECK_AUTH=builtin needs KUBEDECK_AUTH_SECRET of at least 32 characters (e.g. `openssl rand -base64 32`).");
-  if (!/^https?:\/\//.test(c.baseURL)) problems.push("KUBEDECK_AUTH=builtin needs KUBEDECK_PUBLIC_URL, the address people open (e.g. https://kubedeck.example.com).");
+  if (c.secret.length < 32) problems.push("Web mode needs KUBEDECK_AUTH_SECRET of at least 32 characters (e.g. `openssl rand -base64 32`).");
+  if (!/^https?:\/\//.test(c.baseURL)) problems.push("Web mode needs KUBEDECK_PUBLIC_URL, the address people open (e.g. https://kubedeck.example.com).");
   if (c.admin && c.admin.password && c.admin.password.length < MIN_PASSWORD) problems.push(`KUBEDECK_ADMIN_PASSWORD must be at least ${MIN_PASSWORD} characters.`);
   return problems;
 }

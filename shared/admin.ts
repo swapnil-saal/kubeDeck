@@ -1,5 +1,5 @@
 /**
- * Users, groups and the audit log of a KubeDeck with its own login (KUBEDECK_AUTH=builtin).
+ * Users, groups and the audit log of KubeDeck's web mode.
  *
  * A user's groups become Kubernetes groups: KubeDeck runs kubectl `--as=<prefix><email>
  * --as-group=<prefix><group>`, so what someone may do is whatever the cluster's RoleBindings give

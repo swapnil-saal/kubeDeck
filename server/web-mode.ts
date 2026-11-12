@@ -1,29 +1,24 @@
 /**
- * Web (server) mode: KubeDeck run as a shared service behind an authenticating reverse proxy
- * (oauth2-proxy + Keycloak, or any proxy that sets identity headers), instead of as a desktop app.
+ * Web (server) mode: KubeDeck run as a shared service for a team, instead of as a desktop app.
  *
  * Web mode offers the desktop app's features. A shared host cannot trust "whoever is at this
  * machine", so it adds:
- *  - an identity gate: every request must come through the proxy (shared secret, or an explicit
- *    "the network only lets the proxy reach me" declaration) and carry a user. KUBEDECK_AUTH=none
- *    drops the gate for private test clusters: everyone who reaches the URL is "anonymous";
- *    KUBEDECK_AUTH=builtin replaces the proxy with KubeDeck's own login (server/auth): users and
- *    groups an admin manages, each user acting with their groups' Kubernetes RBAC;
+ *  - KubeDeck's own sign-in (server/auth): accounts and groups an admin manages; every kubectl call
+ *    runs as the signed-in person (`--as=kubedeck:<email> --as-group=kubedeck:<group>`), so the
+ *    cluster's RBAC decides what they can see and change;
  *  - an optional group allow-list;
  *  - switches to turn writes, the AI assistant and pod files off (KUBEDECK_READ_ONLY,
  *    KUBEDECK_AI, KUBEDECK_POD_FILES); all are on unless turned off;
- *  - limits that keep users inside the server's own identity: no kubectl config / auth / exec /
+ *  - limits that keep users inside their own identity: no kubectl config / auth / exec /
  *    cp / proxy / attach / debug and no identity flags, from the palette or the assistant; the
  *    assistant's pipelines run without a shell;
  *  - settings (kubeconfig, AI provider) come from the environment, never from the browser;
  *  - no port-forward: the port would open inside the server, out of the user's reach;
- *  - an audit line for every non-GET request and every assistant change, with the user's name.
+ *  - an audit record for every change, with the user and their groups.
  *
  * Turn it on with KUBEDECK_MODE=web. See docs/WEB.md.
  */
-import { timingSafeEqual } from "crypto";
 import type { NextFunction, Request, Response } from "express";
-import type { IncomingMessage } from "http";
 import { scanShell, type SafetyLevel } from "./kubectl-safety";
 
 export interface WebConfig {
@@ -36,33 +31,20 @@ export interface WebConfig {
   podFiles: boolean;
   /** public hostname(s) users reach the app on, e.g. kubedeck.example.com */
   hosts: string[];
-  /** value the proxy must send in `X-KubeDeck-Proxy-Secret` */
-  proxySecret: string;
-  /** the network guarantees only the proxy can reach this server (NetworkPolicy), so headers are trusted as-is */
-  trustProxyNetwork: boolean;
   /** if set, the user must belong to at least one of these groups */
   allowedGroups: string[];
-  /** no login proxy at all (KUBEDECK_AUTH=none): every request is the anonymous user */
-  authNone: boolean;
-  /** KubeDeck's own login (KUBEDECK_AUTH=builtin): no proxy; the session cookie names the user */
-  builtin: boolean;
-  /** KUBEDECK_ACCESS=impersonate: act as each signed-in user (kubectl --as), so their own RBAC applies */
+  /** act as each signed-in user (kubectl --as), so their RBAC applies; off only with KUBEDECK_ACCESS=shared */
   impersonate: boolean;
-  /** which header becomes the Kubernetes user name: "email" (default) or "name" */
-  impersonateUser: "email" | "name";
-  /** prepended to the user and group names, to match the API server's OIDC prefixes (e.g. "oidc:") */
+  /** prepended to the user and group names KubeDeck sends to Kubernetes (default "kubedeck:") */
   impersonatePrefix: string;
   impersonateGroupPrefix: string;
 }
-
-/** Who a request is when KUBEDECK_AUTH=none. */
-export const ANONYMOUS: WebUser = { name: "anonymous", email: "", groups: [] };
 
 export interface WebUser {
   name: string;
   email: string;
   groups: string[];
-  /** builtin login only: the account id and whether it may manage users */
+  /** the account id and whether it may manage users */
   id?: string;
   role?: "admin" | "user";
 }
@@ -76,61 +58,29 @@ export function loadWebConfig(env: NodeJS.ProcessEnv = process.env): WebConfig {
   if (env.KUBEDECK_PUBLIC_URL) {
     try { hosts.push(new URL(env.KUBEDECK_PUBLIC_URL).hostname.toLowerCase()); } catch { /* reported by validateWebConfig */ }
   }
-  const auth = (env.KUBEDECK_AUTH ?? "").trim().toLowerCase();
-  const builtin = auth === "builtin";
   const access = (env.KUBEDECK_ACCESS ?? "").trim().toLowerCase();
-  // with KubeDeck's own login, names get a prefix by default so a KubeDeck group can never be a
-  // built-in one (system:masters); an operator can still set their own
-  const prefix = (v: string | undefined) => v ?? (builtin ? "kubedeck:" : "");
+  // names get a prefix by default so a KubeDeck group can never be a built-in one (system:masters)
+  const prefix = (v: string | undefined) => v ?? "kubedeck:";
   return {
     enabled: (env.KUBEDECK_MODE ?? "").toLowerCase() === "web",
     readOnly: truthy(env.KUBEDECK_READ_ONLY),
     ai: !falsy(env.KUBEDECK_AI),
     podFiles: !falsy(env.KUBEDECK_POD_FILES),
     hosts: Array.from(new Set(hosts)),
-    proxySecret: env.KUBEDECK_PROXY_SECRET ?? "",
-    trustProxyNetwork: truthy(env.KUBEDECK_TRUST_PROXY_NETWORK),
     allowedGroups: list(env.KUBEDECK_ALLOWED_GROUPS),
-    authNone: auth === "none",
-    builtin,
-    // builtin login acts as each user unless the operator explicitly chose the shared service account
-    impersonate: access === "impersonate" || (builtin && access !== "shared"),
-    impersonateUser: (env.KUBEDECK_IMPERSONATE_USER ?? "").trim().toLowerCase() === "name" ? "name" : "email",
+    impersonate: access !== "shared",
     impersonatePrefix: prefix(env.KUBEDECK_IMPERSONATE_PREFIX),
     impersonateGroupPrefix: prefix(env.KUBEDECK_IMPERSONATE_GROUP_PREFIX),
   };
 }
 
-/** What each way of signing people in needs. */
-function authProblems(c: WebConfig): string[] {
-  if (c.authNone) {
-    // nothing signs anyone in, so there are no groups to check and no one to act as
-    return [
-      ...(c.allowedGroups.length > 0 ? ["KUBEDECK_ALLOWED_GROUPS needs a login proxy: remove it, or remove KUBEDECK_AUTH=none."] : []),
-      ...(c.impersonate ? ["KUBEDECK_ACCESS=impersonate needs a login proxy to say who the user is: remove it, or remove KUBEDECK_AUTH=none."] : []),
-    ];
-  }
-  if (c.builtin) {
-    // the login is KubeDeck's own; KUBEDECK_AUTH_SECRET and the first admin are checked by server/auth
-    return [
-      ...(c.proxySecret || c.trustProxyNetwork ? ["KUBEDECK_AUTH=builtin signs people in itself: remove KUBEDECK_PROXY_SECRET / KUBEDECK_TRUST_PROXY_NETWORK."] : []),
-      ...(c.impersonate && !c.impersonateGroupPrefix
-        ? ["KUBEDECK_AUTH=builtin needs a group prefix (default \"kubedeck:\") so a KubeDeck group cannot be a built-in Kubernetes group: unset KUBEDECK_IMPERSONATE_GROUP_PREFIX or give it a value."]
-        : []),
-    ];
-  }
-  if (c.proxySecret || c.trustProxyNetwork) return c.proxySecret && c.proxySecret.length < 16 ? ["KUBEDECK_PROXY_SECRET must be at least 16 characters."] : [];
-  return [
-    "Web mode needs a way to know requests came through your login proxy: set KUBEDECK_PROXY_SECRET " +
-      "(and have the proxy send it as X-KubeDeck-Proxy-Secret), or set KUBEDECK_TRUST_PROXY_NETWORK=1 if a " +
-      "NetworkPolicy lets only the proxy reach this server.",
-  ];
-}
-
-/** Problems that must stop the server from starting: a web server with no way to authenticate is open to everyone. */
+/** Problems that must stop the server from starting: a web server that cannot sign people in safely is open to everyone. */
 export function validateWebConfig(c: WebConfig): string[] {
   if (!c.enabled) return [];
-  const problems = authProblems(c);
+  const problems: string[] = [];
+  if (c.impersonate && !c.impersonateGroupPrefix) {
+    problems.push("KUBEDECK_IMPERSONATE_GROUP_PREFIX cannot be empty (default \"kubedeck:\"): a KubeDeck group must never be a built-in Kubernetes group.");
+  }
   if (c.hosts.length === 0) problems.push("Set KUBEDECK_PUBLIC_URL (e.g. https://kubedeck.example.com) so requests for other hostnames are refused.");
   return problems;
 }
@@ -141,44 +91,6 @@ export const isWebMode = (): boolean => active.enabled;
 /** for tests */
 export function setWebConfig(c: WebConfig) { active = c; }
 
-const first = (v: string | string[] | undefined): string => (Array.isArray(v) ? v[0] : v) ?? "";
-
-function secretMatches(given: string, expected: string): boolean {
-  const a = Buffer.from(given);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
-/** The signed-in user as the proxy reported it, or null when the request carries no identity. */
-export function userFromHeaders(headers: IncomingMessage["headers"]): WebUser | null {
-  const name = first(headers["x-forwarded-preferred-username"]) || first(headers["x-forwarded-user"]) || first(headers["x-auth-request-user"]);
-  const email = first(headers["x-forwarded-email"]) || first(headers["x-auth-request-email"]);
-  const groups = list(first(headers["x-forwarded-groups"]) || first(headers["x-auth-request-groups"])).map((g) => g.replace(/^role:/, ""));
-  if (!name && !email) return null;
-  return { name: name || email, email, groups };
-}
-
-export type GateResult =
-  | { ok: true; user: WebUser }
-  | { ok: false; status: 401 | 403; message: string };
-
-/** Pure decision, so it can be tested without a server. */
-export function checkRequest(headers: IncomingMessage["headers"], c: WebConfig = active): GateResult {
-  // no login proxy: headers could be typed by anyone, so they name nobody
-  if (c.authNone) return { ok: true, user: ANONYMOUS };
-  // A configured secret is always required; without one, the operator vouched for the network instead.
-  const viaProxy = c.proxySecret ? secretMatches(first(headers["x-kubedeck-proxy-secret"]), c.proxySecret) : c.trustProxyNetwork;
-  if (!viaProxy) {
-    return { ok: false, status: 403, message: "Forbidden: requests must come through the KubeDeck login proxy." };
-  }
-  const user = userFromHeaders(headers);
-  if (!user) return { ok: false, status: 401, message: "Sign in required." };
-  if (c.allowedGroups.length > 0 && !user.groups.some((g) => c.allowedGroups.includes(g))) {
-    return { ok: false, status: 403, message: "Your account is not in a group that may use KubeDeck." };
-  }
-  return { ok: true, user };
-}
-
 declare module "http" {
   interface IncomingMessage { kubedeckUser?: WebUser }
 }
@@ -186,20 +98,23 @@ declare module "http" {
 /** Probe path for the pod spec's liveness / readiness checks: no data, no identity, no host check. */
 export const HEALTH_PATH = "/healthz";
 
-/** Builtin login: who a request's session cookie belongs to (set by server/auth once it has started). */
+/** Who a request's session cookie belongs to (set by server/auth once it has started). */
 let sessionUser: ((req: Request) => Promise<WebUser | null>) | null = null;
 export function setSessionResolver(fn: typeof sessionUser) { sessionUser = fn; }
 
 /**
- * Builtin login: the app's own files and the sign-in routes load without a session (the browser has to
- * show a sign-in page); /api/mode answers either way so the browser knows to. Everything else needs one.
+ * The app's own files and the sign-in routes load without a session (the browser has to show a
+ * sign-in page); /api/mode answers either way so the browser knows to. Everything else needs one.
  */
 export function needsSession(path: string): boolean {
   if (!path.startsWith("/api/")) return false;
   return !path.startsWith("/api/auth/") && path !== "/api/mode";
 }
 
-function builtinGate(req: Request, res: Response, next: NextFunction): void {
+const inAllowedGroup = (user: WebUser) => active.allowedGroups.length === 0 || user.groups.some((g) => active.allowedGroups.includes(g));
+
+export function webGate(req: Request, res: Response, next: NextFunction): void {
+  if (!active.enabled || req.path === HEALTH_PATH) return next();
   // Better Auth checks its own routes; files of the app carry no data
   if (!req.path.startsWith("/api/") || req.path.startsWith("/api/auth/")) return next();
   if (!sessionUser) {
@@ -207,29 +122,14 @@ function builtinGate(req: Request, res: Response, next: NextFunction): void {
     return;
   }
   sessionUser(req).then((user) => {
-    if (user) {
-      if (active.allowedGroups.length > 0 && !user.groups.some((g) => active.allowedGroups.includes(g)) && needsSession(req.path)) {
-        res.status(403).json({ message: "Your account is not in a group that may use KubeDeck." });
-        return;
-      }
-      req.kubedeckUser = user;
-      return next();
+    if (user && !inAllowedGroup(user) && needsSession(req.path)) {
+      res.status(403).json({ message: "Your account is not in a group that may use KubeDeck." });
+      return;
     }
-    if (!needsSession(req.path)) return next();
+    if (user) req.kubedeckUser = user;
+    if (user || !needsSession(req.path)) return next();
     res.status(401).json({ message: "Sign in required." });
   }, next);
-}
-
-export function webGate(req: Request, res: Response, next: NextFunction): void {
-  if (!active.enabled || req.path === HEALTH_PATH) return next();
-  if (active.builtin) return builtinGate(req, res, next);
-  const r = checkRequest(req.headers);
-  if (!r.ok) {
-    res.status(r.status).json({ message: r.message });
-    return;
-  }
-  req.kubedeckUser = r.user;
-  next();
 }
 
 /** Features a shared KubeDeck may have turned off, with the reason the browser shows. */
@@ -311,9 +211,7 @@ export function auditLog(req: Request, res: Response, next: NextFunction): void 
   res.on("finish", () => {
     const r = auditRecord(req, res.statusCode);
     console.log(JSON.stringify({
-      audit: true, at: r.at, user: r.userEmail || r.userName || "unknown",
-      // with no login, the caller's address is the only trace of who it was
-      ...(active.authNone ? { ip: r.ip } : {}),
+      audit: true, at: r.at, user: r.userEmail || r.userName || "unknown", ip: r.ip,
       method: r.method, path: r.path, status: r.status,
     }));
     auditSink?.(r).catch((err) => console.error(`[kubedeck] could not store an audit record: ${err instanceof Error ? err.message : err}`));
@@ -375,13 +273,13 @@ export function describeMode(req: Request) {
   return {
     mode: "web" as const,
     readOnly: c.readOnly,
-    auth: c.authNone ? ("none" as const) : c.builtin ? ("builtin" as const) : ("proxy" as const),
+    auth: "builtin" as const,
     // whose permissions apply: each user's own (impersonation) or KubeDeck's service account
     access: c.impersonate ? ("user" as const) : ("shared" as const),
-    user: !c.authNone && req.kubedeckUser
+    user: req.kubedeckUser
       ? { name: req.kubedeckUser.name, email: req.kubedeckUser.email, groups: req.kubedeckUser.groups, role: req.kubedeckUser.role ?? "user" }
       : null,
     // settings come from the server's environment; a forwarded port would open on the server
-    features: { portForward: false, settingsEdit: false, ai: c.ai, podFiles: c.podFiles, admin: c.builtin && req.kubedeckUser?.role === "admin" },
+    features: { portForward: false, settingsEdit: false, ai: c.ai, podFiles: c.podFiles, admin: req.kubedeckUser?.role === "admin" },
   };
 }

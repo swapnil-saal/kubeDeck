@@ -16,7 +16,7 @@ import { mountAuthRoutes } from "./auth/mount";
 
 // Web (shared-service) mode is opt-in; refuse to start half-configured rather than serve cluster access to anyone.
 const webCfg = loadWebConfig();
-const webProblems = [...validateWebConfig(webCfg), ...(webCfg.enabled && webCfg.builtin ? authConfigProblems(loadAuthConfig()) : [])];
+const webProblems = [...validateWebConfig(webCfg), ...(webCfg.enabled ? authConfigProblems(loadAuthConfig()) : [])];
 if (webProblems.length > 0) {
   for (const p of webProblems) console.error(`[kubedeck] ${p}`);
   process.exit(1);
@@ -25,18 +25,12 @@ setWebConfig(webCfg);
 setImpersonation(webCfg.enabled ? webCfg : null);
 if (webCfg.enabled && webCfg.impersonate) {
   console.log(
-    `[kubedeck] Each signed-in user acts with their own Kubernetes permissions (kubectl --as=${webCfg.impersonatePrefix}<email>` +
-      (webCfg.builtin ? `, groups as ${webCfg.impersonateGroupPrefix}<group>).` : ")."),
+    `[kubedeck] Each signed-in user acts with their own Kubernetes permissions (kubectl --as=${webCfg.impersonatePrefix}<email>, ` +
+      `groups as ${webCfg.impersonateGroupPrefix}<group>).`,
   );
 }
-if (webCfg.enabled && webCfg.builtin && !webCfg.impersonate) {
+if (webCfg.enabled && !webCfg.impersonate) {
   console.warn("[kubedeck] KUBEDECK_ACCESS=shared: every signed-in user acts as KubeDeck's own service account, whatever their groups.");
-}
-if (webCfg.enabled && webCfg.authNone) {
-  console.warn(
-    "[kubedeck] KUBEDECK_AUTH=none: no sign-in. Anyone who can reach this server can use it with its cluster access" +
-      (webCfg.readOnly ? " (read-only)." : ", including changes. Set KUBEDECK_READ_ONLY=true or restrict the network."),
-  );
 }
 if (webCfg.enabled) {
   const kc = ensureInClusterKubeconfig();
@@ -61,13 +55,13 @@ declare module "http" {
 
 // Every API call (kubectl, file browsing, AI, settings…) must come from this app's own origin.
 app.use("/api", requireTrustedRequest);
-// Web mode: pages and API alike need the login proxy's identity; writes are refused when read-only.
+// Web mode: the API needs a signed-in person (the sign-in page and the app's files do not); writes are refused when read-only.
 app.use(webGate);
 app.use(auditLog);
-// KubeDeck's own login (KUBEDECK_AUTH=builtin). Before the body parsers, which would consume what
+// KubeDeck's sign-in. Before the body parsers, which would consume what
 // Better Auth reads. Its admin routes are not reachable from outside: admins use /api/admin (validated).
 let builtinAuth: KubeDeckAuth | null = null;
-if (webCfg.enabled && webCfg.builtin) mountAuthRoutes(app, () => builtinAuth);
+if (webCfg.enabled) mountAuthRoutes(app, () => builtinAuth);
 app.use("/api", webFeatureOff);
 app.use("/api", webReadOnly);
 app.get("/api/mode", (req, res) => { res.json(describeMode(req)); });
@@ -115,22 +109,20 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // A database when there is something to keep: the builtin login always, otherwise only if one is configured
-  if (webCfg.enabled && (webCfg.builtin || process.env.KUBEDECK_DATABASE_URL)) {
+  // Web mode: the database, KubeDeck's own sign-in and the admin routes (the desktop app has none of them)
+  if (webCfg.enabled) {
     const { migrate, openDatabase } = await import("./db");
     const { recordAudit } = await import("./audit");
     const d = await openDatabase();
     await migrate(d);
     console.log(`[kubedeck] database: ${d.where}`);
     setAuditSink((e) => recordAudit(d, e));
-    if (webCfg.builtin) {
-      const { startAuth } = await import("./auth");
-      const { registerAdminRoutes } = await import("./auth/admin-routes");
-      const a = await startAuth(d, loadAuthConfig());
-      builtinAuth = a;
-      setSessionResolver((req) => a.userOf(req));
-      registerAdminRoutes(app, a, d);
-    }
+    const { startAuth } = await import("./auth");
+    const { registerAdminRoutes } = await import("./auth/admin-routes");
+    const a = await startAuth(d, loadAuthConfig());
+    builtinAuth = a;
+    setSessionResolver((req) => a.userOf(req));
+    registerAdminRoutes(app, a, d);
   }
 
   await registerRoutes(httpServer, app);

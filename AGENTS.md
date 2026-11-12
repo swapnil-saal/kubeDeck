@@ -1,7 +1,7 @@
 # Working on KubeDeck
 
 KubeDeck is a Kubernetes dashboard that runs as an Electron desktop app or as a shared web service
-(web mode, behind a login proxy). One Express server serves the React client and talks to clusters
+(web mode, with its own sign-in). One Express server serves the React client and talks to clusters
 through `kubectl`.
 
 ## Commands
@@ -15,7 +15,7 @@ through `kubectl`.
 | `npm run build` | production bundle in `dist/` |
 | `script/docker-build.sh [--push]` | web image; `--push` builds linux/amd64 + linux/arm64 |
 
-Web mode locally: `KUBEDECK_MODE=web KUBEDECK_AUTH=none KUBEDECK_PUBLIC_URL=http://localhost:5051 PORT=5051 npm run dev`
+Web mode locally: `KUBEDECK_MODE=web KUBEDECK_PUBLIC_URL=http://localhost:5051 KUBEDECK_AUTH_SECRET=<32+ chars> KUBEDECK_ADMIN_EMAIL=… KUBEDECK_ADMIN_PASSWORD=… PORT=5051 npm run dev`
 (see `docs/WEB.md` for every setting).
 
 ## Where things are
@@ -24,7 +24,7 @@ Web mode locally: `KUBEDECK_MODE=web KUBEDECK_AUTH=none KUBEDECK_PUBLIC_URL=http
   `kubectl-safety.ts` classifies commands, `web-mode.ts` is the login gate and feature switches,
   `identity.ts` the per-user impersonation, `map.ts` the namespace graph, `tempo.ts` +
   `traces-routes.ts` traces from Grafana Tempo, `loki.ts` log history, `grafana-mcp.ts` the Grafana MCP client (read tools
-  only), `ai/` the assistant (AI SDK agent, tools, prompts). Web mode's own sign-in (`KUBEDECK_AUTH=builtin`) lives in
+  only), `ai/` the assistant (AI SDK agent, tools, prompts). Web mode's sign-in lives in
   `auth/` (the only code that knows Better Auth; admin routes validate groups), `db/` is the database (Kysely: SQLite via
   `node:sqlite`, or Postgres; each module owns its tables, migrations in `db/migrations.ts`), `audit/` the audit log.
   The desktop app never loads `auth/` or `db/` (dynamic imports only).

@@ -4,15 +4,15 @@ import type { Server } from "http";
 import { afterEach, describe, expect, it } from "vitest";
 import { asUser, bindIdentity, identityFor, impersonationFlags, setImpersonation } from "./identity";
 
-const cfg = { impersonate: true, impersonateUser: "email" as const, impersonatePrefix: "oidc:", impersonateGroupPrefix: "oidc:" };
+const cfg = { impersonate: true, impersonatePrefix: "team:", impersonateGroupPrefix: "team:" };
 const user = { name: "dev", email: "dev@example.com", groups: ["sre", "platform"] };
 
 afterEach(() => setImpersonation(null));
 
 describe("identityFor", () => {
-  it("maps the proxy's user to a Kubernetes identity with the configured claim and prefixes", () => {
-    expect(identityFor(user, cfg)).toEqual({ user: "oidc:dev@example.com", groups: ["oidc:sre", "oidc:platform"] });
-    expect(identityFor(user, { ...cfg, impersonateUser: "name", impersonatePrefix: "", impersonateGroupPrefix: "" }).user).toBe("dev");
+  it("maps the signed-in user to a Kubernetes identity by email, with the configured prefixes", () => {
+    expect(identityFor(user, cfg)).toEqual({ user: "team:dev@example.com", groups: ["team:sre", "team:platform"] });
+    expect(identityFor({ ...user, email: "" }, { ...cfg, impersonatePrefix: "" }).user).toBe("dev");
   });
 });
 
@@ -53,7 +53,7 @@ describe("bindIdentity through Express (JSON body, async handler)", () => {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ a: 1 }),
     });
     const body = await res.json();
-    const flags = ["--as=oidc:dev@example.com", "--as-group=oidc:sre", "--as-group=oidc:platform", "--as-group=system:authenticated"];
+    const flags = ["--as=team:dev@example.com", "--as-group=team:sre", "--as-group=team:platform", "--as-group=system:authenticated"];
     expect(body.get).toEqual(["get", "pods", ...flags]);
     expect(body.exec).toEqual(["exec", "web", ...flags, "--", "ls", "/"]);
     expect(body.xargs).toEqual(["kubectl", "describe", ...flags]);

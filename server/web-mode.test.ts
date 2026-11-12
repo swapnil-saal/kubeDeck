@@ -4,16 +4,14 @@ import { request, type Server } from "http";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { requireTrustedRequest } from "./security";
 import {
-  auditLog, auditRecord, checkRequest, describeMode, loadWebConfig, needsSession, setWebConfig, userFromHeaders, validateWebConfig, webAgentRefusal, webExecAllowed, webFeatureOff,
-  webGate, webReadOnly, type WebConfig,
+  auditLog, auditRecord, describeMode, loadWebConfig, needsSession, setSessionResolver, setWebConfig, validateWebConfig, webAgentRefusal,
+  webExecAllowed, webFeatureOff, webGate, webReadOnly, type WebConfig, type WebUser,
 } from "./web-mode";
 
-const SECRET = "s3cret-s3cret-s3cret";
 const cfg = (over: Partial<WebConfig> = {}): WebConfig => ({
-  enabled: true, readOnly: true, ai: true, podFiles: true, hosts: ["kube.example.com"], proxySecret: SECRET, trustProxyNetwork: false,
-  allowedGroups: [], authNone: false, builtin: false, impersonate: false, impersonateUser: "email", impersonatePrefix: "", impersonateGroupPrefix: "", ...over,
+  ...loadWebConfig({ KUBEDECK_MODE: "web", KUBEDECK_PUBLIC_URL: "https://kube.example.com" }), readOnly: true, ...over,
 });
-const ok = { "x-kubedeck-proxy-secret": SECRET, "x-forwarded-email": "dev@example.com", "x-forwarded-preferred-username": "dev" };
+const web = { KUBEDECK_MODE: "web", KUBEDECK_PUBLIC_URL: "https://k.example.com" };
 
 describe("loadWebConfig / validateWebConfig", () => {
   it("is off by default and needs no checks then", () => {
@@ -26,44 +24,23 @@ describe("loadWebConfig / validateWebConfig", () => {
     expect(loadWebConfig({ KUBEDECK_MODE: "web", KUBEDECK_READ_ONLY: "true", KUBEDECK_AI: "off", KUBEDECK_POD_FILES: "false" }))
       .toMatchObject({ readOnly: true, ai: false, podFiles: false });
   });
-  it("refuses to start with no way to authenticate, no host, or a weak secret", () => {
-    expect(validateWebConfig(loadWebConfig({ KUBEDECK_MODE: "web" })).length).toBe(2);
-    const weak = validateWebConfig(loadWebConfig({ KUBEDECK_MODE: "web", KUBEDECK_PUBLIC_URL: "https://k.example.com", KUBEDECK_PROXY_SECRET: "short" }));
-    expect(weak.join(" ")).toMatch(/16 characters/);
-    expect(validateWebConfig(loadWebConfig({ KUBEDECK_MODE: "web", KUBEDECK_PUBLIC_URL: "https://k.example.com", KUBEDECK_TRUST_PROXY_NETWORK: "1" }))).toEqual([]);
+  it("acts as each user, with names prefixed so a group cannot be a built-in one", () => {
+    const c = loadWebConfig(web);
+    expect(c).toMatchObject({ impersonate: true, impersonatePrefix: "kubedeck:", impersonateGroupPrefix: "kubedeck:" });
+    expect(validateWebConfig(c)).toEqual([]);
+    expect(loadWebConfig({ ...web, KUBEDECK_IMPERSONATE_PREFIX: "team:" }).impersonatePrefix).toBe("team:");
   });
-  it("with KUBEDECK_AUTH=none needs no proxy setting, still needs the public URL, and refuses a group list", () => {
-    const none = { KUBEDECK_MODE: "web", KUBEDECK_AUTH: "none" };
-    expect(loadWebConfig(none).authNone).toBe(true);
-    expect(validateWebConfig(loadWebConfig(none)).join(" ")).toMatch(/KUBEDECK_PUBLIC_URL/);
-    expect(validateWebConfig(loadWebConfig({ ...none, KUBEDECK_PUBLIC_URL: "http://10.0.0.5:30080" }))).toEqual([]);
-    expect(validateWebConfig(loadWebConfig({ ...none, KUBEDECK_PUBLIC_URL: "http://10.0.0.5", KUBEDECK_ALLOWED_GROUPS: "sre" })).join(" "))
-      .toMatch(/ALLOWED_GROUPS needs a login proxy/);
+  it("can be told to use the shared service account, and refuses an empty group prefix", () => {
+    expect(loadWebConfig({ ...web, KUBEDECK_ACCESS: "shared" }).impersonate).toBe(false);
+    expect(validateWebConfig(loadWebConfig({ ...web, KUBEDECK_IMPERSONATE_GROUP_PREFIX: "" })).join(" ")).toMatch(/GROUP_PREFIX cannot be empty/);
   });
-  it("reads the impersonation settings, and refuses them without a login proxy", () => {
-    const c = loadWebConfig({ KUBEDECK_MODE: "web", KUBEDECK_ACCESS: "impersonate", KUBEDECK_IMPERSONATE_USER: "name", KUBEDECK_IMPERSONATE_PREFIX: "oidc:" });
-    expect(c).toMatchObject({ impersonate: true, impersonateUser: "name", impersonatePrefix: "oidc:", impersonateGroupPrefix: "" });
-    expect(validateWebConfig(loadWebConfig({ KUBEDECK_MODE: "web", KUBEDECK_AUTH: "none", KUBEDECK_ACCESS: "impersonate", KUBEDECK_PUBLIC_URL: "http://10.0.0.5" })).join(" "))
-      .toMatch(/impersonate needs a login proxy/);
-  });
-  it("takes the public hostname from the URL", () => {
+  it("needs the public URL, and takes the hostname from it", () => {
+    expect(validateWebConfig(loadWebConfig({ KUBEDECK_MODE: "web" })).join(" ")).toMatch(/KUBEDECK_PUBLIC_URL/);
     expect(loadWebConfig({ KUBEDECK_MODE: "web", KUBEDECK_PUBLIC_URL: "https://KubeDeck.Example.com/x" }).hosts).toEqual(["kubedeck.example.com"]);
   });
 });
 
-describe("KUBEDECK_AUTH=builtin", () => {
-  const builtin = { KUBEDECK_MODE: "web", KUBEDECK_AUTH: "builtin", KUBEDECK_PUBLIC_URL: "https://k.example.com" };
-  it("needs no proxy, acts as each user, and prefixes names so a group cannot be a built-in one", () => {
-    const c = loadWebConfig(builtin);
-    expect(c).toMatchObject({ builtin: true, authNone: false, impersonate: true, impersonatePrefix: "kubedeck:", impersonateGroupPrefix: "kubedeck:" });
-    expect(validateWebConfig(c)).toEqual([]);
-  });
-  it("can be told to use the shared service account, and refuses proxy settings or an empty group prefix", () => {
-    expect(loadWebConfig({ ...builtin, KUBEDECK_ACCESS: "shared" }).impersonate).toBe(false);
-    expect(validateWebConfig(loadWebConfig({ ...builtin, KUBEDECK_PROXY_SECRET: SECRET })).join(" ")).toMatch(/signs people in itself/);
-    expect(validateWebConfig(loadWebConfig({ ...builtin, KUBEDECK_IMPERSONATE_GROUP_PREFIX: "" })).join(" ")).toMatch(/group prefix/);
-    expect(loadWebConfig({ ...builtin, KUBEDECK_IMPERSONATE_PREFIX: "oidc:" }).impersonatePrefix).toBe("oidc:");
-  });
+describe("sessions and audit", () => {
   it("lets the app's files, sign-in and /api/mode through without a session, and nothing else", () => {
     expect(["/", "/assets/index.js", "/api/auth/sign-in/email", "/api/mode"].map(needsSession)).toEqual([false, false, false, false]);
     expect(["/api/k8s/pods", "/api/admin/users", "/api/ai/agent", "/api/modes"].map(needsSession)).toEqual([true, true, true, true]);
@@ -78,39 +55,6 @@ describe("KUBEDECK_AUTH=builtin", () => {
       at: "2026-11-12T10:00:00.000Z", userEmail: "alice@example.com", userName: "Alice", groups: "shop-editors,viewers", method: "POST",
       path: "/api/kubectl/exec", status: 200, context: "kind", namespace: "shop", detail: "kubectl scale deploy web --replicas=2", ip: "10.0.0.7",
     });
-  });
-});
-
-describe("checkRequest", () => {
-  it("accepts a request with the proxy secret and an identity", () => {
-    const r = checkRequest(ok, cfg());
-    expect(r.ok && r.user).toMatchObject({ email: "dev@example.com", name: "dev" });
-  });
-  it("rejects identity headers sent without the proxy secret (spoofing)", () => {
-    const { "x-kubedeck-proxy-secret": _, ...spoofed } = ok;
-    expect(checkRequest(spoofed, cfg())).toMatchObject({ ok: false, status: 403 });
-    expect(checkRequest({ ...ok, "x-kubedeck-proxy-secret": "wrong-wrong-wrong-wrong" }, cfg())).toMatchObject({ ok: false, status: 403 });
-  });
-  it("returns 401 when the proxy vouches but no user is present", () => {
-    expect(checkRequest({ "x-kubedeck-proxy-secret": SECRET }, cfg())).toMatchObject({ ok: false, status: 401 });
-  });
-  it("trusts headers as-is only when the operator declared network trust and set no secret", () => {
-    const c = cfg({ proxySecret: "", trustProxyNetwork: true });
-    expect(checkRequest({ "x-forwarded-email": "a@b.c" }, c).ok).toBe(true);
-    expect(checkRequest({ "x-forwarded-email": "a@b.c" }, cfg({ proxySecret: "", trustProxyNetwork: false })).ok).toBe(false);
-  });
-  it("applies the group allow-list", () => {
-    const c = cfg({ allowedGroups: ["platform"] });
-    expect(checkRequest({ ...ok, "x-forwarded-groups": "role:platform,other" }, c).ok).toBe(true);
-    expect(checkRequest({ ...ok, "x-forwarded-groups": "other" }, c)).toMatchObject({ ok: false, status: 403 });
-    expect(checkRequest(ok, c)).toMatchObject({ ok: false, status: 403 });
-  });
-});
-
-describe("userFromHeaders", () => {
-  it("reads oauth2-proxy and auth-request header styles", () => {
-    expect(userFromHeaders({ "x-auth-request-user": "u", "x-auth-request-email": "u@x.y", "x-auth-request-groups": "g1,g2" })).toEqual({ name: "u", email: "u@x.y", groups: ["g1", "g2"] });
-    expect(userFromHeaders({})).toBeNull();
   });
 });
 
@@ -151,8 +95,14 @@ describe("webAgentRefusal (the assistant on a shared host)", () => {
 describe("web mode over HTTP (real middleware)", () => {
   let server: Server;
   let base = "";
+  // who each test session cookie belongs to; real Better Auth sessions are tested in auth/auth.test.ts
+  const USERS: Record<string, WebUser> = {
+    dev: { name: "dev", email: "dev@example.com", groups: ["platform"] },
+    other: { name: "other", email: "other@example.com", groups: ["other"] },
+  };
   beforeEach(async () => {
     setWebConfig(cfg());
+    setSessionResolver(async (req) => USERS[/session=(\w+)/.exec(req.headers.cookie ?? "")?.[1] ?? ""] ?? null);
     const app = express();
     app.get("/healthz", (_req, res) => { res.send("ok"); });
     app.use("/api", requireTrustedRequest);
@@ -171,6 +121,7 @@ describe("web mode over HTTP (real middleware)", () => {
   });
   afterEach(async () => {
     setWebConfig(loadWebConfig({}));
+    setSessionResolver(null);
     await new Promise((r) => server.close(r));
   });
   // fetch() will not let a test choose the Host header, which is exactly what these tests are about
@@ -186,6 +137,7 @@ describe("web mode over HTTP (real middleware)", () => {
     });
   const call = (path: string, headers: Record<string, string> = {}, method = "GET") =>
     send(path, { host: "kube.example.com", ...headers }, method);
+  const ok = { cookie: "session=dev" };
 
   it("answers the health probe with no identity and any host", async () => {
     const r = await send("/healthz", { host: "10.1.2.3" });
@@ -194,9 +146,15 @@ describe("web mode over HTTP (real middleware)", () => {
   it("refuses a hostname that is not the public one", async () => {
     expect((await send("/api/k8s/pods", { ...ok, host: "evil.example.net" })).status).toBe(403);
   });
-  it("401s without identity and 403s without the proxy secret", async () => {
-    expect((await call("/api/k8s/pods", { "x-kubedeck-proxy-secret": SECRET })).status).toBe(401);
-    expect((await call("/api/k8s/pods", { "x-forwarded-email": "a@b.c" })).status).toBe(403);
+  it("401s without a session, and an identity header names nobody", async () => {
+    expect((await call("/api/k8s/pods")).status).toBe(401);
+    expect((await call("/api/k8s/pods", { "x-forwarded-email": "boss@example.com" })).status).toBe(401);
+    expect(await (await call("/api/mode", { "x-forwarded-email": "boss@example.com" })).json()).toMatchObject({ auth: "builtin", user: null });
+  });
+  it("applies the group allow-list", async () => {
+    setWebConfig(cfg({ allowedGroups: ["platform"] }));
+    expect((await call("/api/k8s/pods", ok)).status).toBe(200);
+    expect((await call("/api/k8s/pods", { cookie: "session=other" })).status).toBe(403);
   });
   it("serves reads to a signed-in user and reports who they are", async () => {
     expect((await call("/api/k8s/pods", ok)).status).toBe(200);
@@ -227,15 +185,6 @@ describe("web mode over HTTP (real middleware)", () => {
     const files = await call("/api/k8s/pods/web-1/files/list?path=/", ok);
     expect(files.status).toBe(403);
     expect((await files.json()).message).toMatch(/pod files is turned off/);
-  });
-  it("with KUBEDECK_AUTH=none serves everyone as anonymous, ignores identity headers, and still checks the host", async () => {
-    setWebConfig(cfg({ authNone: true, proxySecret: "", trustProxyNetwork: false }));
-    expect((await call("/api/k8s/pods")).status).toBe(200);
-    const mode = await (await call("/api/mode", { "x-forwarded-email": "boss@example.com" })).json();
-    expect(mode).toMatchObject({ mode: "web", auth: "none", user: null });
-    expect((await send("/api/k8s/pods", { host: "evil.example.net" })).status).toBe(403);
-    // read-only still applies
-    expect((await call("/api/k8s/deployments/scale", {}, "POST")).status).toBe(403);
   });
   it("never starts a port-forward on the server, but listing stays a read", async () => {
     setWebConfig(cfg({ readOnly: false }));

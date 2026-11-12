@@ -127,7 +127,7 @@ function AppShell() {
 function SignInGate() {
   const { data, isLoading } = useServerModeQuery();
   if (isLoading) return <div className="h-screen bg-background" aria-busy="true" />;
-  if (data?.mode === "web" && data.auth === "builtin" && !data.user) {
+  if (data?.mode === "web" && !data.user) {
     return (
       <Suspense fallback={<div className="h-screen bg-background" />}>
         <SignInPage />

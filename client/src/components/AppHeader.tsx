@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { ChevronRight, LogOut, ShieldOff, SquareTerminal } from "lucide-react";
+import { ChevronRight, LogOut, SquareTerminal } from "lucide-react";
 import { useScope } from "@/hooks/use-scope";
 import { useK8sContexts } from "@/hooks/use-k8s";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -84,27 +84,7 @@ export function AppHeader({ breadcrumbs = [], rightSlot, showSelectors = true }:
           <kbd className="hidden rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-medium lg:inline">⌘K</kbd>
         </button>
         <AlertBell />
-        {serverMode.mode === "web" && serverMode.auth === "none" && (
-          <span
-            title="No sign-in on this KubeDeck: anyone who can reach it can use it"
-            className="flex h-9 items-center gap-1.5 rounded-lg border border-warning/40 bg-warning/10 px-2.5 text-xs font-medium text-warning"
-          >
-            <ShieldOff size={14} className="shrink-0" />
-            <span className="hidden lg:inline">No sign-in</span>
-          </span>
-        )}
-        {serverMode.mode === "web" && serverMode.auth === "builtin" && serverMode.user && <SignedIn user={serverMode.user} />}
-        {serverMode.mode === "web" && serverMode.auth !== "builtin" && serverMode.user && (
-          <a
-            href="/oauth2/sign_out"
-            title={`Signed in as ${serverMode.user.email || serverMode.user.name} — click to sign out`}
-            aria-label="Sign out"
-            className="flex h-9 items-center gap-2 rounded-lg border border-border bg-secondary/40 px-2.5 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
-          >
-            <span className="hidden max-w-[10rem] truncate lg:inline">{serverMode.user.name}</span>
-            <LogOut size={14} className="shrink-0" />
-          </a>
-        )}
+        {serverMode.mode === "web" && serverMode.user && <SignedIn user={serverMode.user} />}
         <ThemeToggle className="h-9 w-9 rounded-lg" />
         {rightSlot}
       </div>
@@ -112,7 +92,7 @@ export function AppHeader({ breadcrumbs = [], rightSlot, showSelectors = true }:
   );
 }
 
-/** Who is signed in with KubeDeck's own sign-in, and a way out. */
+/** Who is signed in, and a way out. */
 function SignedIn({ user }: { user: { name: string; email: string; groups?: string[]; role?: string } }) {
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);

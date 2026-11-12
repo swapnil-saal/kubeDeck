@@ -1,7 +1,8 @@
 /**
- * Per-user access in web mode: with KUBEDECK_ACCESS=impersonate, every kubectl call made for a
- * request carries `--as=<user> --as-group=<group>…` for the person the login proxy signed in, so the
- * API server applies that person's own RBAC. KubeDeck's service account then needs only `impersonate`.
+ * Per-user access in web mode: every kubectl call made for a request carries
+ * `--as=kubedeck:<email> --as-group=kubedeck:<group>…` for the signed-in person, so the API server
+ * applies the RBAC their groups are bound to. KubeDeck's service account needs only `impersonate`.
+ * (KUBEDECK_ACCESS=shared turns this off: everyone then acts as the service account.)
  *
  * The identity rides on the request's async context (AsyncLocalStorage), so it reaches kubectl calls
  * made deep inside route handlers and the assistant's tools without being passed around. A kubectl
@@ -19,7 +20,7 @@ export interface Impersonation {
 
 const store = new AsyncLocalStorage<Impersonation>();
 
-let active: Pick<WebConfig, "impersonate" | "impersonateUser" | "impersonatePrefix" | "impersonateGroupPrefix"> | null = null;
+let active: Pick<WebConfig, "impersonate" | "impersonatePrefix" | "impersonateGroupPrefix"> | null = null;
 
 /** Called once at startup with the web config (null on the desktop). */
 export function setImpersonation(c: typeof active) {
@@ -28,7 +29,7 @@ export function setImpersonation(c: typeof active) {
 
 /** The Kubernetes identity for a signed-in user, per the configured claim and prefixes. */
 export function identityFor(user: WebUser, c: NonNullable<typeof active>): Impersonation {
-  const name = c.impersonateUser === "name" ? user.name : user.email || user.name;
+  const name = user.email || user.name;
   return {
     user: `${c.impersonatePrefix}${name}`,
     groups: user.groups.map((g) => `${c.impersonateGroupPrefix}${g}`),
