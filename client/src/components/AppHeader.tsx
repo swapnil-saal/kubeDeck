@@ -84,6 +84,7 @@ export function AppHeader({ breadcrumbs = [], rightSlot, showSelectors = true }:
           <kbd className="hidden rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-medium lg:inline">⌘K</kbd>
         </button>
         <AlertBell />
+        {/* the desktop's local user never signs in, so it has no sign-out */}
         {serverMode.mode === "web" && serverMode.user && <SignedIn user={serverMode.user} />}
         <ThemeToggle className="h-9 w-9 rounded-lg" />
         {rightSlot}

@@ -4,6 +4,7 @@ import type { AuditEntry } from "@shared/admin";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAudit } from "@/hooks/use-admin";
+import { useServerMode } from "@/hooks/use-server-mode";
 import { cn } from "@/lib/utils";
 import { SettingsCard } from "./SettingsCard";
 
@@ -46,20 +47,22 @@ export function AuditSection() {
   const [filter, setFilter] = useState("");
   const audit = useAudit(filter);
   const entries = audit.data?.pages.flatMap((p) => p.entries) ?? [];
+  // the desktop has one user, with no email to filter by
+  const shared = useServerMode().mode === "web";
 
   return (
     <SettingsCard
       title="Audit log"
       description="Every change made through KubeDeck: scaling, edits, deletes, kubectl commands and the assistant's actions, with who made it and whether the cluster allowed it."
     >
-      <form
+      {shared && <form
         className="mb-4 flex flex-wrap items-center gap-2"
         onSubmit={(ev) => { ev.preventDefault(); setFilter(user.trim().toLowerCase()); }}
       >
         <Input id="audit-user" type="email" placeholder="Filter by email" value={user} onChange={(ev) => setUser(ev.target.value)} className="h-8 w-64 rounded-lg text-xs" />
         <Button type="submit" size="sm" variant="outline">Filter</Button>
         {filter && <Button type="button" size="sm" variant="ghost" onClick={() => { setUser(""); setFilter(""); }}>Show everyone</Button>}
-      </form>
+      </form>}
       {audit.isLoading ? (
         <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</p>
       ) : audit.error ? (

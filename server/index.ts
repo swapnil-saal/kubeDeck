@@ -7,12 +7,15 @@ import { reportUnreachableAs503 } from "./errors";
 import { ensureInClusterKubeconfig } from "./incluster";
 import { bindIdentity, setImpersonation } from "./identity";
 import {
-  auditLog, describeMode, HEALTH_PATH, loadWebConfig, setAuditSink, setSessionResolver, setWebConfig, validateWebConfig,
+  auditLog, describeMode, HEALTH_PATH, loadWebConfig, setSessionResolver, setWebConfig, validateWebConfig,
   webFeatureOff, webGate, webReadOnly,
 } from "./web-mode";
 import type { KubeDeckAuth } from "./auth";
 import { authConfigProblems, loadAuthConfig } from "./auth";
 import { mountAuthRoutes } from "./auth/mount";
+import { startAudit } from "./audit";
+import { registerAuditRoutes } from "./audit/routes";
+import { openAppDatabase } from "./db";
 
 // Web (shared-service) mode is opt-in; refuse to start half-configured rather than serve cluster access to anyone.
 const webCfg = loadWebConfig();
@@ -55,7 +58,8 @@ declare module "http" {
 
 // Every API call (kubectl, file browsing, AI, settings…) must come from this app's own origin.
 app.use("/api", requireTrustedRequest);
-// Web mode: the API needs a signed-in person (the sign-in page and the app's files do not); writes are refused when read-only.
+// Who is asking: on the desktop the local user; in web mode the API needs a signed-in person (the
+// sign-in page and the app's files do not). Every write is then audited; writes are refused when read-only.
 app.use(webGate);
 app.use(auditLog);
 // KubeDeck's sign-in. Before the body parsers, which would consume what
@@ -64,7 +68,9 @@ let builtinAuth: KubeDeckAuth | null = null;
 if (webCfg.enabled) mountAuthRoutes(app, () => builtinAuth);
 app.use("/api", webFeatureOff);
 app.use("/api", webReadOnly);
-app.get("/api/mode", (req, res) => { res.json(describeMode(req)); });
+// whether the audit log is kept: set once the database has opened (or failed to, on the desktop)
+let auditReady = false;
+app.get("/api/mode", (req, res) => { res.json(describeMode(req, { audit: auditReady })); });
 app.use("/api/k8s", validateK8sQuery);
 app.use("/api/k8s", reportUnreachableAs503);
 registerParamValidators(app);
@@ -109,20 +115,20 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // Web mode: the database, KubeDeck's own sign-in and the admin routes (the desktop app has none of them)
-  if (webCfg.enabled) {
-    const { migrate, openDatabase } = await import("./db");
-    const { recordAudit } = await import("./audit");
-    const d = await openDatabase();
-    await migrate(d);
-    console.log(`[kubedeck] database: ${d.where}`);
-    setAuditSink((e) => recordAudit(d, e));
+  // The database keeps the audit log in both modes, and web mode's accounts and sessions. Web mode
+  // cannot run without it; the desktop app only loses its audit log.
+  const d = await openAppDatabase({ required: webCfg.enabled });
+  if (d) startAudit(d);
+  auditReady = d !== null;
+  registerAuditRoutes(app, d);
+  // Web mode: KubeDeck's own sign-in and user management (Better Auth is never loaded on the desktop)
+  if (webCfg.enabled && d) {
     const { startAuth } = await import("./auth");
     const { registerAdminRoutes } = await import("./auth/admin-routes");
     const a = await startAuth(d, loadAuthConfig());
     builtinAuth = a;
     setSessionResolver((req) => a.userOf(req));
-    registerAdminRoutes(app, a, d);
+    registerAdminRoutes(app, a);
   }
 
   await registerRoutes(httpServer, app);

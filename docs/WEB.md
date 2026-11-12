@@ -20,7 +20,7 @@ browser ──HTTPS──▶ ingress ──▶ KubeDeck ──kubectl --as=kubed
 | Port-forward | yes | no: the port would open inside the server, not on the user's machine |
 | Settings | edited in the app | configuration comes from the environment; admins manage **Users** and read the **Audit log** |
 | kubectl palette and assistant | any verb | no `config`, `auth`, `exec`, `cp`, `port-forward`, `proxy`, `attach`, `debug`, and no `--token/--server/--kubeconfig/--as` flags, so nobody steps outside their own identity. The assistant's pipelines run without a shell. When read-only, both only read |
-| Audit | – | every change (UI, palette, assistant) in **Settings → Audit log** and as a JSON line on stdout, with the person and their groups |
+| Audit | every change in **Settings → Audit log**, kept in `~/.kubedeck/kubedeck.db` under your computer's user name | every change (UI, palette, assistant) in **Settings → Audit log** and as a JSON line on stdout, with the person and their groups |
 
 What a person sees follows their RBAC: kinds they may not list are left out of the sidebar, and actions they may not take are not shown.
 

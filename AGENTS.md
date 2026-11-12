@@ -22,7 +22,11 @@ Web mode locally: `KUBEDECK_MODE=web KUBEDECK_PUBLIC_URL=http://localhost:5051 K
 
 - `server/`: Express routes, one module per area (`*-routes.ts`). `kubectl-run.ts` runs kubectl,
   `kubectl-safety.ts` classifies commands, `web-mode.ts` is the login gate and feature switches,
-  `identity.ts` the per-user impersonation, `map.ts` the namespace graph, `tempo.ts` +
+  `identity.ts` the per-user impersonation, `events/` the typed in-process event bus (modules emit
+  facts such as `action.done` and `user.changed`, others subscribe; no direct calls between them),
+  `audit/` the audit log (subscribes to `action.done`; the desktop app keeps it too, in
+  `~/.kubedeck/kubedeck.db`, under one local user who never signs in), `db/` the database,
+  `auth/` web mode's sign-in (Better Auth, loaded only in web mode), `map.ts` the namespace graph, `tempo.ts` +
   `traces-routes.ts` traces from Grafana Tempo, `loki.ts` log history, `grafana-mcp.ts` the Grafana MCP client (read tools
   only), `ai/` the assistant (AI SDK agent, tools, prompts). Web mode's sign-in lives in
   `auth/` (the only code that knows Better Auth; admin routes validate groups), `db/` is the database (Kysely: SQLite via

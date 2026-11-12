@@ -6,10 +6,11 @@ import express, { type Express } from "express";
 import type { AddressInfo } from "net";
 import type { Server } from "http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { listAudit } from "../audit";
+import { listAudit, startAudit } from "../audit";
+import { registerAuditRoutes } from "../audit/routes";
 import { databaseTarget, migrate, openDatabase, type Database } from "../db";
-import { auditLog, describeMode, loadWebConfig, setAuditSink, setSessionResolver, setWebConfig, webGate } from "../web-mode";
-import { recordAudit } from "../audit";
+import { on, settled, type UserChanged } from "../events";
+import { auditLog, describeMode, loadWebConfig, setSessionResolver, setWebConfig, webGate } from "../web-mode";
 import { registerAdminRoutes } from "./admin-routes";
 import { authConfigProblems, loadAuthConfig, roleOf, splitGroups, startAuth, type KubeDeckAuth } from "./index";
 import { mountAuthRoutes } from "./mount";
@@ -20,6 +21,8 @@ let server: Server;
 let base = "";
 let d: Database;
 let auth: KubeDeckAuth | null = null;
+const stops: (() => void)[] = [];
+const userChanges: UserChanged[] = [];
 
 /** fetch with a cookie jar of one session, sending the Origin a browser would */
 function client() {
@@ -50,14 +53,15 @@ beforeAll(async () => {
   await migrate(d);
   auth = await startAuth(d, { secret: "x".repeat(40), baseURL: base, admin: ADMIN });
   setSessionResolver((req) => auth!.userOf(req));
-  setAuditSink((e) => recordAudit(d, e));
+  stops.push(startAudit(d), on("user.changed", (e) => { userChanges.push(e); }));
 
   app.use(webGate);
   app.use(auditLog);
   mountAuthRoutes(app, () => auth);
   app.get("/api/mode", (req, res) => { res.json(describeMode(req)); });
   app.use(express.json());
-  registerAdminRoutes(app, auth, d);
+  registerAdminRoutes(app, auth);
+  registerAuditRoutes(app, d);
   app.get("/api/whoami", (req, res) => { res.json(req.kubedeckUser); });
   app.post("/api/k8s/deployments/web/scale", (req, res) => { res.json({ ok: true }); });
 });
@@ -65,7 +69,7 @@ beforeAll(async () => {
 afterAll(async () => {
   setWebConfig(loadWebConfig({}));
   setSessionResolver(null);
-  setAuditSink(null);
+  for (const stop of stops) stop();
   server?.close();
   await d?.close();
 });
@@ -87,7 +91,7 @@ describe("auth config", () => {
 describe("builtin sign-in over HTTP", () => {
   it("lets the app and /api/mode load without a session, and refuses the API", async () => {
     const c = client();
-    expect((await c("/api/mode")).body).toMatchObject({ auth: "builtin", user: null, features: { admin: false } });
+    expect((await c("/api/mode")).body).toMatchObject({ auth: "builtin", user: null, features: { users: false, audit: false } });
     expect((await c("/api/whoami")).status).toBe(401);
   });
 
@@ -95,7 +99,7 @@ describe("builtin sign-in over HTTP", () => {
     const c = client();
     expect((await c("/api/auth/sign-in/email", { body: { email: ADMIN.email, password: "wrong-password-1" } })).status).toBe(401);
     expect((await c("/api/auth/sign-in/email", { body: { email: ADMIN.email, password: ADMIN.password } })).status).toBe(200);
-    expect((await c("/api/mode")).body).toMatchObject({ user: { email: ADMIN.email, role: "admin", groups: [] }, features: { admin: true } });
+    expect((await c("/api/mode")).body).toMatchObject({ user: { email: ADMIN.email, role: "admin", groups: [] }, features: { users: true, audit: true } });
   });
 
   it("has no self sign-up, and Better Auth's own admin routes are not reachable", async () => {
@@ -120,6 +124,8 @@ describe("builtin sign-in over HTTP", () => {
     expect((await alice("/api/whoami")).body).toMatchObject({ email: "alice@example.com", groups: ["shop-editors", "viewers"], role: "user" });
     // not an admin
     expect((await alice("/api/admin/users")).status).toBe(403);
+    expect((await alice("/api/admin/audit")).status).toBe(403);
+    expect((await alice("/api/mode")).body.features).toMatchObject({ users: false, audit: false });
 
     // a group change applies on the next request, without signing in again
     const patched = await admin(`/api/admin/users/${made.body.id}`, { method: "PATCH", body: { groups: ["ops-editors"] } });
@@ -130,6 +136,12 @@ describe("builtin sign-in over HTTP", () => {
     expect((await admin(`/api/admin/users/${made.body.id}/ban`, { body: { banned: true, reason: "left" } })).status).toBe(200);
     expect((await alice("/api/whoami")).status).toBe(401);
     expect((await alice("/api/auth/sign-in/email", { body: { email: "alice@example.com", password: "alice-password-1" } })).status).toBe(403);
+
+    // each change was announced, naming the admin who made it; the refused one was not
+    await settled();
+    const aliceChanges = userChanges.filter((e) => e.userId === made.body.id);
+    expect(aliceChanges.map((e) => e.change)).toEqual(["created", "updated", "blocked"]);
+    expect(aliceChanges.every((e) => e.by && e.by !== made.body.id)).toBe(true);
   });
 
   it("keeps an admin from locking themselves out", async () => {
@@ -145,7 +157,9 @@ describe("builtin sign-in over HTTP", () => {
     const admin = client();
     await admin("/api/auth/sign-in/email", { body: { email: ADMIN.email, password: ADMIN.password } });
     await admin("/api/k8s/deployments/web/scale?context=kind&namespace=shop", { body: { replicas: 2 } });
+    // the record is emitted when the response has finished, and stored by the audit module's handler
     await new Promise((r) => setTimeout(r, 50));
+    await settled();
     const { entries } = await listAudit(d, { user: ADMIN.email, limit: 5 });
     expect(entries[0]).toMatchObject({ userEmail: ADMIN.email, method: "POST", path: "/api/k8s/deployments/web/scale", status: 200, context: "kind", namespace: "shop" });
     // signing in is not a cluster change

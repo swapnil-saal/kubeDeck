@@ -17,8 +17,13 @@
  *  - an audit record for every change, with the user and their groups.
  *
  * Turn it on with KUBEDECK_MODE=web. See docs/WEB.md.
+ *
+ * The desktop app is the same server with one local user who is never asked to sign in (localUser);
+ * its writes are audited too, and kubectl runs with the person's own kubeconfig.
  */
+import os from "os";
 import type { NextFunction, Request, Response } from "express";
+import { emit, type ActionDone } from "./events";
 import { scanShell, type SafetyLevel } from "./kubectl-safety";
 
 export interface WebConfig {
@@ -113,8 +118,34 @@ export function needsSession(path: string): boolean {
 
 const inAllowedGroup = (user: WebUser) => active.allowedGroups.length === 0 || user.groups.some((g) => active.allowedGroups.includes(g));
 
+let local: WebUser | null = null;
+/**
+ * The desktop app's one user: whoever is logged in to this computer, never asked to sign in, and an
+ * admin of their own KubeDeck (they read its audit log). No impersonation: kubectl uses their kubeconfig.
+ */
+export function localUser(): WebUser {
+  local ??= { name: computerUserName(), email: "", groups: [], role: "admin" };
+  return local;
+}
+
+function computerUserName(): string {
+  try {
+    return os.userInfo().username;
+  } catch (err) {
+    // a uid with no passwd entry (some containers)
+    const fallback = process.env.USER || process.env.USERNAME || "local";
+    console.warn(`[kubedeck] could not read this computer's user name (${err instanceof Error ? err.message : err}); using "${fallback}"`);
+    return fallback;
+  }
+}
+
+/** Who is asking: the desktop's local user, or (web mode) the session's user, refusing the API without one. */
 export function webGate(req: Request, res: Response, next: NextFunction): void {
-  if (!active.enabled || req.path === HEALTH_PATH) return next();
+  if (!active.enabled) {
+    req.kubedeckUser = localUser();
+    return next();
+  }
+  if (req.path === HEALTH_PATH) return next();
   // Better Auth checks its own routes; files of the app carry no data
   if (!req.path.startsWith("/api/") || req.path.startsWith("/api/auth/")) return next();
   if (!sessionUser) {
@@ -162,24 +193,7 @@ export function webReadOnly(req: Request, res: Response, next: NextFunction): vo
   res.status(403).json({ message: "This KubeDeck is read-only. Scaling, restarting, editing and deleting are turned off here." });
 }
 
-export interface AuditRecord {
-  at: string;
-  userEmail: string;
-  userName: string;
-  groups: string;
-  method: string;
-  path: string;
-  status: number;
-  context: string;
-  namespace: string;
-  /** the kubectl command, for palette and assistant runs */
-  detail: string;
-  ip: string;
-}
-
-/** Where audit records are kept besides stdout (the database, when KubeDeck has one). */
-let auditSink: ((e: AuditRecord) => Promise<void>) | null = null;
-export function setAuditSink(fn: typeof auditSink) { auditSink = fn; }
+export type AuditRecord = ActionDone;
 
 const field = (v: unknown): string => (typeof v === "string" ? v : "");
 
@@ -203,18 +217,24 @@ export function auditRecord(req: Request, status: number, at = new Date()): Audi
   };
 }
 
-/** One record per write (including palette commands), naming the user: stdout for the cluster's log pipeline, and the database. */
+/**
+ * One `action.done` event per write (including palette commands), naming the user; the audit module
+ * stores it. Web mode also prints it to stdout for the cluster's log pipeline.
+ */
 export function auditLog(req: Request, res: Response, next: NextFunction): void {
-  if (!active.enabled) return next();
   const audited = MUTATING.has(req.method) && req.path.startsWith("/api") && !req.path.startsWith("/api/auth/");
   if (!audited) return next();
+  // by the time the response finishes, a router mounted on "/api" may have cut req.path short
+  const path = req.path;
   res.on("finish", () => {
-    const r = auditRecord(req, res.statusCode);
-    console.log(JSON.stringify({
-      audit: true, at: r.at, user: r.userEmail || r.userName || "unknown", ip: r.ip,
-      method: r.method, path: r.path, status: r.status,
-    }));
-    auditSink?.(r).catch((err) => console.error(`[kubedeck] could not store an audit record: ${err instanceof Error ? err.message : err}`));
+    const r = { ...auditRecord(req, res.statusCode), path };
+    if (active.enabled) {
+      console.log(JSON.stringify({
+        audit: true, at: r.at, user: r.userEmail || r.userName || "unknown", ip: r.ip,
+        method: r.method, path: r.path, status: r.status,
+      }));
+    }
+    emit("action.done", r);
   });
   next();
 }
@@ -266,20 +286,33 @@ export function webAgentRefusal(line: string, tool: "kubectl" | "bash", level: S
   return null;
 }
 
-/** Public description of the running mode, for the browser (never includes secrets). */
-export function describeMode(req: Request) {
+const publicUser = (u: WebUser | undefined) => (u ? { name: u.name, email: u.email, groups: u.groups, role: u.role ?? "user" } : null);
+
+/**
+ * Public description of the running mode, for the browser (never includes secrets). `audit`: whether
+ * this KubeDeck keeps an audit log (a desktop whose database could not open does not).
+ * Features: `users` = may manage accounts (web admins), `audit` = may read the audit log (admins).
+ */
+export function describeMode(req: Request, o: { audit: boolean } = { audit: true }) {
   const c = active;
-  if (!c.enabled) return { mode: "desktop" as const, readOnly: false, features: { portForward: true, settingsEdit: true, ai: true, podFiles: true } };
+  const user = publicUser(req.kubedeckUser);
+  const admin = user?.role === "admin";
+  if (!c.enabled) {
+    return {
+      mode: "desktop" as const,
+      readOnly: false,
+      user,
+      features: { portForward: true, settingsEdit: true, ai: true, podFiles: true, users: false, audit: admin && o.audit },
+    };
+  }
   return {
     mode: "web" as const,
     readOnly: c.readOnly,
     auth: "builtin" as const,
     // whose permissions apply: each user's own (impersonation) or KubeDeck's service account
     access: c.impersonate ? ("user" as const) : ("shared" as const),
-    user: req.kubedeckUser
-      ? { name: req.kubedeckUser.name, email: req.kubedeckUser.email, groups: req.kubedeckUser.groups, role: req.kubedeckUser.role ?? "user" }
-      : null,
+    user,
     // settings come from the server's environment; a forwarded port would open on the server
-    features: { portForward: false, settingsEdit: false, ai: c.ai, podFiles: c.podFiles, admin: req.kubedeckUser?.role === "admin" },
+    features: { portForward: false, settingsEdit: false, ai: c.ai, podFiles: c.podFiles, users: admin, audit: admin && o.audit },
   };
 }

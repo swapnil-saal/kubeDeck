@@ -20,8 +20,8 @@ interface Section {
   render: FC;
   /** only on a KubeDeck whose settings the browser may change (the desktop app) */
   editable?: boolean;
-  /** only for a KubeDeck admin (KubeDeck's own sign-in) */
-  admin?: boolean;
+  /** only when the server offers this feature to the current user */
+  feature?: "users" | "audit";
 }
 
 const SECTIONS: Section[] = [
@@ -30,8 +30,8 @@ const SECTIONS: Section[] = [
   { id: "ai", label: "AI assistant", description: "Model provider for Ask Deck and AI features", icon: Bot, render: AiSection, editable: true },
   // shown read-only on a shared KubeDeck: it says whether tracing and Grafana are connected
   { id: "observability", label: "Observability", description: "Traces from Grafana Tempo, and Grafana for the assistant", icon: Waypoints, render: ObservabilitySection },
-  { id: "users", label: "Users", description: "Who can sign in, and their groups", icon: Users, render: UsersSection, admin: true },
-  { id: "audit", label: "Audit log", description: "Every change made through KubeDeck", icon: ScrollText, render: AuditSection, admin: true },
+  { id: "users", label: "Users", description: "Who can sign in, and their groups", icon: Users, render: UsersSection, feature: "users" },
+  { id: "audit", label: "Audit log", description: "Every change made through KubeDeck", icon: ScrollText, render: AuditSection, feature: "audit" },
   { id: "about", label: "About", description: "Version, source and keyboard shortcuts", icon: Info, render: AboutSection },
 ];
 
@@ -39,7 +39,7 @@ const SECTIONS: Section[] = [
 export default function Settings() {
   const { get, set } = useHashParams();
   const { features } = useServerMode();
-  const sections = SECTIONS.filter((s) => (!s.editable || features.settingsEdit) && (!s.admin || features.admin));
+  const sections = SECTIONS.filter((s) => (!s.editable || features.settingsEdit) && (!s.feature || features[s.feature]));
   const active = sections.find((s) => s.id === get("section")) ?? sections[0];
   const Body = active.render;
 

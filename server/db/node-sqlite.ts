@@ -16,7 +16,7 @@ function bindable(v: unknown): Param {
 }
 
 export async function nodeSqliteDatabase(file: string): Promise<SqliteDatabase> {
-  // a dynamic import keeps the module (and its "experimental" warning) out of the desktop app
+  // loaded only when SQLite is used (not with Postgres), with its "experimental" warning on older Node
   const { DatabaseSync } = await import("node:sqlite");
   const db = new DatabaseSync(file);
   db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");

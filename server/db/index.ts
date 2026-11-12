@@ -6,7 +6,7 @@
  *   KUBEDECK_DATABASE_URL=postgres://user:pass@host:5432/kubedeck
  *   KUBEDECK_DATABASE_URL=sqlite:/var/lib/kubedeck/kubedeck.db      (default: ~/.kubedeck/kubedeck.db)
  *
- * The desktop app never opens it.
+ * The desktop app opens the default file for its audit log only (no accounts: Better Auth is web-only).
  */
 import { mkdirSync } from "fs";
 import os from "os";
@@ -66,6 +66,25 @@ export async function openDatabase(t: DbTarget = databaseTarget()): Promise<Data
   if (t.target !== ":memory:") mkdirSync(path.dirname(t.target), { recursive: true });
   const db = new Kysely<any>({ dialect: new SqliteDialect({ database: await nodeSqliteDatabase(t.target) }) });
   return { db, type: "sqlite", where: redact(t), close: () => db.destroy() };
+}
+
+/**
+ * Open and migrate the database on start. When it is not `required` (the desktop, which only keeps
+ * its audit log there) a failure is one warning and null, never a failed start.
+ */
+export async function openAppDatabase(o: { required: boolean; target?: DbTarget }): Promise<Database | null> {
+  let d: Database | null = null;
+  try {
+    d = await openDatabase(o.target ?? databaseTarget());
+    await migrate(d);
+    console.log(`[kubedeck] database: ${d.where}`);
+    return d;
+  } catch (err) {
+    if (o.required) throw err;
+    await d?.close().catch(() => undefined);
+    console.warn(`[kubedeck] no audit log: could not open the database (${err instanceof Error ? err.message : err})`);
+    return null;
+  }
 }
 
 /** KubeDeck's own tables (Better Auth migrates its tables itself). Safe to run on every start. */

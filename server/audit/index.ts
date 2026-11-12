@@ -1,12 +1,19 @@
 /**
  * The audit log: one row per write anyone made through KubeDeck (scale, edit, delete, palette
- * commands, assistant actions). It is also printed to stdout so a cluster's log pipeline keeps it.
+ * commands, assistant actions), on the desktop and in web mode. Writes arrive as `action.done`
+ * events (web mode also prints them to stdout so a cluster's log pipeline keeps them).
  * This module owns the `audit_log` table.
  */
 import type { AuditEntry, AuditList } from "@shared/admin";
 import type { Database } from "../db";
+import { on } from "../events";
 
 export type NewAuditEntry = Omit<AuditEntry, "id">;
+
+/** Store every `action.done` in `d`. Returns the function that stops it. */
+export function startAudit(d: Database): () => void {
+  return on("action.done", (e) => recordAudit(d, e));
+}
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 

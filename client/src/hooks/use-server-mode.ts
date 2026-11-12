@@ -8,9 +8,13 @@ export interface ServerMode {
   auth?: "builtin";
   /** web mode: "user" = each person's own RBAC (impersonation); "shared" = KubeDeck's service account */
   access?: "user" | "shared";
+  /** web mode: the signed-in person; desktop: the computer's local user (never signs in or out) */
   user?: { name: string; email: string; groups?: string[]; role?: "admin" | "user" } | null;
-  /** podFiles: browse and search a container's files (kubectl exec); admin: may manage users (builtin sign-in) */
-  features: { portForward: boolean; settingsEdit: boolean; ai: boolean; podFiles?: boolean; admin?: boolean };
+  /**
+   * podFiles: browse and search a container's files (kubectl exec); users: may manage accounts (web
+   * admins); audit: may read the audit log (admins, desktop included)
+   */
+  features: { portForward: boolean; settingsEdit: boolean; ai: boolean; podFiles?: boolean; users?: boolean; audit?: boolean };
 }
 
 /** Desktop is the default while loading, and when the endpoint is missing (older server). */
