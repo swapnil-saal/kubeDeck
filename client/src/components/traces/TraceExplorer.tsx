@@ -22,7 +22,8 @@ const DURATION = /^\d+(\.\d+)?(ms|s|m)$/;
 
 /** Shown instead of traces when tracing is off or the cluster is unknown. */
 export function TracingUnavailable({ message, configured }: { message?: string; configured: boolean }) {
-  const { features } = useServerMode();
+  // an admin (and the desktop's own user) manages plugins
+  const canManage = useServerMode().user?.role === "admin";
   return (
     <div className="mx-auto max-w-lg px-6 py-12 text-center">
       <Waypoints className="mx-auto mb-3 h-8 w-8 text-primary" />
@@ -30,13 +31,10 @@ export function TracingUnavailable({ message, configured }: { message?: string; 
       <p className="mt-1 text-xs text-muted-foreground">
         {message || (configured ? "" : "Connect Grafana Tempo to see requests across services, where they fail and where the time goes.")}
       </p>
-      {features.settingsEdit ? (
-        <Link href="/settings?section=observability" className="mt-4 inline-flex h-8 items-center rounded-lg border border-border px-3 text-xs font-medium hover:border-primary/40">
-          Open Settings → Observability
-        </Link>
-      ) : (
-        !configured && <p className="mt-3 text-xs text-muted-foreground">An administrator sets <code className="font-mono">KUBEDECK_TEMPO_URL</code> on this KubeDeck.</p>
-      )}
+      {!configured && <p className="mt-3 text-xs text-muted-foreground">{canManage ? "Turn on the Tempo traces plugin in Settings → Plugins." : "An administrator turns on the Tempo traces plugin in Settings → Plugins."}</p>}
+      <Link href="/settings?section=plugins" className="mt-4 inline-flex h-8 items-center rounded-lg border border-border px-3 text-xs font-medium hover:border-primary/40">
+        Open Settings → Plugins
+      </Link>
     </div>
   );
 }

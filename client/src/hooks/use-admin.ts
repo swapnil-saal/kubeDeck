@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { buildUrl } from "@shared/routes";
 import {
   adminPaths,
@@ -8,32 +8,23 @@ import {
   type AuditList,
   type CreateUserInput,
   type UpdateUserInput,
-  type UserList,
 } from "@shared/admin";
-import { requestJson } from "@/lib/request-json";
+import { getParsed, requestJson } from "@/lib/request-json";
+import { useInvalidatingMutation } from "./use-invalidating-mutation";
 
 const USERS = [adminPaths.users];
 
 export function useUsers(enabled = true) {
   return useQuery({
     queryKey: USERS,
-    queryFn: async (): Promise<UserList> => userListSchema.parse(await requestJson("GET", adminPaths.users)),
+    queryFn: getParsed(userListSchema, adminPaths.users),
     enabled,
     staleTime: 10_000,
   });
 }
 
 /** Every user change refreshes the list; changing your own account also refreshes who you are. */
-function useUserMutation<V>(fn: (v: V) => Promise<unknown>) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: fn,
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: USERS });
-      void qc.invalidateQueries({ queryKey: ["/api/mode"] });
-    },
-  });
-}
+const useUserMutation = <V>(fn: (v: V) => Promise<unknown>) => useInvalidatingMutation(fn, [{ queryKey: USERS }, { queryKey: ["/api/mode"] }]);
 
 const userUrl = (path: string, id: string) => buildUrl(path, { id });
 

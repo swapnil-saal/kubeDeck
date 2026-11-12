@@ -11,6 +11,7 @@ import {
 import { useServerMode } from "@/hooks/use-server-mode";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { InlineConfirm } from "./InlineConfirm";
 import { SettingsCard } from "./SettingsCard";
 
 const field = "h-9 rounded-lg border-border bg-muted/50 text-sm focus-visible:ring-primary/20";
@@ -152,14 +153,9 @@ function SetPassword({ user, onDone }: { user: AdminUser; onDone: () => void }) 
 function ConfirmDelete({ user, onDone }: { user: AdminUser; onDone: () => void }) {
   const del = useDeleteUser();
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <p className="text-xs">Delete <strong>{user.email}</strong>? Their account and sessions are removed; the audit log keeps their past actions.</p>
-      <Button size="sm" variant="destructive" disabled={del.isPending} onClick={() => del.mutate(user.id, { onSuccess: onDone })}>
-        {del.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Delete user
-      </Button>
-      <Button size="sm" variant="ghost" onClick={onDone}>Cancel</Button>
-      {del.error && <p role="alert" className="w-full text-xs text-destructive">{del.error.message}</p>}
-    </div>
+    <InlineConfirm action="Delete user" pending={del.isPending} error={del.error} onConfirm={() => del.mutate(user.id, { onSuccess: onDone })} onCancel={onDone}>
+      Delete <strong>{user.email}</strong>? Their account and sessions are removed; the audit log keeps their past actions.
+    </InlineConfirm>
   );
 }
 

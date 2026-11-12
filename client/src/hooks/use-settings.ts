@@ -67,30 +67,3 @@ export function useKubeconfigScan() {
     enabled: false, // only fetch on demand
   });
 }
-
-export interface ObservabilityInput {
-  tempoUrl: string;
-  tempoToken: string;
-  tempoTenant: string;
-  lokiUrl: string;
-  lokiToken: string;
-  lokiTenant: string;
-  clusters: Record<string, string>;
-  grafanaUrl: string;
-  grafanaTempoDatasource: string;
-  mcpUrl: string;
-  mcpToken: string;
-}
-
-/** Save the Tempo / Grafana settings (the kubeconfig list and AI settings stay as they are). */
-export function useUpdateObservability() {
-  return useMutation({
-    mutationFn: ({ observability, kubeconfigPaths }: { observability: ObservabilityInput; kubeconfigPaths: string[] }) =>
-      putSettings({ kubeconfigPaths, observability }, "Failed to save the observability settings"),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [api.settings.get.path] });
-      // tracing status, clusters and the Grafana connection all depend on these
-      queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("/api/traces") });
-    },
-  });
-}
