@@ -24,7 +24,10 @@ Web mode locally: `KUBEDECK_MODE=web KUBEDECK_AUTH=none KUBEDECK_PUBLIC_URL=http
   `kubectl-safety.ts` classifies commands, `web-mode.ts` is the login gate and feature switches,
   `identity.ts` the per-user impersonation, `map.ts` the namespace graph, `tempo.ts` +
   `traces-routes.ts` traces from Grafana Tempo, `loki.ts` log history, `grafana-mcp.ts` the Grafana MCP client (read tools
-  only), `ai/` the assistant (AI SDK agent, tools, prompts).
+  only), `ai/` the assistant (AI SDK agent, tools, prompts). Web mode's own sign-in (`KUBEDECK_AUTH=builtin`) lives in
+  `auth/` (the only code that knows Better Auth; admin routes validate groups), `db/` is the database (Kysely: SQLite via
+  `node:sqlite`, or Postgres; each module owns its tables, migrations in `db/migrations.ts`), `audit/` the audit log.
+  The desktop app never loads `auth/` or `db/` (dynamic imports only).
 - `client/src/`: pages in `pages/`, shared UI in `components/`, data hooks in `hooks/use-k8s.ts`,
   the assistant in `ai/`. Resource kinds in the sidebar come from `lib/resource-kinds.ts`.
 - `shared/`: route definitions and schemas used by both sides.

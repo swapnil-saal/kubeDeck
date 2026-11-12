@@ -1,7 +1,7 @@
 import { StatusBadge } from "./StatusBadge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Search, AlertTriangle, ShieldOff, Columns3, RotateCcw, Inbox, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { m as motion } from "framer-motion";
 import { formatDistanceToNow } from "date-fns";
 import { K8sError } from "@/hooks/use-k8s";
@@ -58,6 +58,20 @@ interface ResourceTableProps<T> {
 /** Rows rendered at a time; the rest arrive with "Show more". */
 const ROW_PAGE = 200;
 
+/**
+ * A key per row that survives refetches, sorting and filtering: namespace/name, with a counter only
+ * for the rare repeat. Keys that change make React remount the row, which replays its fade-in.
+ */
+export function rowKeys(rows: { name: string; namespace?: string }[]): string[] {
+  const seen = new Map<string, number>();
+  return rows.map((r) => {
+    const base = r.namespace ? `${r.namespace}/${r.name}` : r.name;
+    const n = seen.get(base) ?? 0;
+    seen.set(base, n + 1);
+    return n === 0 ? base : `${base}#${n}`;
+  });
+}
+
 function formatAge(timestamp: string): string {
   try {
     const date = new Date(timestamp);
@@ -87,16 +101,16 @@ function storageKey(tableId: string): string {
   return `kubedeck.tableColumns.${tableId}`;
 }
 
-function loadHidden(tableId: string | undefined, defaults: string[]): Set<string> {
-  const base = new Set(defaults);
-  if (!tableId) return base;
+/** The columns this person chose to hide for this table, or null while they have not chosen. */
+function loadHidden(tableId: string | undefined): Set<string> | null {
+  if (!tableId) return null;
   try {
     const raw = localStorage.getItem(storageKey(tableId));
-    if (!raw) return base;
+    if (!raw) return null;
     const parsed = JSON.parse(raw) as { hidden?: string[] };
     if (Array.isArray(parsed.hidden)) return new Set(parsed.hidden);
   } catch { /* ignore */ }
-  return base;
+  return null;
 }
 
 function saveHidden(tableId: string | undefined, hidden: Set<string>) {
@@ -106,10 +120,76 @@ function saveHidden(tableId: string | undefined, hidden: Set<string>) {
   } catch { /* ignore */ }
 }
 
-export function ResourceTable<T extends { name: string; status?: string }>({
+/** Skeleton cells: a kind whose columns come with its data (any kind kubectl prints) has none while loading. */
+function skeletonColumnIds(visible: { id: string }[]): string[] {
+  return visible.length > 0 ? visible.map(({ id }) => id) : ["name", "status", "age"];
+}
+
+/**
+ * A new scope (namespace, context) is a new query with nothing in it yet: keep the rows on screen,
+ * dimmed (`stale`), until its answer arrives, instead of flashing the skeleton and fading every row
+ * in again. `isLoading` is left for a table with nothing at all to show.
+ */
+function useHeldWhileLoading<T>(data: T[] | undefined, loading: boolean) {
+  const [lastData, setLastData] = useState(data);
+  if (data && data !== lastData) setLastData(data);
+  const stale = !data && loading && !!lastData;
+  const shownData = stale ? lastData : data;
+  return { shownData, stale, isLoading: loading && !shownData };
+}
+
+/**
+ * True until the table first has rows: they fade in then, and rows that arrive later (a refetch,
+ * a new scope, a sort or filter) just appear, so the list never re-animates under the reader.
+ */
+function useFirstFill(hasRows: boolean): boolean {
+  const filled = useRef(false);
+  const before = !filled.current;
+  useEffect(() => {
+    if (hasRows) filled.current = true;
+  }, [hasRows]);
+  return before;
+}
+
+/**
+ * Hidden columns: the person's choice once made (kept per table), until then the columns' own
+ * defaults, which for a kind whose columns arrive with its data are only known once it loads.
+ */
+function useColumnVisibility(tableId: string | undefined, defaultHiddenIds: string[]) {
+  const [chosen, setChosen] = useState(() => ({ tableId, hidden: loadHidden(tableId) }));
+  if (chosen.tableId !== tableId) setChosen({ tableId, hidden: loadHidden(tableId) });
+  const defaultsKey = defaultHiddenIds.join("\n");
+  const hidden = useMemo(
+    () => chosen.hidden ?? new Set(defaultHiddenIds),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [chosen.hidden, defaultsKey],
+  );
+
+  const toggleColumn = useCallback(
+    (id: string, required: boolean) => {
+      if (required) return;
+      const next = new Set(hidden);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      saveHidden(tableId, next);
+      setChosen({ tableId, hidden: next });
+    },
+    [hidden, tableId],
+  );
+
+  const resetColumns = useCallback(() => {
+    const next = new Set(defaultHiddenIds);
+    setChosen({ tableId, hidden: next });
+    saveHidden(tableId, next);
+  }, [defaultHiddenIds, tableId]);
+
+  return { hidden, toggleColumn, resetColumns };
+}
+
+export function ResourceTable<T extends { name: string; namespace?: string; status?: string }>({
   data,
   columns: allColumns,
-  isLoading,
+  isLoading: loading,
   isError,
   error,
   searchKey = "name",
@@ -128,6 +208,8 @@ export function ResourceTable<T extends { name: string; status?: string }>({
   const setSearch = onSearchChange ?? setInternalSearch;
   const isForbidden = error instanceof K8sError && error.isForbidden;
 
+  const { shownData, stale, isLoading } = useHeldWhileLoading(data, loading);
+
   const columnMeta = useMemo(
     () =>
       columns.map((col, i) => ({
@@ -143,34 +225,7 @@ export function ResourceTable<T extends { name: string; status?: string }>({
     [columnMeta],
   );
 
-  const [hidden, setHidden] = useState<Set<string>>(() => loadHidden(tableId, defaultHiddenIds));
-
-  // Reload prefs when switching resource tabs
-  useEffect(() => {
-    setHidden(loadHidden(tableId, defaultHiddenIds));
-    // only when table identity changes; defaultHiddenIds is stable per tableId
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tableId]);
-
-  const toggleColumn = useCallback(
-    (id: string, required: boolean) => {
-      if (required) return;
-      setHidden((prev) => {
-        const next = new Set(prev);
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
-        saveHidden(tableId, next);
-        return next;
-      });
-    },
-    [tableId],
-  );
-
-  const resetColumns = useCallback(() => {
-    const next = new Set(defaultHiddenIds);
-    setHidden(next);
-    saveHidden(tableId, next);
-  }, [defaultHiddenIds, tableId]);
+  const { hidden, toggleColumn, resetColumns } = useColumnVisibility(tableId, defaultHiddenIds);
 
   const visibleCols = useMemo(
     () => columnMeta.filter((c) => c.required || !hidden.has(c.id)),
@@ -189,7 +244,7 @@ export function ResourceTable<T extends { name: string; status?: string }>({
 
   const filteredData = useMemo(
     () => {
-      const filtered = data?.filter((item) =>
+      const filtered = shownData?.filter((item) =>
         String(item[searchKey]).toLowerCase().includes(search.toLowerCase()),
       );
       const col = sort ? columnMeta.find((c) => c.id === sort.id)?.col : undefined;
@@ -197,7 +252,7 @@ export function ResourceTable<T extends { name: string; status?: string }>({
       const valueOf = col.sortValue ?? ((item: T) => (col.accessorKey ? (item as Record<string, unknown>)[col.accessorKey as string] : undefined));
       return sortRows(filtered, valueOf, sort.dir);
     },
-    [data, searchKey, search, sort, columnMeta],
+    [shownData, searchKey, search, sort, columnMeta],
   );
 
   const colCount = visibleCols.length;
@@ -208,6 +263,9 @@ export function ResourceTable<T extends { name: string; status?: string }>({
   useEffect(() => setRowLimit(ROW_PAGE), [search, tableId]);
   const shownRows = filteredData?.slice(0, rowLimit);
   const moreRows = (filteredData?.length ?? 0) - (shownRows?.length ?? 0);
+  const keys = useMemo(() => rowKeys(shownRows ?? []), [shownRows]);
+  const fadeIn = useFirstFill(shownRows !== undefined);
+  const skeletonCols = skeletonColumnIds(visibleCols);
 
   return (
     <div className="card-elevated overflow-hidden">
@@ -289,9 +347,9 @@ export function ResourceTable<T extends { name: string; status?: string }>({
               </span>
             ) : (
               // the page heading shows the total; only a filter needs its own count
-              search && data && (filteredData?.length ?? 0) !== data.length ? (
+              search && shownData && (filteredData?.length ?? 0) !== shownData.length ? (
                 <span className="bg-primary/10 text-primary border border-primary/20 px-2.5 py-1 rounded-full text-[10px] font-semibold">
-                  {filteredData?.length ?? 0} of {data.length} match
+                  {filteredData?.length ?? 0} of {shownData.length} match
                 </span>
               ) : null
             )}
@@ -355,11 +413,11 @@ export function ResourceTable<T extends { name: string; status?: string }>({
                 })}
               </tr>
             </thead>
-            <tbody>
+            <tbody aria-busy={loading || undefined} className={`transition-opacity duration-150 ${stale ? "opacity-50" : ""}`}>
               {isLoading ? (
                 Array.from({ length: 8 }).map((_, i) => (
                   <tr key={i} className="border-b border-border/50">
-                    {visibleCols.map(({ id }) => (
+                    {skeletonCols.map((id) => (
                       <td key={id} className="px-4 py-3">
                         <Skeleton className="h-3.5 bg-muted rounded" style={{ width: `${40 + ((i * 17 + id.length * 3) % 40)}%` }} />
                       </td>
@@ -386,8 +444,8 @@ export function ResourceTable<T extends { name: string; status?: string }>({
               ) : (
                 shownRows?.map((item, i) => (
                   <motion.tr
-                    key={item.name + String(i)}
-                    initial={{ opacity: 0 }}
+                    key={keys[i]}
+                    initial={fadeIn ? { opacity: 0 } : false}
                     animate={{ opacity: 1 }}
                     transition={{ delay: Math.min(i * 0.01, 0.3), duration: 0.15 }}
                     className="group border-b border-border/50 hover:bg-primary/[0.03] transition-colors cursor-default"

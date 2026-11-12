@@ -1,0 +1,82 @@
+/**
+ * KubeDeck's database: one Kysely connection that the login (Better Auth) and KubeDeck's own tables
+ * share. SQLite for a single instance and local use (Node's built-in `node:sqlite`, no native add-on),
+ * Postgres when several KubeDeck replicas run.
+ *
+ *   KUBEDECK_DATABASE_URL=postgres://user:pass@host:5432/kubedeck
+ *   KUBEDECK_DATABASE_URL=sqlite:/var/lib/kubedeck/kubedeck.db      (default: ~/.kubedeck/kubedeck.db)
+ *
+ * The desktop app never opens it.
+ */
+import { mkdirSync } from "fs";
+import os from "os";
+import path from "path";
+import { Kysely, PostgresDialect, SqliteDialect } from "kysely";
+import { Migrator, type Migration } from "kysely/migration";
+import { MIGRATIONS } from "./migrations";
+import { nodeSqliteDatabase } from "./node-sqlite";
+
+export type DbType = "sqlite" | "postgres";
+
+export interface Database {
+  db: Kysely<any>;
+  type: DbType;
+  /** where it is, for logs (never includes a password) */
+  where: string;
+  close(): Promise<void>;
+}
+
+export interface DbTarget {
+  type: DbType;
+  /** sqlite: a file path (or ":memory:"); postgres: the connection string */
+  target: string;
+}
+
+const DEFAULT_SQLITE = () => path.join(os.homedir(), ".kubedeck", "kubedeck.db");
+
+/** Where the database is, from KUBEDECK_DATABASE_URL. */
+export function databaseTarget(raw = process.env.KUBEDECK_DATABASE_URL ?? ""): DbTarget {
+  const url = raw.trim();
+  if (!url) return { type: "sqlite", target: DEFAULT_SQLITE() };
+  if (/^postgres(ql)?:\/\//i.test(url)) return { type: "postgres", target: url };
+  if (/^sqlite:/i.test(url)) return { type: "sqlite", target: url.replace(/^sqlite:(\/\/)?/i, "") || DEFAULT_SQLITE() };
+  throw new Error(`KUBEDECK_DATABASE_URL must start with postgres:// or sqlite: (got "${url.split(":")[0]}:…").`);
+}
+
+/** The connection string without its password, for logs. */
+export function redact(t: DbTarget): string {
+  if (t.type === "sqlite") return `sqlite ${t.target}`;
+  try {
+    const u = new URL(t.target);
+    if (u.password) u.password = "***";
+    return `postgres ${u.host}${u.pathname}`;
+  } catch {
+    return "postgres";
+  }
+}
+
+export async function openDatabase(t: DbTarget = databaseTarget()): Promise<Database> {
+  if (t.type === "postgres") {
+    // loaded only when Postgres is used
+    const { Pool } = await import("pg");
+    const pool = new Pool({ connectionString: t.target, max: 10 });
+    const db = new Kysely<any>({ dialect: new PostgresDialect({ pool }) });
+    return { db, type: "postgres", where: redact(t), close: () => db.destroy() };
+  }
+  if (t.target !== ":memory:") mkdirSync(path.dirname(t.target), { recursive: true });
+  const db = new Kysely<any>({ dialect: new SqliteDialect({ database: await nodeSqliteDatabase(t.target) }) });
+  return { db, type: "sqlite", where: redact(t), close: () => db.destroy() };
+}
+
+/** KubeDeck's own tables (Better Auth migrates its tables itself). Safe to run on every start. */
+export async function migrate(d: Database): Promise<void> {
+  const migrator = new Migrator({
+    db: d.db,
+    migrationTableName: "kubedeck_migration",
+    migrationLockTableName: "kubedeck_migration_lock",
+    provider: { getMigrations: async () => MIGRATIONS(d.type) as Record<string, Migration> },
+  });
+  const { error, results } = await migrator.migrateToLatest();
+  for (const r of results ?? []) if (r.status === "Error") console.error(`[kubedeck] migration ${r.migrationName} failed`);
+  if (error) throw error instanceof Error ? error : new Error(String(error));
+}

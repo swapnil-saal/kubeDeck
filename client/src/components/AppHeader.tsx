@@ -1,11 +1,13 @@
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { ChevronRight, LogOut, ShieldOff, SquareTerminal } from "lucide-react";
 import { useScope } from "@/hooks/use-scope";
 import { useK8sContexts } from "@/hooks/use-k8s";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { AlertBell } from "@/components/header/AlertBell";
-import { useServerMode } from "@/hooks/use-server-mode";
+import { MODE_KEY, useServerMode } from "@/hooks/use-server-mode";
+import { signOut } from "@/hooks/use-admin";
 import { ScopeSwitcher } from "@/components/header/ScopeSwitcher";
 import { cn } from "@/lib/utils";
 
@@ -91,7 +93,8 @@ export function AppHeader({ breadcrumbs = [], rightSlot, showSelectors = true }:
             <span className="hidden lg:inline">No sign-in</span>
           </span>
         )}
-        {serverMode.mode === "web" && serverMode.user && (
+        {serverMode.mode === "web" && serverMode.auth === "builtin" && serverMode.user && <SignedIn user={serverMode.user} />}
+        {serverMode.mode === "web" && serverMode.auth !== "builtin" && serverMode.user && (
           <a
             href="/oauth2/sign_out"
             title={`Signed in as ${serverMode.user.email || serverMode.user.name} — click to sign out`}
@@ -106,5 +109,35 @@ export function AppHeader({ breadcrumbs = [], rightSlot, showSelectors = true }:
         {rightSlot}
       </div>
     </header>
+  );
+}
+
+/** Who is signed in with KubeDeck's own sign-in, and a way out. */
+function SignedIn({ user }: { user: { name: string; email: string; groups?: string[]; role?: string } }) {
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const groups = user.groups?.length ? user.groups.join(", ") : "no groups";
+  const leave = async () => {
+    setBusy(true);
+    try {
+      await signOut();
+    } finally {
+      qc.clear();
+      await qc.invalidateQueries({ queryKey: MODE_KEY });
+      setBusy(false);
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={leave}
+      disabled={busy}
+      title={`Signed in as ${user.email}${user.role === "admin" ? " (admin)" : ""} · ${groups}. Click to sign out.`}
+      aria-label="Sign out"
+      className="flex h-9 items-center gap-2 rounded-lg border border-border bg-secondary/40 px-2.5 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-60"
+    >
+      <span className="hidden max-w-[10rem] truncate lg:inline">{user.name}</span>
+      <LogOut size={14} className="shrink-0" />
+    </button>
   );
 }

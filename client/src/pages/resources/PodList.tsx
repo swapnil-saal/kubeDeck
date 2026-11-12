@@ -49,6 +49,10 @@ export function PodList({ context, namespace, actions: actions_ }: {
   const { openDetail, openLogs, askAi } = useResourceNav();
 
   const usage = metrics.data?.available ? metrics.data.items : undefined;
+  // "CPU" until the metrics answer says live usage is unavailable, so the header does not flip
+  // (and the column resize) when that answer lands a moment after the pods
+  const usageUnknown = metrics.isLoading;
+  const cpuHeader = usage || usageUnknown ? "CPU" : "CPU req";
   const usageByPod = useMemo(() => new Map((usage ?? []).map((u) => [u.namespace ? `${u.namespace}/${u.name}` : u.name, u])), [usage]);
   const usageOf = (p: { name: string; namespace?: string }) => usageByPod.get(p.namespace ? `${p.namespace}/${p.name}` : p.name) ?? usageByPod.get(p.name);
 
@@ -132,9 +136,10 @@ export function PodList({ context, namespace, actions: actions_ }: {
             { header: "Restarts", accessorKey: "restarts", cell: (item) => (
               <span className={`tabular-nums ${restartTone(item.restarts)}`} title={item.restarts >= 5 ? "Restarting repeatedly" : undefined}>{item.restarts}</span>
             )},
-            { header: usage ? "CPU" : "CPU req", id: "cpu", sortValue: (item: any) => usageOf(item)?.cpuMilli ?? parseCpuMilli(item.cpu), cell: (item: any) => {
+            { header: cpuHeader, id: "cpu", sortValue: (item: any) => usageOf(item)?.cpuMilli ?? parseCpuMilli(item.cpu), cell: (item: any) => {
               const u = usageOf(item);
               if (u) return <span className="text-xs tabular-nums text-foreground/80" title={`${Math.round(u.memMi)}Mi memory in use`}>{Math.round(u.cpuMilli)}m</span>;
+              if (usageUnknown) return <span className="text-xs text-muted-foreground/60">–</span>;
               const req = parseCpuMilli(item.cpu);
               return <span className="text-xs tabular-nums text-muted-foreground" title="Requested (live usage unavailable)">{req > 0 ? `${Math.round(req)}m` : "–"}</span>;
             }},

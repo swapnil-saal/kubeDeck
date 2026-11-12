@@ -6,11 +6,17 @@ import { registerParamValidators, requireTrustedRequest, validateK8sQuery } from
 import { reportUnreachableAs503 } from "./errors";
 import { ensureInClusterKubeconfig } from "./incluster";
 import { bindIdentity, setImpersonation } from "./identity";
-import { auditLog, describeMode, HEALTH_PATH, loadWebConfig, setWebConfig, validateWebConfig, webFeatureOff, webGate, webReadOnly } from "./web-mode";
+import {
+  auditLog, describeMode, HEALTH_PATH, loadWebConfig, setAuditSink, setSessionResolver, setWebConfig, validateWebConfig,
+  webFeatureOff, webGate, webReadOnly,
+} from "./web-mode";
+import type { KubeDeckAuth } from "./auth";
+import { authConfigProblems, loadAuthConfig } from "./auth";
+import { mountAuthRoutes } from "./auth/mount";
 
 // Web (shared-service) mode is opt-in; refuse to start half-configured rather than serve cluster access to anyone.
 const webCfg = loadWebConfig();
-const webProblems = validateWebConfig(webCfg);
+const webProblems = [...validateWebConfig(webCfg), ...(webCfg.enabled && webCfg.builtin ? authConfigProblems(loadAuthConfig()) : [])];
 if (webProblems.length > 0) {
   for (const p of webProblems) console.error(`[kubedeck] ${p}`);
   process.exit(1);
@@ -18,7 +24,13 @@ if (webProblems.length > 0) {
 setWebConfig(webCfg);
 setImpersonation(webCfg.enabled ? webCfg : null);
 if (webCfg.enabled && webCfg.impersonate) {
-  console.log("[kubedeck] KUBEDECK_ACCESS=impersonate: each signed-in user acts with their own Kubernetes permissions (kubectl --as).");
+  console.log(
+    `[kubedeck] Each signed-in user acts with their own Kubernetes permissions (kubectl --as=${webCfg.impersonatePrefix}<email>` +
+      (webCfg.builtin ? `, groups as ${webCfg.impersonateGroupPrefix}<group>).` : ")."),
+  );
+}
+if (webCfg.enabled && webCfg.builtin && !webCfg.impersonate) {
+  console.warn("[kubedeck] KUBEDECK_ACCESS=shared: every signed-in user acts as KubeDeck's own service account, whatever their groups.");
 }
 if (webCfg.enabled && webCfg.authNone) {
   console.warn(
@@ -32,6 +44,10 @@ if (webCfg.enabled) {
 }
 
 const app = express();
+// Behind an ingress or load balancer, the client's address is in X-Forwarded-For; trust only as many
+// hops as the operator says are theirs (used for the sign-in rate limit and the audit log)
+const proxyHops = Number(process.env.KUBEDECK_PROXY_HOPS ?? 0);
+if (Number.isInteger(proxyHops) && proxyHops > 0) app.set("trust proxy", proxyHops);
 const httpServer = createServer(app);
 
 // Pod-spec liveness/readiness probe: answers before any identity or host check, returns no data.
@@ -48,6 +64,10 @@ app.use("/api", requireTrustedRequest);
 // Web mode: pages and API alike need the login proxy's identity; writes are refused when read-only.
 app.use(webGate);
 app.use(auditLog);
+// KubeDeck's own login (KUBEDECK_AUTH=builtin). Before the body parsers, which would consume what
+// Better Auth reads. Its admin routes are not reachable from outside: admins use /api/admin (validated).
+let builtinAuth: KubeDeckAuth | null = null;
+if (webCfg.enabled && webCfg.builtin) mountAuthRoutes(app, () => builtinAuth);
 app.use("/api", webFeatureOff);
 app.use("/api", webReadOnly);
 app.get("/api/mode", (req, res) => { res.json(describeMode(req)); });
@@ -95,6 +115,24 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // A database when there is something to keep: the builtin login always, otherwise only if one is configured
+  if (webCfg.enabled && (webCfg.builtin || process.env.KUBEDECK_DATABASE_URL)) {
+    const { migrate, openDatabase } = await import("./db");
+    const { recordAudit } = await import("./audit");
+    const d = await openDatabase();
+    await migrate(d);
+    console.log(`[kubedeck] database: ${d.where}`);
+    setAuditSink((e) => recordAudit(d, e));
+    if (webCfg.builtin) {
+      const { startAuth } = await import("./auth");
+      const { registerAdminRoutes } = await import("./auth/admin-routes");
+      const a = await startAuth(d, loadAuthConfig());
+      builtinAuth = a;
+      setSessionResolver((req) => a.userOf(req));
+      registerAdminRoutes(app, a, d);
+    }
+  }
+
   await registerRoutes(httpServer, app);
 
   // An unknown API path is a 404, not the single-page app's index.html (which answered 200 to anything).

@@ -1,0 +1,636 @@
+# A small, self-contained set of workloads to try every Kubernetes view in KubeDeck on a local
+# cluster (kind, Docker Desktop, minikube). Healthy apps and deliberately broken ones, so lists,
+# details, logs, exec, port-forward, scaling, rollouts, events and the assistant's diagnosis all
+# have something to show.
+#
+#   kubectl apply -f deploy/demo/kubedeck-demo.yaml
+#   kubectl delete -f deploy/demo/kubedeck-demo.yaml      # removes all of it
+#
+# Add-ons it uses when present: metrics-server (CPU/memory), ingress-nginx (the Ingress), Gateway API
+# CRDs (the routes at the end). Namespaces: shop (an app: web, api, redis, a worker, and the broken ones), ops (node agent, jobs,
+# a toolbox to exec into). Never apply this to a shared cluster.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: shop
+  labels: { team: shop, purpose: kubedeck-demo }
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ops
+  labels: { team: ops, purpose: kubedeck-demo }
+
+# ── shop: guard rails ───────────────────────────────
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata: { name: shop-quota, namespace: shop }
+spec:
+  hard:
+    pods: "40"
+    requests.cpu: "4"
+    requests.memory: 4Gi
+    limits.cpu: "8"
+    limits.memory: 8Gi
+    persistentvolumeclaims: "5"
+---
+apiVersion: v1
+kind: LimitRange
+metadata: { name: shop-defaults, namespace: shop }
+spec:
+  limits:
+    - type: Container
+      default: { cpu: 200m, memory: 128Mi }
+      defaultRequest: { cpu: 20m, memory: 32Mi }
+
+# ── shop: config ────────────────────────────────────
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: web-content, namespace: shop, labels: { app: web } }
+data:
+  index.html: |
+    <!doctype html><title>Demo shop</title>
+    <h1>Demo shop</h1><p>Served by nginx in namespace <code>shop</code>.</p>
+  healthz: ok
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: app-settings, namespace: shop }
+data:
+  LOG_LEVEL: info
+  FEATURE_RECOMMENDATIONS: "true"
+  CACHE_TTL_SECONDS: "300"
+  settings.yaml: |
+    currency: EUR
+    pageSize: 24
+    regions: [eu-west, eu-central]
+---
+apiVersion: v1
+kind: Secret
+metadata: { name: db-credentials, namespace: shop }
+type: Opaque
+stringData:
+  # demo values, not real credentials
+  username: shop
+  password: demo-only-not-a-secret
+  url: redis://redis-0.redis.shop.svc.cluster.local:6379
+
+# ── shop: web (healthy, 3 replicas) ─────────────────
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: web, namespace: shop }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: shop
+  labels: { app: web, tier: frontend }
+  annotations: { kubedeck.io/owner: "shop team" }
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  selector: { matchLabels: { app: web } }
+  strategy: { type: RollingUpdate, rollingUpdate: { maxSurge: 1, maxUnavailable: 0 } }
+  template:
+    metadata: { labels: { app: web, tier: frontend } }
+    spec:
+      serviceAccountName: web
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          ports: [{ name: http, containerPort: 80 }]
+          envFrom: [{ configMapRef: { name: app-settings } }]
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+          readinessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 10 }
+          volumeMounts:
+            - { name: content, mountPath: /usr/share/nginx/html }
+      volumes:
+        - name: content
+          configMap: { name: web-content }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: web, namespace: shop, labels: { app: web } }
+spec:
+  selector: { app: web }
+  ports: [{ name: http, port: 80, targetPort: http }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: web-nodeport, namespace: shop, labels: { app: web } }
+spec:
+  type: NodePort
+  selector: { app: web }
+  ports: [{ name: http, port: 80, targetPort: http, nodePort: 30080 }]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: web, namespace: shop }
+spec:
+  minAvailable: 2
+  selector: { matchLabels: { app: web } }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: web, namespace: shop }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: web }
+  minReplicas: 3
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: shop
+  namespace: shop
+  annotations: { nginx.ingress.kubernetes.io/rewrite-target: / }
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: shop.localtest.me
+      http:
+        paths:
+          - { path: /, pathType: Prefix, backend: { service: { name: web, port: { number: 80 } } } }
+          - { path: /api, pathType: Prefix, backend: { service: { name: api, port: { number: 80 } } } }
+
+# ── shop: api (healthy, answers with request details) ─
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api, namespace: shop, labels: { app: api, tier: backend } }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: api } }
+  template:
+    metadata: { labels: { app: api, tier: backend } }
+    spec:
+      containers:
+        - name: whoami
+          image: traefik/whoami:v1.10
+          args: ["--port", "8080", "--name", "shop-api"]
+          ports: [{ name: http, containerPort: 8080 }]
+          env:
+            - name: DB_USER
+              valueFrom: { secretKeyRef: { name: db-credentials, key: username } }
+            - name: LOG_LEVEL
+              valueFrom: { configMapKeyRef: { name: app-settings, key: LOG_LEVEL } }
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { cpu: 100m, memory: 64Mi }
+          readinessProbe: { httpGet: { path: /health, port: http }, periodSeconds: 5 }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: api, namespace: shop, labels: { app: api } }
+spec:
+  selector: { app: api }
+  ports: [{ name: http, port: 80, targetPort: http }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: api-from-web-only, namespace: shop }
+spec:
+  podSelector: { matchLabels: { app: api } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { tier: frontend } }
+        - podSelector: { matchLabels: { app: worker } }
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } }
+      ports: [{ port: 8080 }]
+
+# ── shop: redis (StatefulSet with storage) ──────────
+---
+apiVersion: v1
+kind: Service
+metadata: { name: redis, namespace: shop, labels: { app: redis } }
+spec:
+  clusterIP: None
+  selector: { app: redis }
+  ports: [{ name: redis, port: 6379 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: redis, namespace: shop, labels: { app: redis, tier: data } }
+spec:
+  serviceName: redis
+  replicas: 2
+  selector: { matchLabels: { app: redis } }
+  template:
+    metadata: { labels: { app: redis, tier: data } }
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args: ["--appendonly", "yes"]
+          ports: [{ name: redis, containerPort: 6379 }]
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+          readinessProbe: { exec: { command: ["redis-cli", "ping"] }, periodSeconds: 5 }
+          volumeMounts: [{ name: data, mountPath: /data }]
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: { requests: { storage: 256Mi } }
+
+# ── shop: worker (init container + two containers, chatty logs) ─
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: worker, namespace: shop, labels: { app: worker, tier: backend } }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: worker } }
+  template:
+    metadata: { labels: { app: worker, tier: backend } }
+    spec:
+      initContainers:
+        - name: wait-for-redis
+          image: busybox:1.36
+          command: ["sh", "-c", "until nc -z redis-0.redis 6379; do echo waiting for redis; sleep 2; done; echo redis is up"]
+      containers:
+        - name: worker
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              i=0
+              while true; do
+                i=$((i+1))
+                order="ord-$(( (i * 7919) % 100000 ))"
+                case $((i % 10)) in
+                  0) echo "$(date -Iseconds) level=error msg=\"payment declined\" order=$order code=card_declined" ;;
+                  3|7) echo "$(date -Iseconds) level=warn msg=\"slow inventory lookup\" order=$order ms=$((800 + i % 400))" ;;
+                  *) echo "$(date -Iseconds) level=info msg=\"order processed\" order=$order items=$((1 + i % 5))" ;;
+                esac
+                sleep 2
+              done
+          env:
+            - name: POD_NAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            - name: REDIS_URL
+              valueFrom: { secretKeyRef: { name: db-credentials, key: url } }
+          resources:
+            requests: { cpu: 5m, memory: 8Mi }
+            limits: { cpu: 50m, memory: 32Mi }
+        - name: metrics-sidecar
+          image: busybox:1.36
+          command: ["sh", "-c", "while true; do echo \"$(date -Iseconds) queue_depth=$((RANDOM % 50)) processed_total=$(date +%s)\"; sleep 15; done"]
+          resources:
+            requests: { cpu: 5m, memory: 8Mi }
+            limits: { cpu: 20m, memory: 16Mi }
+
+# ── shop: broken on purpose ─────────────────────────
+---
+# CrashLoopBackOff: exits with a stack trace after a few seconds
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: checkout, namespace: shop, labels: { app: checkout, tier: backend } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: checkout } }
+  template:
+    metadata: { labels: { app: checkout, tier: backend } }
+    spec:
+      containers:
+        - name: checkout
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "starting checkout service v2.3.1"
+              echo "connecting to postgres at postgres.shop.svc:5432"
+              sleep 3
+              echo "ERROR: could not connect to postgres.shop.svc:5432: no such host" >&2
+              echo "Traceback (most recent call last):" >&2
+              echo "  File \"/app/checkout/db.py\", line 42, in connect" >&2
+              echo "psycopg.OperationalError: could not translate host name \"postgres.shop.svc\"" >&2
+              exit 1
+          env:
+            - { name: DATABASE_HOST, value: postgres.shop.svc }
+---
+# ImagePullBackOff: the tag does not exist
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: recommendations, namespace: shop, labels: { app: recommendations } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: recommendations } }
+  template:
+    metadata: { labels: { app: recommendations } }
+    spec:
+      containers:
+        - name: recommendations
+          image: nginx:9.99-does-not-exist
+---
+# Pending: wants a node with an SSD label that no node has
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: search, namespace: shop, labels: { app: search } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: search } }
+  template:
+    metadata: { labels: { app: search } }
+    spec:
+      nodeSelector: { disktype: ssd }
+      containers:
+        - name: search
+          image: nginx:1.27-alpine
+---
+# OOMKilled: grows past its 24Mi limit
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: image-resizer, namespace: shop, labels: { app: image-resizer } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: image-resizer } }
+  template:
+    metadata: { labels: { app: image-resizer } }
+    spec:
+      containers:
+        - name: resizer
+          image: busybox:1.36
+          command: ["sh", "-c", "echo resizing batch of 400 images; sleep 5; tail /dev/zero"]
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { cpu: 100m, memory: 24Mi }
+---
+# A Service whose selector matches no pod
+apiVersion: v1
+kind: Service
+metadata: { name: payments, namespace: shop }
+spec:
+  selector: { app: payments }
+  ports: [{ port: 80, targetPort: 8080 }]
+
+# ── a custom resource ───────────────────────────────
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata: { name: featureflags.demo.kubedeck.io }
+spec:
+  group: demo.kubedeck.io
+  scope: Namespaced
+  names: { plural: featureflags, singular: featureflag, kind: FeatureFlag, shortNames: [ff] }
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      additionalPrinterColumns:
+        - { name: Enabled, type: boolean, jsonPath: .spec.enabled }
+        - { name: Rollout, type: integer, jsonPath: .spec.rolloutPercent }
+        - { name: Age, type: date, jsonPath: .metadata.creationTimestamp }
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                enabled: { type: boolean }
+                rolloutPercent: { type: integer, minimum: 0, maximum: 100 }
+                description: { type: string }
+---
+apiVersion: demo.kubedeck.io/v1
+kind: FeatureFlag
+metadata: { name: new-checkout, namespace: shop }
+spec: { enabled: true, rolloutPercent: 25, description: New checkout flow }
+---
+apiVersion: demo.kubedeck.io/v1
+kind: FeatureFlag
+metadata: { name: recommendations-v2, namespace: shop }
+spec: { enabled: false, rolloutPercent: 0, description: ML recommendations }
+
+# ── ops ─────────────────────────────────────────────
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: { name: node-agent, namespace: ops, labels: { app: node-agent } }
+spec:
+  selector: { matchLabels: { app: node-agent } }
+  template:
+    metadata: { labels: { app: node-agent } }
+    spec:
+      tolerations: [{ key: node-role.kubernetes.io/control-plane, operator: Exists, effect: NoSchedule }]
+      containers:
+        - name: agent
+          image: busybox:1.36
+          command: ["sh", "-c", "while true; do echo \"$(date -Iseconds) node=$NODE_NAME load=$(cut -d' ' -f1 /proc/loadavg)\"; sleep 30; done"]
+          env:
+            - name: NODE_NAME
+              valueFrom: { fieldRef: { fieldPath: spec.nodeName } }
+          resources:
+            requests: { cpu: 5m, memory: 8Mi }
+            limits: { cpu: 20m, memory: 16Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: toolbox, namespace: ops, labels: { app: toolbox } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: toolbox } }
+  template:
+    metadata: { labels: { app: toolbox } }
+    spec:
+      containers:
+        - name: toolbox
+          image: busybox:1.36
+          command: ["sh", "-c", "echo 'exec into me: wget -qO- http://web.shop'; sleep infinity"]
+          resources:
+            requests: { cpu: 5m, memory: 8Mi }
+            limits: { cpu: 100m, memory: 64Mi }
+---
+apiVersion: batch/v1
+kind: Job
+metadata: { name: seed-catalog, namespace: ops }
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: seed
+          image: busybox:1.36
+          command: ["sh", "-c", "for i in 1 2 3 4 5; do echo \"seeded batch $i/5\"; sleep 1; done; echo done"]
+---
+apiVersion: batch/v1
+kind: Job
+metadata: { name: migrate-schema, namespace: ops }
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: busybox:1.36
+          command: ["sh", "-c", "echo applying migration 0042_add_orders_index; sleep 2; echo 'ERROR: relation \"orders\" does not exist' >&2; exit 2"]
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: nightly-report, namespace: ops }
+spec:
+  schedule: "*/5 * * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: report
+              image: busybox:1.36
+              command: ["sh", "-c", "echo building report for $(date +%F); sleep 3; echo 1287 orders, 3 refunds"]
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: cache-warmup, namespace: ops }
+spec:
+  schedule: "0 3 * * *"
+  suspend: true
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: warm
+              image: busybox:1.36
+              command: ["sh", "-c", "echo warming cache"]
+
+# ── accounts with less access, to try the permission-aware UI ─
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: shop-viewer, namespace: shop }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: shop-viewer, namespace: shop }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: view }
+subjects: [{ kind: ServiceAccount, name: shop-viewer, namespace: shop }]
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: shop-viewer-token
+  namespace: shop
+  annotations: { kubernetes.io/service-account.name: shop-viewer }
+type: kubernetes.io/service-account-token
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: shop-editor, namespace: shop }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: shop-editor, namespace: shop }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: edit }
+subjects: [{ kind: ServiceAccount, name: shop-editor, namespace: shop }]
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: shop-editor-token
+  namespace: shop
+  annotations: { kubernetes.io/service-account.name: shop-editor }
+type: kubernetes.io/service-account-token
+
+# ── Gateway API routes (needs the Gateway API CRDs; with no gateway controller they stay Pending) ─
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata: { name: demo }
+spec:
+  controllerName: demo.kubedeck.io/no-controller
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata: { name: shop-gateway, namespace: shop }
+spec:
+  gatewayClassName: demo
+  listeners:
+    - { name: http, protocol: HTTP, port: 80, allowedRoutes: { namespaces: { from: Same } } }
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: { name: storefront, namespace: shop }
+spec:
+  parentRefs: [{ name: shop-gateway }]
+  hostnames: [shop.localtest.me, www.shop.localtest.me]
+  rules:
+    - matches: [{ path: { type: PathPrefix, value: /api } }]
+      backendRefs: [{ name: api, port: 80 }]
+    - matches: [{ path: { type: Exact, value: /healthz }, method: GET }]
+      backendRefs: [{ name: web, port: 80 }]
+    - backendRefs: [{ name: web, port: 80 }]
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: { name: payments, namespace: shop }
+spec:
+  parentRefs: [{ name: shop-gateway }]
+  hostnames: [pay.shop.localtest.me]
+  rules:
+    - matches: [{ path: { type: PathPrefix, value: /v1/payments } }]
+      backendRefs: [{ name: payments, port: 80 }]
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: GRPCRoute
+metadata: { name: inventory, namespace: shop }
+spec:
+  parentRefs: [{ name: shop-gateway }]
+  hostnames: [grpc.shop.localtest.me]
+  rules:
+    - matches: [{ method: { service: shop.Inventory, method: GetStock } }]
+      backendRefs: [{ name: api, port: 80 }]
+
+# ── groups for KubeDeck's built-in login (KUBEDECK_AUTH=builtin) ─
+# A user an admin puts in group "shop-viewers" acts as kubedeck:shop-viewers, and so on.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: kubedeck-shop-viewers, namespace: shop }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: view }
+subjects: [{ apiGroup: rbac.authorization.k8s.io, kind: Group, name: "kubedeck:shop-viewers" }]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: kubedeck-shop-editors, namespace: shop }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: edit }
+subjects: [{ apiGroup: rbac.authorization.k8s.io, kind: Group, name: "kubedeck:shop-editors" }]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: kubedeck-ops-editors, namespace: ops }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: edit }
+subjects: [{ apiGroup: rbac.authorization.k8s.io, kind: Group, name: "kubedeck:ops-editors" }]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: { name: kubedeck-cluster-viewers }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: view }
+subjects: [{ apiGroup: rbac.authorization.k8s.io, kind: Group, name: "kubedeck:viewers" }]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: { name: kubedeck-cluster-admins }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: cluster-admin }
+subjects: [{ apiGroup: rbac.authorization.k8s.io, kind: Group, name: "kubedeck:admins" }]

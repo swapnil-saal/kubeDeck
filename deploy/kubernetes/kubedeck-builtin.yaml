@@ -1,0 +1,171 @@
+# KubeDeck web mode with its own sign-in (KUBEDECK_AUTH=builtin): no SSO proxy, accounts and groups
+# managed in KubeDeck under Settings → Users. Replace every CHANGE_ME / example value.
+# For KubeDeck behind Keycloak (oauth2-proxy) use kubedeck.yaml instead. Settings: docs/WEB.md.
+#
+# 1. Create the secret (values never go in this file):
+#      kubectl create namespace kubedeck
+#      kubectl -n kubedeck create secret generic kubedeck-auth \
+#        --from-literal=secret="$(openssl rand -base64 32)" \
+#        --from-literal=admin-email=you@example.com \
+#        --from-literal=admin-password="$(openssl rand -base64 18)"
+#    (read the password back with: kubectl -n kubedeck get secret kubedeck-auth -o jsonpath='{.data.admin-password}' | base64 -d)
+# 2. kubectl apply -f deploy/kubernetes/kubedeck-builtin.yaml
+# 3. Bind KubeDeck groups to roles in each cluster (see the examples at the end), sign in as the admin,
+#    and add people under Settings → Users.
+#
+# One replica with a SQLite file on a small volume. For several replicas, set KUBEDECK_DATABASE_URL to
+# a Postgres database instead, drop the volume and raise replicas.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubedeck
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubedeck
+  namespace: kubedeck
+---
+# KubeDeck acts as each signed-in person (kubectl --as=kubedeck:<email> --as-group=kubedeck:<group>),
+# so this is all its own identity needs. What people can do comes from the bindings you give their groups.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubedeck-impersonator
+rules:
+  - apiGroups: [""]
+    resources: [users, groups]
+    verbs: [impersonate]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubedeck-impersonator
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: kubedeck-impersonator }
+subjects:
+  - { kind: ServiceAccount, name: kubedeck, namespace: kubedeck }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kubedeck-data
+  namespace: kubedeck
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 1Gi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubedeck
+  namespace: kubedeck
+  labels: { app: kubedeck }
+spec:
+  replicas: 1
+  # one pod owns the SQLite file: stop the old one before starting the new one
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: kubedeck } }
+  template:
+    metadata:
+      labels: { app: kubedeck }
+    spec:
+      serviceAccountName: kubedeck
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: kubedeck
+          image: swapnilsaal/kubedeck:1.15.0-web   # or your own registry: see docs/DEPLOYMENT.md
+          ports:
+            - { name: http, containerPort: 5000 }
+          env:
+            - { name: KUBEDECK_MODE, value: web }
+            - { name: KUBEDECK_AUTH, value: builtin }
+            - { name: KUBEDECK_PUBLIC_URL, value: "https://kubedeck.example.com" }
+            - { name: KUBEDECK_PROXY_HOPS, value: "1" }                      # the ingress controller
+            - { name: KUBEDECK_DATABASE_URL, value: "sqlite:/data/kubedeck.db" }
+            # - name: KUBEDECK_DATABASE_URL                                   # several replicas: Postgres
+            #   valueFrom: { secretKeyRef: { name: kubedeck-db, key: url } }
+            - name: KUBEDECK_AUTH_SECRET
+              valueFrom: { secretKeyRef: { name: kubedeck-auth, key: secret } }
+            - name: KUBEDECK_ADMIN_EMAIL
+              valueFrom: { secretKeyRef: { name: kubedeck-auth, key: admin-email } }
+            - name: KUBEDECK_ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: kubedeck-auth, key: admin-password } }
+            # Every feature is on. Turn one off here: KUBEDECK_READ_ONLY=true, KUBEDECK_AI=off, KUBEDECK_POD_FILES=off
+            - name: KUBEDECK_AI_PROVIDER                  # openai | anthropic | ollama | custom
+              valueFrom: { secretKeyRef: { name: kubedeck-ai, key: provider, optional: true } }
+            - name: KUBEDECK_AI_API_KEY
+              valueFrom: { secretKeyRef: { name: kubedeck-ai, key: api-key, optional: true } }
+            - name: KUBEDECK_AI_MODEL
+              valueFrom: { secretKeyRef: { name: kubedeck-ai, key: model, optional: true } }
+            - name: KUBEDECK_AI_FAST_MODEL
+              valueFrom: { secretKeyRef: { name: kubedeck-ai, key: fast-model, optional: true } }
+            - name: KUBEDECK_AI_BASE_URL
+              valueFrom: { secretKeyRef: { name: kubedeck-ai, key: base-url, optional: true } }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 100m, memory: 192Mi }
+            limits: { memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: data, mountPath: /data }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+        - { name: data, persistentVolumeClaim: { claimName: kubedeck-data } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubedeck
+  namespace: kubedeck
+spec:
+  selector: { app: kubedeck }
+  ports:
+    - { name: http, port: 80, targetPort: http }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kubedeck
+  namespace: kubedeck
+  annotations:
+    # live log streaming needs long-lived responses
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [kubedeck.example.com]
+      secretName: CHANGE_ME-tls
+  rules:
+    - host: kubedeck.example.com
+      http:
+        paths:
+          - { path: /, pathType: Prefix, backend: { service: { name: kubedeck, port: { name: http } } } }
+# ---
+# Starter bindings for KubeDeck groups. Someone in no bound group sees nothing.
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: ClusterRoleBinding
+# metadata: { name: kubedeck-viewers }
+# roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: view }
+# subjects: [{ apiGroup: rbac.authorization.k8s.io, kind: Group, name: "kubedeck:viewers" }]
+# ---
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: RoleBinding
+# metadata: { name: kubedeck-shop-editors, namespace: shop }
+# roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: edit }
+# subjects: [{ apiGroup: rbac.authorization.k8s.io, kind: Group, name: "kubedeck:shop-editors" }]

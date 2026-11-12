@@ -14,7 +14,7 @@ import { PortForwardBar } from "@/components/PortForwardBar";
 import { useScope } from "@/hooks/use-scope";
 import { useAppHashLocation, useAppHashSearch } from "@/lib/hash-router";
 import { useAlertWatcher } from "@/hooks/use-alerts";
-import { useServerMode } from "@/hooks/use-server-mode";
+import { useServerMode, useServerModeQuery } from "@/hooks/use-server-mode";
 import { alertHref, setToastHandler } from "@/lib/alert-store";
 import { toast } from "@/hooks/use-toast";
 import { useApplyPalette } from "@/lib/themes";
@@ -33,6 +33,7 @@ const ProjectPage = lazy(() => import("@/pages/projects/ProjectPage"));
 const ResourceDetail = lazy(() => import("@/pages/ResourceDetail"));
 const Settings = lazy(() => import("@/pages/Settings"));
 const NotFound = lazy(() => import("@/pages/not-found"));
+const SignInPage = lazy(() => import("@/pages/SignIn").then((m) => ({ default: m.SignInPage })));
 const KubectlPalette = lazy(() => import("@/components/KubectlPalette").then((m) => ({ default: m.KubectlPalette })));
 
 function PageLoading() {
@@ -119,6 +120,23 @@ function AppShell() {
   );
 }
 
+/**
+ * With KubeDeck's own sign-in, nobody sees the app (or makes it call the API) until signed in. The
+ * desktop app and the proxy modes go straight to the app.
+ */
+function SignInGate() {
+  const { data, isLoading } = useServerModeQuery();
+  if (isLoading) return <div className="h-screen bg-background" aria-busy="true" />;
+  if (data?.mode === "web" && data.auth === "builtin" && !data.user) {
+    return (
+      <Suspense fallback={<div className="h-screen bg-background" />}>
+        <SignInPage />
+      </Suspense>
+    );
+  }
+  return <AppShell />;
+}
+
 function App() {
   return (
     <ThemeProvider
@@ -134,7 +152,7 @@ function App() {
           {/* animations follow the OS "reduce motion" setting */}
           <LazyMotion features={loadMotionFeatures}>
             <MotionConfig reducedMotion="user">
-              <AppShell />
+              <SignInGate />
             </MotionConfig>
           </LazyMotion>
         </TooltipProvider>

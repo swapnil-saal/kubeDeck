@@ -38,6 +38,11 @@ What a user sees follows the cluster identity's RBAC: kinds it may not list are 
 | `KUBEDECK_ACCESS=impersonate` | **per-user permissions**: act as each signed-in user (`kubectl --as`), so their own RBAC applies. See below |
 | `KUBEDECK_IMPERSONATE_USER` | `email` (default) or `name`: which proxy header becomes the Kubernetes user name |
 | `KUBEDECK_IMPERSONATE_PREFIX` / `KUBEDECK_IMPERSONATE_GROUP_PREFIX` | prepended to user / group names, to match the API server's OIDC prefixes (e.g. `oidc:`) |
+| `KUBEDECK_AUTH=builtin` | **KubeDeck's own sign-in**: accounts and groups an admin manages, no proxy needed; each user acts with their groups' RBAC. See below |
+| `KUBEDECK_AUTH_SECRET` | builtin sign-in: ≥32 random characters that sign sessions (`openssl rand -base64 32`); keep it stable across restarts |
+| `KUBEDECK_ADMIN_EMAIL` / `KUBEDECK_ADMIN_PASSWORD` / `KUBEDECK_ADMIN_NAME` | builtin sign-in: the first admin, created at start if that email does not exist yet (an existing account is never changed) |
+| `KUBEDECK_DATABASE_URL` | builtin sign-in and the stored audit log: `sqlite:/data/kubedeck.db` (default `~/.kubedeck/kubedeck.db`; one replica, on a volume) or `postgres://user:pass@host:5432/kubedeck` (several replicas). Set it in proxy mode too to keep the audit log in a table |
+| `KUBEDECK_PROXY_HOPS` | how many proxies in front of KubeDeck you trust to set `X-Forwarded-For` (e.g. `1` behind an ingress), so the sign-in rate limit and the audit log see each person's address |
 | `KUBEDECK_AUTH=none` | **no login at all**, for private test clusters: no proxy needed, everyone who reaches the URL is `anonymous`. See below |
 | `KUBEDECK_READ_ONLY` | `false` (default) or `true`: refuse every change, from the UI, the palette and the assistant |
 | `KUBEDECK_AI` | `on` (default) or `off` |
@@ -55,7 +60,24 @@ What a user sees follows the cluster identity's RBAC: kinds it may not list are 
 | `HOST` | bind address (default `0.0.0.0` in web mode) |
 | `KUBECONFIG` | optional; with no kubeconfig inside a pod, KubeDeck builds one context, `in-cluster`, from the pod's service account |
 
-KubeDeck **refuses to start** in web mode unless it has a proxy secret or network-trust flag (or `KUBEDECK_AUTH=none`), a public URL, and (if a secret is set) one of ≥16 characters.
+KubeDeck **refuses to start** in web mode unless it has a proxy secret or network-trust flag (or `KUBEDECK_AUTH=builtin` with a ≥32-character `KUBEDECK_AUTH_SECRET`, or `KUBEDECK_AUTH=none`), a public URL, and (if a proxy secret is set) one of ≥16 characters.
+
+### KubeDeck's own sign-in (`KUBEDECK_AUTH=builtin`)
+
+For a team without an SSO proxy. KubeDeck shows a sign-in page; an admin creates accounts and puts people in groups under **Settings → Users** (there is no self sign-up). It needs a database: a SQLite file on a small volume for one replica, Postgres for several.
+
+- **What someone may do comes from the cluster, not from KubeDeck.** Every kubectl call runs as `kubedeck:<email>` with each of their groups as `kubedeck:<group>`, so bind those groups to roles:
+
+  ```sh
+  kubectl create rolebinding shop-editors --clusterrole=edit --group=kubedeck:shop-editors -n shop
+  kubectl create clusterrolebinding kubedeck-viewers --clusterrole=view --group=kubedeck:viewers
+  ```
+
+  Someone in no bound group sees nothing. Group changes apply on their next request. The `kubedeck:` prefix (change it with `KUBEDECK_IMPERSONATE_PREFIX` / `KUBEDECK_IMPERSONATE_GROUP_PREFIX`, never empty for groups) keeps a KubeDeck group from ever being a built-in one such as `system:masters`.
+- **KubeDeck's service account needs `impersonate`** on `users` and `groups` (the `kubedeck-impersonator` role in the manifest) and nothing else. `KUBEDECK_ACCESS=shared` turns impersonation off (everyone acts as the service account); avoid it.
+- **The KubeDeck role is separate:** an admin manages users and reads **Settings → Audit log**, with no cluster access of their own beyond their groups. An admin cannot remove their own admin role, block or delete themselves.
+- Sessions last 12 hours. Five wrong passwords are not a lockout: sign-in is rate limited per address (10 tries a minute). Blocking an account signs it out at once.
+- Back up the database: it holds the accounts (passwords are hashed with scrypt) and the audit log.
 
 ### Per-user permissions (`KUBEDECK_ACCESS=impersonate`)
 

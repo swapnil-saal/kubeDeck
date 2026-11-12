@@ -3,17 +3,9 @@
  * these functions and `useAiTask` (re-exported from `@/ai`), never by fetching endpoints.
  */
 import type { TranslateRequest, TranslateResult } from "@shared/ai";
+import { requestJson } from "@/lib/request-json";
 
-async function postJson<T>(url: string, body?: unknown): Promise<T> {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((data as { message?: string }).message || `HTTP ${res.status}`);
-  return data as T;
-}
+const postJson = <T>(url: string, body?: unknown): Promise<T> => requestJson<T>("POST", url, body);
 
 /** Plain language → one kubectl command, with an explanation and its risk. */
 export function translateToKubectl(req: TranslateRequest): Promise<TranslateResult> {

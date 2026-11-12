@@ -1,4 +1,4 @@
-import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { QueryCache, QueryClient, QueryFunction } from "@tanstack/react-query";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -25,7 +25,17 @@ export const getQueryFn: <T>(options: {
     return await res.json();
   };
 
-export const queryClient = new QueryClient({
+/** A request refused because the session ended (signed out elsewhere, expired, account blocked). */
+const SIGNED_OUT = /(^|\D)401(\D|$)|Sign in required/;
+
+export const queryClient: QueryClient = new QueryClient({
+  // with KubeDeck's own sign-in, a 401 means the session is gone: ask again who is signed in, which
+  // brings back the sign-in page (the proxy and desktop modes never answer 401 to a signed-in page)
+  queryCache: new QueryCache({
+    onError: (err) => {
+      if (SIGNED_OUT.test(err instanceof Error ? err.message : String(err))) void queryClient.invalidateQueries({ queryKey: ["/api/mode"] });
+    },
+  }),
   defaultOptions: {
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),

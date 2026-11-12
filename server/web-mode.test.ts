@@ -4,14 +4,14 @@ import { request, type Server } from "http";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { requireTrustedRequest } from "./security";
 import {
-  auditLog, checkRequest, describeMode, loadWebConfig, setWebConfig, userFromHeaders, validateWebConfig, webAgentRefusal, webExecAllowed, webFeatureOff,
+  auditLog, auditRecord, checkRequest, describeMode, loadWebConfig, needsSession, setWebConfig, userFromHeaders, validateWebConfig, webAgentRefusal, webExecAllowed, webFeatureOff,
   webGate, webReadOnly, type WebConfig,
 } from "./web-mode";
 
 const SECRET = "s3cret-s3cret-s3cret";
 const cfg = (over: Partial<WebConfig> = {}): WebConfig => ({
   enabled: true, readOnly: true, ai: true, podFiles: true, hosts: ["kube.example.com"], proxySecret: SECRET, trustProxyNetwork: false,
-  allowedGroups: [], authNone: false, impersonate: false, impersonateUser: "email", impersonatePrefix: "", impersonateGroupPrefix: "", ...over,
+  allowedGroups: [], authNone: false, builtin: false, impersonate: false, impersonateUser: "email", impersonatePrefix: "", impersonateGroupPrefix: "", ...over,
 });
 const ok = { "x-kubedeck-proxy-secret": SECRET, "x-forwarded-email": "dev@example.com", "x-forwarded-preferred-username": "dev" };
 
@@ -48,6 +48,36 @@ describe("loadWebConfig / validateWebConfig", () => {
   });
   it("takes the public hostname from the URL", () => {
     expect(loadWebConfig({ KUBEDECK_MODE: "web", KUBEDECK_PUBLIC_URL: "https://KubeDeck.Example.com/x" }).hosts).toEqual(["kubedeck.example.com"]);
+  });
+});
+
+describe("KUBEDECK_AUTH=builtin", () => {
+  const builtin = { KUBEDECK_MODE: "web", KUBEDECK_AUTH: "builtin", KUBEDECK_PUBLIC_URL: "https://k.example.com" };
+  it("needs no proxy, acts as each user, and prefixes names so a group cannot be a built-in one", () => {
+    const c = loadWebConfig(builtin);
+    expect(c).toMatchObject({ builtin: true, authNone: false, impersonate: true, impersonatePrefix: "kubedeck:", impersonateGroupPrefix: "kubedeck:" });
+    expect(validateWebConfig(c)).toEqual([]);
+  });
+  it("can be told to use the shared service account, and refuses proxy settings or an empty group prefix", () => {
+    expect(loadWebConfig({ ...builtin, KUBEDECK_ACCESS: "shared" }).impersonate).toBe(false);
+    expect(validateWebConfig(loadWebConfig({ ...builtin, KUBEDECK_PROXY_SECRET: SECRET })).join(" ")).toMatch(/signs people in itself/);
+    expect(validateWebConfig(loadWebConfig({ ...builtin, KUBEDECK_IMPERSONATE_GROUP_PREFIX: "" })).join(" ")).toMatch(/group prefix/);
+    expect(loadWebConfig({ ...builtin, KUBEDECK_IMPERSONATE_PREFIX: "oidc:" }).impersonatePrefix).toBe("oidc:");
+  });
+  it("lets the app's files, sign-in and /api/mode through without a session, and nothing else", () => {
+    expect(["/", "/assets/index.js", "/api/auth/sign-in/email", "/api/mode"].map(needsSession)).toEqual([false, false, false, false]);
+    expect(["/api/k8s/pods", "/api/admin/users", "/api/ai/agent", "/api/modes"].map(needsSession)).toEqual([true, true, true, true]);
+  });
+  it("audits a write with the user's groups and the scope from the query or the body", () => {
+    const req = {
+      kubedeckUser: { name: "Alice", email: "alice@example.com", groups: ["shop-editors", "viewers"] },
+      method: "POST", path: "/api/kubectl/exec", query: {}, body: { context: "kind", namespace: "shop", command: "kubectl scale deploy web --replicas=2" },
+      socket: { remoteAddress: "10.0.0.7" },
+    } as never;
+    expect(auditRecord(req, 200, new Date("2026-11-12T10:00:00Z"))).toEqual({
+      at: "2026-11-12T10:00:00.000Z", userEmail: "alice@example.com", userName: "Alice", groups: "shop-editors,viewers", method: "POST",
+      path: "/api/kubectl/exec", status: 200, context: "kind", namespace: "shop", detail: "kubectl scale deploy web --replicas=2", ip: "10.0.0.7",
+    });
   });
 });
 

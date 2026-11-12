@@ -29,6 +29,10 @@ function remember(context: string, namespace: string, data: Access): void {
   }
 }
 
+/** One string for "which answers changed", so a dependency list keeps its length as namespaces come and go. */
+const answersKey = (results: { dataUpdatedAt: number; isError: boolean }[]) =>
+  results.map((r) => `${r.dataUpdatedAt}:${Number(r.isError)}`).join("|");
+
 const fetchAccess = async (context: string, namespace: string): Promise<Access> => {
   const res = await fetch(buildUrl(api.k8s.access.path, { context, namespace }));
   if (!res.ok) throw new Error(`access ${res.status}`);
@@ -60,6 +64,7 @@ export function useAccess(context: string, namespaces: string[]) {
       };
     }),
   });
+  const answers = answersKey(results);
   const { byNs, failed } = useMemo(() => {
     const m = new Map<string, Access>();
     const f = new Set<string>();
@@ -70,7 +75,7 @@ export function useAccess(context: string, namespaces: string[]) {
     });
     return { byNs: m, failed: f };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unique, ...results.map((r) => r.data), ...results.map((r) => r.isError)]);
+  }, [unique, answers]);
 
   const denied = useCallback(
     (namespace: string, verb: string, resource: string, group = ""): string | undefined => {
