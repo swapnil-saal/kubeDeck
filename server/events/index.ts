@@ -36,9 +36,19 @@ export interface UserChanged {
 }
 
 /** Every event and its payload. Add an event here first. */
+/** A plugin was switched on or off, reconfigured, added or removed (Settings → Plugins). */
+export interface PluginChanged {
+  id: string;
+  enabled: boolean;
+  /** who did it: an email, or the desktop's user name */
+  by: string;
+  change: "added" | "enabled" | "disabled" | "settings" | "removed";
+}
+
 export interface EventMap {
   "action.done": ActionDone;
   "user.changed": UserChanged;
+  "plugin.changed": PluginChanged;
 }
 
 export type EventName = keyof EventMap;

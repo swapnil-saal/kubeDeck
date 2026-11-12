@@ -32,4 +32,22 @@ export const MIGRATIONS = (type: DbType): Record<string, Migration> => ({
       await sql`drop table if exists audit_log`.execute(db);
     },
   },
+  "0002_plugin_state": {
+    async up(db: Kysely<any>) {
+      await db.schema
+        .createTable("plugin_state")
+        .ifNotExists()
+        .addColumn("id", "text", (c) => c.primaryKey())
+        .addColumn("kind", "text", (c) => c.notNull())
+        .addColumn("name", "text", (c) => c.notNull())
+        .addColumn("enabled", "integer", (c) => c.notNull())
+        .addColumn("values", "text", (c) => c.notNull().defaultTo("{}"))
+        .addColumn("updated_at", "text", (c) => c.notNull())
+        .addColumn("updated_by", "text", (c) => c.notNull().defaultTo(""))
+        .execute();
+    },
+    async down(db: Kysely<any>) {
+      await sql`drop table if exists plugin_state`.execute(db);
+    },
+  },
 });

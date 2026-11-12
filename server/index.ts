@@ -15,6 +15,7 @@ import { authConfigProblems, loadAuthConfig, mountAuthRoutes, registerAdminRoute
 import { startAudit } from "./audit";
 import { registerAuditRoutes } from "./audit";
 import { openAppDatabase } from "./db";
+import { databaseStore, memoryStore, registerPluginRoutes, startPlugins } from "./plugins";
 
 // Web (shared-service) mode is opt-in; refuse to start half-configured rather than serve cluster access to anyone.
 const webCfg = loadWebConfig();
@@ -128,6 +129,9 @@ app.use((req, res, next) => {
     setSessionResolver((req) => a.userOf(req));
     registerAdminRoutes(app, a);
   }
+  // Plugins (Settings → Plugins): their choices live in the database; without one, in memory for this run
+  await startPlugins(d ? databaseStore(d) : memoryStore());
+  registerPluginRoutes(app);
 
   await registerRoutes(httpServer, app);
 
