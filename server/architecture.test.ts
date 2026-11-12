@@ -95,21 +95,10 @@ const CHILD_PROCESS_FNS = new Set(["spawn", "spawnSync", "execFile", "execFileSy
 const FRONT_DOORS = ["server/auth", "server/db", "server/audit", "server/events", "server/ai/tools"];
 
 /**
- * Imports that go past a front door today. Each should become a re-export from the module's index
- * (and the entry removed); do not add new ones without a reason.
+ * Imports allowed past a front door. Empty: export what is needed from the module's index instead.
+ * Add one only with a reason.
  */
-const FRONT_DOOR_EXCEPTIONS: { from: string; to: string; reason: string }[] = [
-  {
-    from: "server/index.ts",
-    to: "server/auth/mount.ts",
-    reason: "TODO: re-export mountAuthRoutes from server/auth/index.ts",
-  },
-  {
-    from: "server/index.ts",
-    to: "server/auth/admin-routes.ts",
-    reason: "TODO: re-export registerAdminRoutes from server/auth/index.ts",
-  },
-];
+const FRONT_DOOR_EXCEPTIONS: { from: string; to: string; reason: string }[] = [];
 
 /**
  * Who may read or write each table (Kysely `selectFrom/insertInto/updateTable/deleteFrom/...` with a

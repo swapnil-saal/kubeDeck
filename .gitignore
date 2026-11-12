@@ -12,3 +12,6 @@ release/
 *.zip.blockmap
 release
 release-notes.md
+
+# agent worktrees
+.claude/worktrees/

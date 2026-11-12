@@ -11,10 +11,9 @@ import {
   webFeatureOff, webGate, webReadOnly,
 } from "./web-mode";
 import type { KubeDeckAuth } from "./auth";
-import { authConfigProblems, loadAuthConfig } from "./auth";
-import { mountAuthRoutes } from "./auth/mount";
+import { authConfigProblems, loadAuthConfig, mountAuthRoutes, registerAdminRoutes } from "./auth";
 import { startAudit } from "./audit";
-import { registerAuditRoutes } from "./audit/routes";
+import { registerAuditRoutes } from "./audit";
 import { openAppDatabase } from "./db";
 
 // Web (shared-service) mode is opt-in; refuse to start half-configured rather than serve cluster access to anyone.
@@ -124,7 +123,6 @@ app.use((req, res, next) => {
   // Web mode: KubeDeck's own sign-in and user management (Better Auth is never loaded on the desktop)
   if (webCfg.enabled && d) {
     const { startAuth } = await import("./auth");
-    const { registerAdminRoutes } = await import("./auth/admin-routes");
     const a = await startAuth(d, loadAuthConfig());
     builtinAuth = a;
     setSessionResolver((req) => a.userOf(req));

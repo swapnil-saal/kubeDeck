@@ -4,7 +4,7 @@
 import type { Express } from "express";
 import { adminPaths } from "@shared/admin";
 import type { Database } from "../db";
-import { listAudit } from "./index";
+import { listAudit } from "./store";
 
 /** `d` is null when the database could not open (a desktop with an unwritable home): the log is off. */
 export function registerAuditRoutes(app: Express, d: Database | null): void {

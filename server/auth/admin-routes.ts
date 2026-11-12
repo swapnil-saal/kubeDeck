@@ -17,7 +17,8 @@ import {
 } from "@shared/admin";
 import { emit, type UserChanged } from "../events";
 import { webConfig } from "../web-mode";
-import { joinGroups, roleOf, splitGroups, type KubeDeckAuth } from "./index";
+import { joinGroups, roleOf, splitGroups } from "./groups";
+import type { KubeDeckAuth } from "./index";
 
 const firstIssue = (e: ZodError) => e.issues[0]?.message ?? "Invalid input.";
 

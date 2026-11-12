@@ -6,14 +6,11 @@ import express, { type Express } from "express";
 import type { AddressInfo } from "net";
 import type { Server } from "http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { listAudit, startAudit } from "../audit";
-import { registerAuditRoutes } from "../audit/routes";
+import { listAudit, registerAuditRoutes, startAudit } from "../audit";
 import { databaseTarget, migrate, openDatabase, type Database } from "../db";
 import { on, settled, type UserChanged } from "../events";
 import { auditLog, describeMode, loadWebConfig, setSessionResolver, setWebConfig, webGate } from "../web-mode";
-import { registerAdminRoutes } from "./admin-routes";
-import { authConfigProblems, loadAuthConfig, roleOf, splitGroups, startAuth, type KubeDeckAuth } from "./index";
-import { mountAuthRoutes } from "./mount";
+import { authConfigProblems, loadAuthConfig, mountAuthRoutes, registerAdminRoutes, roleOf, splitGroups, startAuth, type KubeDeckAuth } from "./index";
 
 const ADMIN = { email: "admin@example.com", password: "admin-password-123", name: "Admin" };
 

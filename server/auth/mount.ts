@@ -4,7 +4,10 @@
  * outside: admins use KubeDeck's /api/admin routes, which validate what they store.
  */
 import type { Express } from "express";
-import { CLIENT_IP_HEADER, type KubeDeckAuth } from "./index";
+import type { KubeDeckAuth } from "./index";
+
+/** Header mount.ts sets to the request's client address, for Better Auth's sign-in rate limit. */
+export const CLIENT_IP_HEADER = "x-kubedeck-client-ip";
 
 export function mountAuthRoutes(app: Express, current: () => KubeDeckAuth | null): void {
   app.all("/api/auth/*splat", (req, res) => {

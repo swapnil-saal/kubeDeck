@@ -10,7 +10,9 @@
  *   KUBEDECK_ADMIN_EMAIL / KUBEDECK_ADMIN_PASSWORD     first admin, created on start if missing
  */
 import type { IncomingMessage, ServerResponse } from "http";
-import { MIN_PASSWORD, roleSchema, type Role } from "@shared/admin";
+import { MIN_PASSWORD } from "@shared/admin";
+import { roleOf, splitGroups } from "./groups";
+import { CLIENT_IP_HEADER } from "./mount";
 import type { Database } from "../db";
 import type { WebUser } from "../web-mode";
 
@@ -38,17 +40,6 @@ export function authConfigProblems(c: AuthConfig): string[] {
   if (c.admin && c.admin.password && c.admin.password.length < MIN_PASSWORD) problems.push(`KUBEDECK_ADMIN_PASSWORD must be at least ${MIN_PASSWORD} characters.`);
   return problems;
 }
-
-/** Header mount.ts sets to the request's client address, for Better Auth's sign-in rate limit. */
-export const CLIENT_IP_HEADER = "x-kubedeck-client-ip";
-
-/** Groups are stored as one comma-separated column on the user. */
-export const splitGroups = (raw: unknown): string[] => (typeof raw === "string" ? raw.split(",").map((g) => g.trim()).filter(Boolean) : []);
-export const joinGroups = (groups: string[]): string => groups.join(",");
-export const roleOf = (raw: unknown): Role => {
-  const roles = typeof raw === "string" ? raw.split(",").map((r) => r.trim()) : [];
-  return roles.includes("admin") ? "admin" : roleSchema.parse("user");
-};
 
 /** What the rest of KubeDeck needs from the login. */
 export interface KubeDeckAuth {
@@ -135,3 +126,7 @@ async function ensureFirstAdmin(auth: BetterAuthInstance, c: AuthConfig): Promis
   await auth.api.createUser({ body: { email: c.admin.email, password: c.admin.password, name: c.admin.name, role: "admin" } });
   console.log(`[kubedeck] Created the first admin, ${c.admin.email}. Sign in and add users under Settings → Users.`);
 }
+
+export { joinGroups, roleOf, splitGroups } from "./groups";
+export { CLIENT_IP_HEADER, mountAuthRoutes } from "./mount";
+export { registerAdminRoutes } from "./admin-routes";
