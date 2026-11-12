@@ -236,8 +236,9 @@ const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").re
 export async function createPlugin(kind: string, name: string, values: PluginValues, by: string): Promise<PluginInfo> {
   const factory = factories.get(kind);
   if (!factory) throw new PluginError(400, `Plugins of kind "${kind}" cannot be added.`);
-  let id = `${kind}:${slug(name)}`;
-  for (let n = 2; definitions.has(id); n++) id = `${kind}:${slug(name)}-${n}`;
+  // letters, digits and dashes only: the id travels as a URL path parameter (server/security.ts)
+  let id = `${kind}-${slug(name)}`;
+  for (let n = 2; definitions.has(id); n++) id = `${kind}-${slug(name)}-${n}`;
   const def = factory({ id, name });
   definitions.set(id, def);
   const e: Entry = { def, saved: { id, kind, name, enabled: true, values: {}, updatedAt: new Date().toISOString(), updatedBy: by }, runtime: null, problem: null, status: null };
