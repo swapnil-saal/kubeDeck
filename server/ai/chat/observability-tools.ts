@@ -1,12 +1,11 @@
 /**
- * The assistant's view beyond kubectl: traces from Tempo (scoped to the cluster and namespace in
- * view, like every other tool) and, when one is set up, the Grafana MCP server's read tools behind a
- * single `grafana` tool. Every tool here only reads.
+ * The assistant's view beyond kubectl: traces from Tempo and log history from Loki, scoped to the
+ * cluster and namespace in view like every other tool. Every tool here only reads. (The `grafana`
+ * tool belongs to the Grafana plugin, in server/mcp.)
  */
 import { tool } from "ai";
 import { z } from "zod";
 import { TRACE_GROUP_BY, TRACE_SINCE, TRACE_WORKLOAD_ATTR, type TraceDetail, type TraceSpan } from "@shared/traces";
-import { callGrafanaTool, describeCatalog, grafanaMcpConfigured, grafanaTools } from "../../grafana-mcp";
 import { getObservability } from "../../settings";
 import { logQuery, lokiConfigured, queryLogs } from "../../loki";
 import { getTrace, groupStats, searchQuery, searchTraces, tempoConfigured, TempoError, type TraceScope } from "../../tempo";
@@ -236,36 +235,12 @@ export const observabilityTools = {
       }
     },
   }),
-
-  grafana: tool({
-    // replaced per request with the tools the server actually offers (see observabilityForCall)
-    description: "Call a read-only tool on the Grafana MCP server (Loki logs, Prometheus metrics, dashboards, alerts).",
-    inputSchema: z.object({
-      tool: z.string().regex(/^[a-z][a-z0-9_]{1,63}$/).describe("Grafana MCP tool name from the list"),
-      arguments: z.record(z.string(), z.unknown()).optional().describe("The tool's arguments as an object"),
-    }),
-    contextSchema: kubeScopeSchema,
-    execute: async ({ tool: toolName, arguments: args }, { abortSignal, context }) => {
-      const o = getObservability();
-      if (!grafanaMcpConfigured(o)) return "Grafana is not connected to this KubeDeck.";
-      console.log(`[kubedeck:agent] grafana${context.user ? ` user=${JSON.stringify(context.user)}` : ""} thread=${context.threadId} tool=${toolName}`);
-      try {
-        return await callGrafanaTool(o, toolName, args ?? {}, abortSignal);
-      } catch (err) {
-        return errorText(err);
-      }
-    },
-  }),
 };
 
 export const TRACE_TOOL_NAMES = ["traces_stats", "traces_search", "trace_get"] as const;
 
-/**
- * What this request can use: trace tools when Tempo is set up, `logs_search` when Loki is, `grafana`
- * when its MCP server answers, plus the `grafana` description listing the server's read tools. Never
- * slows a chat by more than the MCP connect timeout; an unreachable server just leaves the tool out.
- */
-async function observabilityForCall(): Promise<ToolsetCall> {
+/** What this request can use: trace tools when Tempo is set up, `logs_search` when Loki is. */
+function observabilityForCall(): ToolsetCall {
   const o = getObservability();
   const active: string[] = [];
   const prompt: string[] = [];
@@ -289,37 +264,16 @@ async function observabilityForCall(): Promise<ToolsetCall> {
       "logs_search reads up to 7 days of logs, including pods that are gone. Prefer it over k8s_logs for errors in the past, crashed or replaced pods, and lines around a trace (around=<ISO time>). errorsOnly finds exceptions fast.",
     );
   }
-  const descriptions: Record<string, string> = {};
-  if (grafanaMcpConfigured(o)) {
-    try {
-      const tools = await grafanaTools(o);
-      if (tools.length) {
-        active.push("grafana");
-        descriptions.grafana =
-          "Call one read-only tool on the team's Grafana (MCP). Pass {tool, arguments}. Use it for Loki logs, Prometheus metrics, " +
-          "dashboards, alert rules and incidents; most query tools need a datasourceUid: get it from list_datasources first.\nTools (* = required):\n" +
-          describeCatalog(tools);
-        prompt.push(
-          "## Grafana",
-          "The `grafana` tool reaches the team's Grafana: Prometheus metrics history (CPU, memory, request rates over time), Loki logs beyond what kubectl keeps, dashboards, firing alerts.",
-          "Use it when kubectl cannot answer (history, trends, logs of pods that are gone). Find the data source uid with list_datasources once, then query.",
-        );
-      }
-    } catch (err) {
-      prompt.push("## Grafana", `The Grafana MCP server is configured but unreachable right now (${err instanceof Error ? err.message : String(err)}). Say so if the user asks for Grafana data.`);
-    }
-  }
-  return { active, descriptions, prompt: prompt.join("\n") };
+  return { active, prompt: prompt.join("\n") };
 }
 
-// Switched on per request: settings change, and the MCP server may be down.
+// Switched on per request: settings change.
 registerTools("observability", {
   tools: {
     traces_stats: { tool: observabilityTools.traces_stats, scoped: true },
     logs_search: { tool: observabilityTools.logs_search, scoped: true },
     traces_search: { tool: observabilityTools.traces_search, scoped: true },
     trace_get: { tool: observabilityTools.trace_get, scoped: true },
-    grafana: { tool: observabilityTools.grafana, scoped: true },
   },
   forCall: () => observabilityForCall(),
 });

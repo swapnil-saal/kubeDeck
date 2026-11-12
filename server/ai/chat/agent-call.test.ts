@@ -2,8 +2,9 @@
  * What one agent call hands the model, for each observability setup: the tools offered (in the order
  * the model gets them), every tool's name, description and input schema, which tools get the cluster
  * scope, which have an approval policy, and the system prompt. Runs the real agent's prepareCall
- * against a real settings file and, for Grafana, a small MCP server speaking the real protocol over
- * HTTP. No model is called.
+ * against a real settings file and, for Grafana, the real Grafana plugin (pinned by the environment,
+ * as a web deployment does) and a small MCP server speaking the real protocol over HTTP. No model is
+ * called.
  *
  * The AI SDK sends `tools` in their key order, keeping those named in `activeTools`; `activeTools`
  * and `toolsContext` are only looked up, so their own order is not recorded.
@@ -65,12 +66,23 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await (await import("../../plugins")).stopPlugins();
   await new Promise<void>((r) => mcp.close(() => r()));
   process.env.HOME = realHome;
   process.env.USERPROFILE = realProfile;
   Object.assign(process.env, realEnv);
   fs.rmSync(home, { recursive: true, force: true });
 });
+
+/** One setup: the settings file, and the plugins started as the server starts them (Grafana from its environment variable). */
+async function setUp(observability: Record<string, string>, grafanaMcpUrl = "") {
+  writeSettings(observability);
+  // the agent first: its own tools register when it is imported, plugin tools when plugins start
+  await import("./agent");
+  const { memoryStore, startPlugins, stopPlugins } = await import("../../plugins");
+  await stopPlugins();
+  await startPlugins(memoryStore(), grafanaMcpUrl ? { KUBEDECK_GRAFANA_MCP_URL: grafanaMcpUrl } : {});
+}
 
 function writeSettings(observability: Record<string, string>) {
   fs.mkdirSync(path.join(home, ".kubedeck"), { recursive: true });
@@ -138,7 +150,7 @@ async function snapshotOf(full = false) {
 
 describe("what one agent call offers the model", () => {
   it("with nothing set up", async () => {
-    writeSettings({});
+    await setUp({});
     const d = await snapshotOf();
     expect(d.offered).toEqual(["k8s_list", "k8s_describe", "k8s_logs", "kubectl", "bash", "monitor_logs", "ask_human", "present_dashboard"]);
     expect(d.observabilityPrompt).toBe("");
@@ -146,7 +158,7 @@ describe("what one agent call offers the model", () => {
   });
 
   it("with Tempo only", async () => {
-    writeSettings({ tempoUrl: "http://tempo.invalid" });
+    await setUp({ tempoUrl: "http://tempo.invalid" });
     const d = await snapshotOf();
     expect(d.offered.slice(8)).toEqual(["traces_stats", "traces_search", "trace_get"]);
     expect(d.observabilityPrompt).toMatch(/^## Traces \(Tempo\)/);
@@ -154,7 +166,7 @@ describe("what one agent call offers the model", () => {
   });
 
   it("with Tempo, Loki and a Grafana MCP server", async () => {
-    writeSettings({ tempoUrl: "http://tempo.invalid", lokiUrl: "http://loki.invalid", mcpUrl });
+    await setUp({ tempoUrl: "http://tempo.invalid", lokiUrl: "http://loki.invalid" }, mcpUrl);
     const d = await snapshotOf(true);
     expect(d.offered.slice(8)).toEqual(["traces_stats", "logs_search", "traces_search", "trace_get", "grafana"]);
     expect(d.grafanaDescription).toContain("- list_datasources(type: string): List the data sources.");
@@ -163,7 +175,7 @@ describe("what one agent call offers the model", () => {
   });
 
   it("with a Grafana MCP server that does not answer", async () => {
-    writeSettings({ mcpUrl: deadUrl });
+    await setUp({}, deadUrl);
     const d = await snapshotOf();
     expect(d.offered).not.toContain("grafana");
     expect(d.observabilityPrompt).toMatch(/^## Grafana\nThe Grafana MCP server is configured but unreachable/);

@@ -19,6 +19,8 @@ export interface Impersonation {
 }
 
 const store = new AsyncLocalStorage<Impersonation>();
+/** The signed-in person (or the desktop's local user), whether or not impersonation is on. */
+const people = new AsyncLocalStorage<WebUser>();
 
 let active: Pick<WebConfig, "impersonate" | "impersonatePrefix" | "impersonateGroupPrefix"> | null = null;
 
@@ -38,8 +40,18 @@ export function identityFor(user: WebUser, c: NonNullable<typeof active>): Imper
 
 /** Express middleware (after the login gate): run the rest of the request as this user. */
 export function bindIdentity(req: Request, _res: Response, next: NextFunction): void {
-  if (!active || !req.kubedeckUser) return next();
-  store.run(identityFor(req.kubedeckUser, active), next);
+  const user = req.kubedeckUser;
+  if (!user) return next();
+  people.run(user, () => (active ? store.run(identityFor(user, active), next) : next()));
+}
+
+/**
+ * Who the current request is for, with their KubeDeck groups (unprefixed): web mode's signed-in
+ * person, the desktop's local user; undefined outside a request. Unlike currentIdentity() it is set
+ * when KUBEDECK_ACCESS=shared too, so features limited to groups work in every mode.
+ */
+export function currentPerson(): WebUser | undefined {
+  return people.getStore();
 }
 
 /** The current request's identity (for cache keys); undefined when not impersonating. */
