@@ -23,11 +23,11 @@ Web mode locally: `KUBEDECK_MODE=web KUBEDECK_PUBLIC_URL=http://localhost:5051 K
 
 - `server/`: Express routes, one module per area (`*-routes.ts`). `kubectl-run.ts` runs kubectl,
   `kubectl-safety.ts` classifies commands, `web-mode.ts` is the login gate and feature switches,
-  `identity.ts` the per-user impersonation, `events/` the typed in-process event bus (modules emit
+  `identity.ts` whom each kubectl call runs as (per cluster: the person's group's service account, else per-user impersonation), `events/` the typed in-process event bus (modules emit
   facts such as `action.done` and `user.changed`, others subscribe; no direct calls between them),
   `audit/` the audit log (subscribes to `action.done`; the desktop app keeps it too, in
   `~/.kubedeck/kubedeck.db`, under one local user who never signs in), `db/` the database,
-  `auth/` web mode's sign-in (Better Auth, loaded only in web mode), `map.ts` the namespace graph, `tempo.ts` +
+  `auth/` web mode's sign-in (Better Auth, loaded only in web mode), `groups/` KubeDeck groups and the service account each uses per cluster (impersonated, or an uploaded kubeconfig kept encrypted), `projects/` projects (shared, in the database), `map.ts` the namespace graph, `tempo.ts` +
   `traces-routes.ts` traces from Grafana Tempo, `loki.ts` log history, `mcp/` the MCP hub (the only MCP client; remote servers only, no stdio) with the Grafana plugin (read tools
   only, the `grafana` tool) and added MCP server plugins (one `mcp_<name>` tool each), `ai/` the assistant (AI SDK agent, prompts; `ai/tools/` is the tool registry: each module calls `registerTools(owner, …)` with its tools, their risk and a per-call `forCall` for availability, descriptions and prompt sections; the agent only reads the registry). Web mode's sign-in lives in
   `auth/` (the only code that knows Better Auth; admin routes validate groups), `db/` is the database (Kysely: SQLite via
@@ -61,9 +61,9 @@ a reason: fix the code rather than growing them.
   `@ai-sdk/*` providers in `server/ai`; `@ai-sdk/react` and `@assistant-ui/*` in `client/src/ai`.
 - `child_process` only in the files listed in `CHILD_PROCESS_ALLOWED`; every spawn there passes its
   arguments through `asUser()` and none uses a shell.
-- `server/auth`, `server/db`, `server/audit`, `server/events`, `server/ai/tools`, `server/plugins`, `server/mcp`: code outside the
+- `server/auth`, `server/db`, `server/audit`, `server/events`, `server/ai/tools`, `server/plugins`, `server/mcp`, `server/groups`, `server/projects`: code outside the
   folder imports only its `index.ts`.
-- A table is queried only by its owner (`TABLE_OWNERS`: `audit_log` → `server/audit`); Better Auth's
+- A table is queried only by its owner (`TABLE_OWNERS`: `audit_log` → `server/audit`, `kubedeck_group` and `group_cluster_access` → `server/groups`, `project` → `server/projects`); Better Auth's
   tables only by Better Auth. A new table needs an entry there.
 
 ## Understanding the code

@@ -63,7 +63,19 @@ export async function openDatabase(t: DbTarget = databaseTarget()): Promise<Data
     const db = new Kysely<any>({ dialect: new PostgresDialect({ pool }) });
     return { db, type: "postgres", where: redact(t), close: () => db.destroy() };
   }
-  if (t.target !== ":memory:") mkdirSync(path.dirname(t.target), { recursive: true });
+  if (t.target !== ":memory:") {
+    const dir = path.dirname(t.target);
+    try {
+      mkdirSync(dir, { recursive: true });
+    } catch (err) {
+      // a read-only root filesystem reports ENOENT or EROFS here, which reads as a missing file
+      const code = (err as NodeJS.ErrnoException).code ?? "";
+      throw new Error(
+        `cannot create ${dir} for the SQLite database (${code || (err as Error).message}). ` +
+          "Point KUBEDECK_DATABASE_URL at a writable volume, e.g. sqlite:/data/kubedeck.db, or at Postgres (postgres://…).",
+      );
+    }
+  }
   const db = new Kysely<any>({ dialect: new SqliteDialect({ database: await nodeSqliteDatabase(t.target) }) });
   return { db, type: "sqlite", where: redact(t), close: () => db.destroy() };
 }

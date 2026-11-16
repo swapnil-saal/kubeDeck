@@ -35,6 +35,12 @@ rules:
   - apiGroups: [""]
     resources: [users, groups]
     verbs: [impersonate]
+  # A group that acts as a service account (Settings → Groups) needs KubeDeck to impersonate that one
+  # account. Name each one rather than allowing all service accounts:
+  # - apiGroups: [""]
+  #   resources: [serviceaccounts]
+  #   resourceNames: [shop-editor]
+  #   verbs: [impersonate]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

@@ -126,7 +126,7 @@ describe("desktop without a database", () => {
     expect(await openAppDatabase({ required: false, target })).toBeNull();
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0][0])).toMatch(/no audit log: could not open the database/);
-    await expect(openAppDatabase({ required: true, target })).rejects.toThrow();
+    await expect(openAppDatabase({ required: true, target })).rejects.toThrow(/cannot create \/dev\/null for the SQLite database .*KUBEDECK_DATABASE_URL/);
   });
 
   it("tells the browser there is no audit log, and the route says why", async () => {

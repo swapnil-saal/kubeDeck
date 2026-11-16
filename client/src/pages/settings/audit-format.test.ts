@@ -18,6 +18,16 @@ describe("describeAudit", () => {
     expect(say("POST", "/api/k8s/apply")).toBe("Applied YAML");
   });
 
+  it("names group and project changes", () => {
+    expect(say("POST", "/api/groups")).toBe("Created a group");
+    expect(say("PATCH", "/api/groups/quality-team")).toBe("Changed group quality-team");
+    expect(say("PUT", "/api/groups/order")).toBe("Reordered the groups");
+    expect(say("DELETE", "/api/groups/developers")).toBe("Deleted group developers");
+    expect(say("POST", "/api/projects")).toBe("Created a project");
+    expect(say("PUT", "/api/projects/payments")).toBe("Changed project payments");
+    expect(say("DELETE", "/api/projects/payments")).toBe("Deleted project payments");
+  });
+
   it("keeps the target separate, so the page can set it in monospace", () => {
     expect(describeAudit({ method: "POST", path: "/api/k8s/deployments/web%2Dv2/scale", detail: "" }))
       .toEqual({ lead: "Scaled deployment", target: "web-v2" });

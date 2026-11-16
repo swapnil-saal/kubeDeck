@@ -1,85 +1,119 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useLocation, useRoute } from "wouter";
-import { AlertTriangle, CheckCircle2, FolderKanban, LayoutList, Loader2, Pencil, Trash2, Workflow } from "lucide-react";
+import { CheckCircle2, Columns3, FolderKanban, LayoutList, Loader2, Pencil, Trash2, Workflow } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { ResourceTable } from "@/components/ResourceTable";
 import { useAcrossScopes } from "@/hooks/use-k8s";
 import { useHashParams } from "@/hooks/use-hash-params";
-import { deleteProject, useProjects, type ProjectScope } from "@/lib/projects";
+import { useDeleteProject, useProjects, type Project, type ProjectScope } from "@/lib/projects";
 import { cn } from "@/lib/utils";
 import { MapView } from "@/pages/MapPage";
-import { deploymentDegraded, healthOf, podFailing } from "./project-health";
+import { deploymentDegraded, healthOf, problemsByWorkload, scopeKey } from "./project-health";
+import { ProjectCompare } from "./ProjectCompare";
 import { ProjectDialog } from "./ProjectDialog";
+import { detailHref, ProjectOverview, type ScopeData } from "./ProjectOverview";
 
-const scopeKey = (s: ProjectScope) => `${s.context}/${s.namespace}`;
-const detailHref = (type: string, name: string, s: ProjectScope) =>
-  `/resource/${type}/${encodeURIComponent(name)}?context=${encodeURIComponent(s.context)}&namespace=${encodeURIComponent(s.namespace)}`;
+type Tab = "overview" | "compare" | "workloads" | "map";
+const TABS: { id: Tab; label: string; icon: typeof LayoutList }[] = [
+  { id: "overview", label: "Overview", icon: CheckCircle2 },
+  { id: "compare", label: "Compare", icon: Columns3 },
+  { id: "workloads", label: "Workloads", icon: LayoutList },
+  { id: "map", label: "Map", icon: Workflow },
+];
 
-type Tab = "overview" | "workloads" | "map";
+function Stat({ label, value, sub, tone }: { label: string; value: ReactNode; sub?: ReactNode; tone?: "ok" | "bad" }) {
+  return (
+    <div className="min-w-0 rounded-xl border border-border bg-card px-4 py-3">
+      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className={cn("mt-1 text-xl font-semibold tabular-nums", tone === "bad" && "text-destructive", tone === "ok" && "text-success")}>{value}</p>
+      {sub && <p className="truncate text-[11px] text-muted-foreground">{sub}</p>}
+    </div>
+  );
+}
+
+/** The project's health in four numbers: ready deployments, running pods, workloads with problems, where it runs. */
+function Stats({ project, data }: { project: Project; data: ScopeData[] }) {
+  const loading = data.some((d) => d.loading);
+  const h = healthOf(data.flatMap((d) => d.pods ?? []), data.flatMap((d) => d.deployments ?? []));
+  const problems = problemsByWorkload(data).length;
+  const clusters = new Set(project.scopes.map((s) => s.context)).size;
+  const pct = h.deployments ? Math.round(((h.deployments - h.degraded) / h.deployments) * 100) : 100;
+  const dash = loading && h.deployments === 0;
+  return (
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <Stat label="Deployments ready" value={dash ? "…" : `${pct}%`} sub={dash ? undefined : `${h.deployments - h.degraded} of ${h.deployments}`} tone={dash ? undefined : h.degraded ? "bad" : "ok"} />
+      <Stat label="Pods running" value={dash ? "…" : h.running} sub={dash ? undefined : `of ${h.pods}${h.failing ? `, ${h.failing} failing` : ""}`} />
+      <Stat label="Needs attention" value={dash ? "…" : problems} sub={problems ? (problems === 1 ? "workload" : "workloads") : "all healthy"} tone={dash ? undefined : problems ? "bad" : "ok"} />
+      <Stat label="Runs in" value={project.scopes.length} sub={`${project.scopes.length === 1 ? "namespace" : "namespaces"} on ${clusters} ${clusters === 1 ? "cluster" : "clusters"}`} />
+    </div>
+  );
+}
+
+function Actions({ project, onEdit }: { project: Project; onEdit: () => void }) {
+  const [, navigate] = useLocation();
+  const remove = useDeleteProject();
+  const [confirm, setConfirm] = useState(false);
+  if (!project.canEdit) return <span className="text-[11px] text-muted-foreground">Created by {project.createdBy || "someone else"}</span>;
+  if (confirm) {
+    return (
+      <span className="inline-flex flex-wrap items-center gap-1.5 text-xs">
+        {remove.error ? <span className="text-destructive">{remove.error.message}</span> : "Delete this project for everyone?"}
+        <button type="button" disabled={remove.isPending} onClick={() => remove.mutate(project.id, { onSuccess: () => navigate("/projects") })} className="rounded-md bg-destructive px-2 py-1 font-semibold text-destructive-foreground">Delete</button>
+        <button type="button" onClick={() => setConfirm(false)} className="rounded-md px-2 py-1 text-muted-foreground hover:bg-muted">Cancel</button>
+      </span>
+    );
+  }
+  return (
+    <span className="flex items-center gap-1.5">
+      <button type="button" onClick={onEdit} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground"><Pencil className="h-3.5 w-3.5" />Edit</button>
+      <button type="button" onClick={() => setConfirm(true)} aria-label="Delete project" className="inline-flex h-8 items-center rounded-lg border border-border px-2 text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+    </span>
+  );
+}
 
 /** `/projects/:id` — one application across its namespaces and clusters. */
 export default function ProjectPage() {
   const [, params] = useRoute("/projects/:id");
-  const [, navigate] = useLocation();
-  const project = useProjects().find((p) => p.id === params?.id);
+  const projects = useProjects();
+  const project = projects.data?.find((p) => p.id === params?.id);
   const { get, set } = useHashParams();
-  const tab = (get("tab") as Tab) || "overview";
+  const tab = (TABS.find((t) => t.id === get("tab"))?.id ?? "overview") as Tab;
   const [editing, setEditing] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const data = useAcrossScopes(project?.scopes ?? []);
+  const data = useAcrossScopes(project?.scopes ?? []) as ScopeData[];
 
   if (!project) {
     return (
       <div className="flex h-full flex-col">
         <AppHeader breadcrumbs={[{ label: "Overview", href: "/" }, { label: "Projects", href: "/projects" }, { label: "Not found" }]} />
-        <p className="px-7 py-10 text-sm text-muted-foreground">This project does not exist in this browser.</p>
+        <p className="flex items-center gap-2 px-7 py-10 text-sm text-muted-foreground">
+          {projects.isLoading ? <><Loader2 className="h-4 w-4 animate-spin" /> Loading…</> : projects.error ? projects.error.message : "There is no such project. It may have been deleted."}
+        </p>
       </div>
     );
   }
 
-  const tabs: { id: Tab; label: string; icon: typeof LayoutList }[] = [
-    { id: "overview", label: "Overview", icon: CheckCircle2 },
-    { id: "workloads", label: "Workloads", icon: LayoutList },
-    { id: "map", label: "Map", icon: Workflow },
-  ];
-
   return (
     <div className="flex h-full flex-col overflow-hidden text-foreground">
       <AppHeader breadcrumbs={[{ label: "Overview", href: "/" }, { label: "Projects", href: "/projects" }, { label: project.name }]} rightSlot={<LiveRefresh />} />
-      <div className="space-y-3 border-b border-border/60 px-5 py-3 sm:px-7">
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary"><FolderKanban className="h-4 w-4" /></span>
-          <div className="min-w-0">
-            <h1 className="truncate text-lg font-bold tracking-tight">{project.name}</h1>
-            {project.description && <p className="truncate text-xs text-muted-foreground">{project.description}</p>}
+      <div className="shrink-0 border-b border-border bg-background">
+        <div className="mx-auto max-w-7xl px-5 pt-4 sm:px-7">
+          <div className="flex flex-wrap items-start gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary"><FolderKanban className="h-5 w-5" /></span>
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate text-xl font-bold tracking-tight">{project.name}</h1>
+              {project.description && <p className="text-xs text-muted-foreground">{project.description}</p>}
+            </div>
+            <Actions project={project} onEdit={() => setEditing(true)} />
           </div>
-          <div className="ml-auto flex items-center gap-1.5">
-            <button type="button" onClick={() => setEditing(true)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground"><Pencil className="h-3.5 w-3.5" />Edit</button>
-            {confirmDelete ? (
-              <span className="inline-flex items-center gap-1.5 text-xs">
-                Delete from this browser?
-                <button type="button" onClick={() => { deleteProject(project.id); navigate("/projects"); }} className="rounded-md bg-destructive px-2 py-1 font-semibold text-destructive-foreground">Delete</button>
-                <button type="button" onClick={() => setConfirmDelete(false)} className="rounded-md px-2 py-1 text-muted-foreground hover:bg-muted">Cancel</button>
-              </span>
-            ) : (
-              <button type="button" onClick={() => setConfirmDelete(true)} aria-label="Delete project" className="inline-flex h-8 items-center rounded-lg border border-border px-2 text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
-            )}
-          </div>
-        </div>
-        <div role="tablist" aria-label="Project views" className="flex gap-1">
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              aria-selected={tab === t.id}
-              onClick={() => set("tab", t.id === "overview" ? null : t.id)}
-              className={cn("inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors", tab === t.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary hover:text-foreground")}
-            >
-              <t.icon className="h-3.5 w-3.5" />{t.label}
-            </button>
-          ))}
+          <nav role="tablist" aria-label="Project views" className="-mb-px mt-3 flex gap-1 overflow-x-auto">
+            {TABS.map((t) => (
+              <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} onClick={() => set("tab", t.id === "overview" ? null : t.id)}
+                className={cn("inline-flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-[13px]", tab === t.id ? "border-primary font-semibold text-primary" : "border-transparent text-muted-foreground hover:text-foreground")}>
+                <t.icon className="h-3.5 w-3.5" />{t.label}
+              </button>
+            ))}
+          </nav>
         </div>
       </div>
 
@@ -87,70 +121,13 @@ export default function ProjectPage() {
         <ProjectMap scopes={project.scopes} />
       ) : (
         <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-7xl px-5 py-4 sm:px-7">
-            {tab === "overview" ? <Overview data={data} /> : <Workloads data={data} />}
+          <div className="mx-auto max-w-7xl space-y-5 px-5 py-5 sm:px-7">
+            {tab === "overview" && <Stats project={project} data={data} />}
+            {tab === "overview" ? <ProjectOverview data={data} /> : tab === "compare" ? <ProjectCompare data={data} /> : <Workloads data={data} />}
           </div>
         </main>
       )}
       <ProjectDialog open={editing} onClose={() => setEditing(false)} project={project} />
-    </div>
-  );
-}
-
-type ScopeData = ReturnType<typeof useAcrossScopes>[number];
-
-function Overview({ data }: { data: ScopeData[] }) {
-  const [, navigate] = useLocation();
-  const problems = data.flatMap((d) => [
-    ...(d.pods ?? []).filter((p) => podFailing(p.status)).map((p) => ({ key: `${scopeKey(d.scope)}/pod/${p.name}`, text: `Pod ${p.name}`, why: p.status, href: detailHref("pod", p.name, d.scope), scope: d.scope })),
-    ...(d.deployments ?? []).filter((x) => deploymentDegraded(x.ready)).map((x) => ({ key: `${scopeKey(d.scope)}/deploy/${x.name}`, text: `Deployment ${x.name}`, why: `${x.ready} ready`, href: detailHref("deployment", x.name, d.scope), scope: d.scope })),
-  ]);
-  return (
-    <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {data.map((d) => {
-          const h = healthOf(d.pods, d.deployments);
-          const bad = h.failing + h.degraded;
-          return (
-            <div key={scopeKey(d.scope)} className="card-elevated p-3.5">
-              <div className="flex items-center gap-2">
-                <span className={cn("h-2 w-2 rounded-full", d.loading ? "bg-muted-foreground/40" : d.error ? "bg-warning" : bad ? "bg-destructive" : "bg-success")} />
-                <span className="truncate font-mono text-xs"><span className="text-muted-foreground">{d.scope.context}/</span>{d.scope.namespace}</span>
-              </div>
-              {d.loading ? (
-                <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" />Checking…</p>
-              ) : d.error ? (
-                <p className="mt-2 text-xs text-warning">{d.error}</p>
-              ) : (
-                <p className="mt-2 text-xs tabular-nums text-muted-foreground">
-                  {h.deployments} deployments{h.degraded ? <span className="text-destructive"> ({h.degraded} degraded)</span> : ""} · {h.pods} pods{h.failing ? <span className="text-destructive"> ({h.failing} failing)</span> : ""}
-                </p>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <section className="card-elevated">
-        <h2 className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5 text-sm font-semibold">
-          <AlertTriangle className={cn("h-4 w-4", problems.length ? "text-destructive" : "text-muted-foreground")} />
-          Needs attention <span className="text-xs font-normal tabular-nums text-muted-foreground">{problems.length}</span>
-        </h2>
-        {problems.length === 0 ? (
-          <p className="flex items-center gap-2 px-4 py-4 text-sm text-muted-foreground"><CheckCircle2 className="h-4 w-4 text-success" />Everything in this project is healthy.</p>
-        ) : (
-          <ul className="divide-y divide-border/50">
-            {problems.map((p) => (
-              <li key={p.key}>
-                <button type="button" onClick={() => navigate(p.href)} className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm hover:bg-primary/[0.04]">
-                  <span className="min-w-0 flex-1 truncate">{p.text}</span>
-                  <span className="text-xs text-destructive">{p.why}</span>
-                  <span className="hidden font-mono text-[11px] text-muted-foreground sm:inline">{p.scope.context}/{p.scope.namespace}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
     </div>
   );
 }
@@ -203,12 +180,8 @@ function ProjectMap({ scopes }: { scopes: ProjectScope[] }) {
       {scopes.length > 1 && (
         <div className="flex flex-wrap gap-1.5 px-5 pt-3 sm:px-7">
           {scopes.map((s) => (
-            <button
-              key={scopeKey(s)}
-              type="button"
-              onClick={() => set("scope", scopeKey(s))}
-              className={cn("rounded-full border px-2.5 py-0.5 font-mono text-[11px] transition-colors", s === current ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground")}
-            >
+            <button key={scopeKey(s)} type="button" onClick={() => set("scope", scopeKey(s))}
+              className={cn("rounded-full border px-2.5 py-0.5 font-mono text-[11px]", s === current ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground")}>
               {scopeKey(s)}
             </button>
           ))}

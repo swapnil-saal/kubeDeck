@@ -56,11 +56,23 @@ function done(req: Request, res: Response, change: UserChanged["change"]): void 
 
 type Handler = (req: Request, res: Response) => Promise<unknown>;
 
+/** What the admin routes need from outside this module. */
+export interface AdminRouteDeps {
+  /** the groups defined under Settings → Groups: an account may carry only these */
+  knownGroups(): string[];
+}
+
 /** Each admin action, given what it needs. Every one answers with JSON, or the error's own status. */
-function adminHandlers(auth: KubeDeckAuth): Record<string, Handler> {
+function adminHandlers(auth: KubeDeckAuth, deps: AdminRouteDeps): Record<string, Handler> {
   const api = auth.instance.api;
   const headers = (req: Request) => auth.headersOf(req);
   const id = (req: Request) => String(req.params.id);
+  /** a message naming the groups nobody defined, or null */
+  const undefinedGroups = (groups: string[] | undefined): string | null => {
+    const known = new Set(deps.knownGroups());
+    const missing = (groups ?? []).filter((g) => !known.has(g));
+    return missing.length ? `No group named ${missing.join(", ")}. Create ${missing.length === 1 ? "it" : "them"} under Settings → Groups first.` : null;
+  };
   const setGroups = async (userId: string, groups: string[]) => {
     const ctx = await auth.instance.$context;
     await ctx.internalAdapter.updateUser(userId, { groups: joinGroups(groups) });
@@ -76,6 +88,8 @@ function adminHandlers(auth: KubeDeckAuth): Record<string, Handler> {
       const parsed = createUserSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ message: firstIssue(parsed.error) });
       const { name, email, password, role, groups } = parsed.data;
+      const unknown = undefinedGroups(groups);
+      if (unknown) return res.status(400).json({ message: unknown });
       const r = await api.createUser({ headers: headers(req), body: { name, email, password, role } });
       if (groups.length) await setGroups(r.user.id, groups);
       changed(req, String(r.user.id), "created");
@@ -85,6 +99,8 @@ function adminHandlers(auth: KubeDeckAuth): Record<string, Handler> {
       const parsed = updateUserSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ message: firstIssue(parsed.error) });
       const { name, role, groups } = parsed.data;
+      const unknown = undefinedGroups(groups);
+      if (unknown) return res.status(400).json({ message: unknown });
       if (id(req) === self(req) && role && role !== "admin") return res.status(400).json({ message: "You cannot remove your own admin role. Ask another admin." });
       if (name) await api.adminUpdateUser({ headers: headers(req), body: { userId: id(req), data: { name } } });
       if (role) await api.setRole({ headers: headers(req), body: { userId: id(req), role } });
@@ -118,8 +134,8 @@ function adminHandlers(auth: KubeDeckAuth): Record<string, Handler> {
   };
 }
 
-export function registerAdminRoutes(app: Express, auth: KubeDeckAuth): void {
-  const h = adminHandlers(auth);
+export function registerAdminRoutes(app: Express, auth: KubeDeckAuth, deps: AdminRouteDeps): void {
+  const h = adminHandlers(auth, deps);
   // only a KubeDeck admin; then the handler, with any error answered with its own status
   const route = (handler: Handler) => (req: Request, res: Response) => {
     if (req.kubedeckUser?.role !== "admin") return void res.status(403).json({ message: "Only a KubeDeck admin can manage users." });

@@ -182,14 +182,15 @@ export function webFeatureOff(req: Request, res: Response, next: NextFunction): 
 
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 /**
- * Read-only web mode: refuse every write except the kubectl palette and the assistant, which judge
- * their own commands (both refuse anything but reads when read-only: see webAgentRefusal).
+ * Read-only web mode: refuse every write to a cluster. Let through the kubectl palette and the
+ * assistant, which judge their own commands (both refuse anything but reads when read-only: see
+ * webAgentRefusal), and KubeDeck's own records (users, groups, plugins, projects), which touch no cluster.
  */
 export function webReadOnly(req: Request, res: Response, next: NextFunction): void {
   if (!active.enabled || !active.readOnly || !MUTATING.has(req.method)) return next();
   // mounted under "/api", so req.path is relative to that mount; compare the full path
   const full = req.baseUrl + req.path;
-  if (full === "/api/kubectl/exec" || /^\/api\/ai\//.test(full)) return next();
+  if (full === "/api/kubectl/exec" || /^\/api\/(ai|admin|groups|plugins|projects)\//.test(full) || /^\/api\/(groups|plugins|projects)$/.test(full)) return next();
   res.status(403).json({ message: "This KubeDeck is read-only. Scaling, restarting, editing and deleting are turned off here." });
 }
 
@@ -240,7 +241,7 @@ export function auditLog(req: Request, res: Response, next: NextFunction): void 
 }
 
 /** Kubectl flags that would let a signed-in user step outside the server's own identity. */
-const FORBIDDEN_FLAG = /(^|\s)--?(kubeconfig|token|server|s|as|as-group|as-uid|client-certificate|client-key|certificate-authority|insecure-skip-tls-verify|username|password)(=|\s|$)/i;
+const FORBIDDEN_FLAG = /(^|\s)--?(kubeconfig|token|server|s|as|as-group|as-uid|client-certificate|client-key|certificate-authority|insecure-skip-tls-verify|username|password|user|cluster)(=|\s|$)/i;
 
 /** Verbs that would hand a user the server's credentials or a shell under its identity. */
 const SERVER_ONLY_VERBS = new Set(["config", "auth", "exec", "cp", "port-forward", "proxy", "attach", "debug"]);
@@ -256,7 +257,7 @@ export function webExecAllowed(raw: string): { ok: true } | { ok: false; message
   for (let i = 0; i < words.length; i++) {
     const w = words[i].toLowerCase();
     if (w.startsWith("-")) {
-      if (!w.includes("=") && /^(-n|--namespace|--context|-l|--selector|-o|--output|-c|--container|--cluster|--user|--request-timeout|-v)$/.test(w)) i++;
+      if (!w.includes("=") && /^(-n|--namespace|--context|-l|--selector|-o|--output|-c|--container|--request-timeout|-v)$/.test(w)) i++;
       continue;
     }
     if (SERVER_ONLY_VERBS.has(w)) return { ok: false, message: `kubectl ${w} is not available on a shared KubeDeck.` };

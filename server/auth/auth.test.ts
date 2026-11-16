@@ -57,7 +57,7 @@ beforeAll(async () => {
   mountAuthRoutes(app, () => auth);
   app.get("/api/mode", (req, res) => { res.json(describeMode(req)); });
   app.use(express.json());
-  registerAdminRoutes(app, auth);
+  registerAdminRoutes(app, auth, { knownGroups: () => ["shop-editors", "viewers", "ops-editors"] });
   registerAuditRoutes(app, d);
   app.get("/api/whoami", (req, res) => { res.json(req.kubedeckUser); });
   app.post("/api/k8s/deployments/web/scale", (req, res) => { res.json({ ok: true }); });
@@ -112,6 +112,8 @@ describe("builtin sign-in over HTTP", () => {
     await admin("/api/auth/sign-in/email", { body: { email: ADMIN.email, password: ADMIN.password } });
     const bad = await admin("/api/admin/users", { body: { name: "M", email: "m@example.com", password: "m-password-1234", groups: ["system:masters"] } });
     expect(bad.status).toBe(400);
+    const undefinedGroup = await admin("/api/admin/users", { body: { name: "M", email: "m@example.com", password: "m-password-1234", groups: ["testers"] } });
+    expect(undefinedGroup).toMatchObject({ status: 400, body: { message: expect.stringContaining("No group named testers") } });
     const made = await admin("/api/admin/users", { body: { name: "Alice", email: "Alice@Example.com", password: "alice-password-1", groups: ["shop-editors", "viewers"] } });
     expect(made.status).toBe(201);
     expect(made.body).toMatchObject({ email: "alice@example.com", role: "user", groups: ["shop-editors", "viewers"] });
@@ -128,6 +130,7 @@ describe("builtin sign-in over HTTP", () => {
     const patched = await admin(`/api/admin/users/${made.body.id}`, { method: "PATCH", body: { groups: ["ops-editors"] } });
     expect(patched.body.groups).toEqual(["ops-editors"]);
     expect((await alice("/api/whoami")).body.groups).toEqual(["ops-editors"]);
+    expect(Object.fromEntries(await auth!.groupMembers())).toMatchObject({ "ops-editors": 1 });
 
     // blocking signs them out at once
     expect((await admin(`/api/admin/users/${made.body.id}/ban`, { body: { banned: true, reason: "left" } })).status).toBe(200);

@@ -5,7 +5,7 @@ import { createServer } from "http";
 import { registerParamValidators, requireTrustedRequest, validateK8sQuery } from "./security";
 import { reportUnreachableAs503 } from "./errors";
 import { ensureInClusterKubeconfig } from "./incluster";
-import { bindIdentity, setImpersonation } from "./identity";
+import { asKubeDeck, bindIdentity, setClusterGrants, setImpersonation } from "./identity";
 import {
   auditLog, describeMode, HEALTH_PATH, loadWebConfig, setSessionResolver, setWebConfig, validateWebConfig,
   webFeatureOff, webGate, webReadOnly,
@@ -19,6 +19,9 @@ import { databaseStore, memoryStore, registerPluginRoutes, startPlugins } from "
 import { migrateObservability } from "./observability";
 import { legacyAi, legacyObservability } from "./settings";
 import { migrateAiSettings } from "./ai/ai-plugin";
+import { adoptGroups, clusterAccessFor, databaseGroupStore, groupIds, registerGroupRoutes, startGroups } from "./groups";
+import { databaseProjectStore, memoryProjectStore, registerProjectRoutes } from "./projects";
+import { runKubectlRaw } from "./kubectl-run";
 
 // Web (shared-service) mode is opt-in; refuse to start half-configured rather than serve cluster access to anyone.
 const webCfg = loadWebConfig();
@@ -31,7 +34,7 @@ setWebConfig(webCfg);
 setImpersonation(webCfg.enabled ? webCfg : null);
 if (webCfg.enabled && webCfg.impersonate) {
   console.log(
-    `[kubedeck] Each signed-in user acts with their own Kubernetes permissions (kubectl --as=${webCfg.impersonatePrefix}<email>, ` +
+    `[kubedeck] Each signed-in user acts as their groups allow per cluster (Settings → Groups), else as themselves (kubectl --as=${webCfg.impersonatePrefix}<email>, ` +
       `groups as ${webCfg.impersonateGroupPrefix}<group>).`,
   );
 }
@@ -120,7 +123,10 @@ app.use((req, res, next) => {
 (async () => {
   // The database keeps the audit log in both modes, and web mode's accounts and sessions. Web mode
   // cannot run without it; the desktop app only loses its audit log.
-  const d = await openAppDatabase({ required: webCfg.enabled });
+  const d = await openAppDatabase({ required: webCfg.enabled }).catch((err) => {
+    console.error(`[kubedeck] Web mode cannot start without its database: ${err instanceof Error ? err.message : err}`);
+    process.exit(1);
+  });
   if (d) startAudit(d);
   auditReady = d !== null;
   registerAuditRoutes(app, d);
@@ -130,8 +136,22 @@ app.use((req, res, next) => {
     const a = await startAuth(d, loadAuthConfig());
     builtinAuth = a;
     setSessionResolver((req) => a.userOf(req));
-    registerAdminRoutes(app, a);
+    // groups (Settings → Groups): defined here, joined on each account; groups accounts already carry are adopted once
+    await startGroups(databaseGroupStore(d));
+    const adopted = await adoptGroups([...(await a.groupMembers()).keys()], "startup");
+    if (adopted.length) console.log(`[kubedeck] Defined the groups accounts already had: ${adopted.join(", ")}.`);
+    registerAdminRoutes(app, a, { knownGroups: groupIds });
+    registerGroupRoutes(app, {
+      members: async (id) => (await a.groupMembers()).get(id) ?? 0,
+      userPrefix: webCfg.impersonatePrefix,
+      groupPrefix: webCfg.impersonateGroupPrefix,
+    });
+    // every kubectl call: the first of the person's groups that covers its cluster decides whom it runs as
+    const current = await asKubeDeck(() => runKubectlRaw("config current-context"));
+    setClusterGrants((person, context) => clusterAccessFor(person.groups, context), current.code === 0 ? current.stdout.trim() : "");
   }
+  // projects: in the database on the desktop and in web mode (memory for this run without one)
+  registerProjectRoutes(app, d ? databaseProjectStore(d) : memoryProjectStore());
   // Plugins (Settings → Plugins): their choices live in the database; without one, in memory for this run
   const pluginStore = d ? databaseStore(d) : memoryStore();
   await startPlugins(pluginStore);

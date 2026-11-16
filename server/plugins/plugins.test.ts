@@ -7,7 +7,7 @@ import fs from "fs";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { migrate, openDatabase, type Database } from "../db";
 import { on, settled, type PluginChanged } from "../events";
-import { decrypt, encrypt, secretKey } from "./secrets";
+import { decrypt, encrypt, secretKey } from "../secrets";
 import {
   createPlugin, databaseStore, definePlugin, definePluginKind, listPlugins, pluginState, registerPluginRoutes, removePlugin,
   startPlugins, stopPlugins, testPlugin, updatePlugin,

@@ -3,7 +3,8 @@ import { FolderKanban, Plus, X } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useK8sContexts, useK8sNamespaces } from "@/hooks/use-k8s";
-import { normalizeScopes, saveProject, type Project, type ProjectScope } from "@/lib/projects";
+import { useServerMode } from "@/hooks/use-server-mode";
+import { normalizeScopes, useSaveProject, type Project, type ProjectScope } from "@/lib/projects";
 
 const field = "h-9 w-full rounded-lg border border-border bg-background px-2.5 text-sm outline-none focus:border-primary/50";
 
@@ -17,6 +18,8 @@ export function ProjectDialog({ open, onClose, project, defaultScope, onSaved }:
   onSaved?: (p: Project) => void;
 }) {
   const contexts = useK8sContexts();
+  const shared = useServerMode().mode === "web";
+  const saveProject = useSaveProject();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [scopes, setScopes] = useState<ProjectScope[]>([]);
@@ -31,6 +34,8 @@ export function ProjectDialog({ open, onClose, project, defaultScope, onSaved }:
     setScopes(project?.scopes ?? (defaultScope && defaultScope.namespace !== "all" ? [defaultScope] : []));
     setCtx(defaultScope?.context ?? "");
     setNs("");
+    saveProject.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, project, defaultScope]);
 
   const add = () => {
@@ -39,9 +44,9 @@ export function ProjectDialog({ open, onClose, project, defaultScope, onSaved }:
     setNs("");
   };
   const save = () => {
-    const saved = saveProject({ id: project?.id, name, description, scopes });
-    onSaved?.(saved);
-    onClose();
+    saveProject.mutate({ id: project?.id, name, description: description || undefined, scopes }, {
+      onSuccess: (saved) => { onSaved?.(saved); onClose(); },
+    });
   };
 
   return (
@@ -52,7 +57,7 @@ export function ProjectDialog({ open, onClose, project, defaultScope, onSaved }:
             <span className="rounded-lg bg-primary/10 p-1.5 text-primary"><FolderKanban className="h-3.5 w-3.5" /></span>
             {project ? "Edit project" : "New project"}
           </DialogTitle>
-          <DialogDescription className="text-xs">An application across namespaces and clusters. Saved in this browser only.</DialogDescription>
+          <DialogDescription className="text-xs">An application across namespaces and clusters. {shared ? "Everyone signed in to this KubeDeck sees it; what they see inside still follows their own access." : "Kept in KubeDeck on this computer."}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 px-5 py-4">
           <label className="block space-y-1">
@@ -90,9 +95,10 @@ export function ProjectDialog({ open, onClose, project, defaultScope, onSaved }:
             </ul>
           </div>
         </div>
-        <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
+        <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-3">
+          {saveProject.error && <p role="alert" className="mr-auto text-xs text-destructive">{saveProject.error.message}</p>}
           <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
-          <Button size="sm" onClick={save} disabled={!name.trim() || scopes.length === 0}>{project ? "Save" : "Create project"}</Button>
+          <Button size="sm" onClick={save} disabled={!name.trim() || scopes.length === 0 || saveProject.isPending}>{project ? "Save" : "Create project"}</Button>
         </div>
       </DialogContent>
     </Dialog>

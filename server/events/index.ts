@@ -45,10 +45,19 @@ export interface PluginChanged {
   change: "added" | "enabled" | "disabled" | "settings" | "removed";
 }
 
+/** An admin created, changed, deleted or reordered a KubeDeck group (Settings → Groups). */
+export interface GroupChanged {
+  /** "" when the whole list was reordered */
+  id: string;
+  change: "created" | "updated" | "deleted" | "reordered";
+  by: string;
+}
+
 export interface EventMap {
   "action.done": ActionDone;
   "user.changed": UserChanged;
   "plugin.changed": PluginChanged;
+  "group.changed": GroupChanged;
 }
 
 export type EventName = keyof EventMap;

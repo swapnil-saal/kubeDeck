@@ -13,13 +13,14 @@ browser ──HTTPS──▶ ingress ──▶ KubeDeck ──kubectl --as=kubed
 | | Desktop | Web mode |
 |---|---|---|
 | Who is allowed | whoever is at the machine | people with an account an admin created (optionally limited to groups) |
-| Cluster identity | your kubeconfig | each signed-in person, through impersonation: `kubedeck:<email>` in groups `kubedeck:<group>` |
+| Cluster identity | your kubeconfig | per cluster, the service account the person's group uses there (Settings → Groups: impersonated, or from an uploaded kubeconfig), else the person through impersonation: `kubedeck:<email>` in groups `kubedeck:<group>` |
 | Writes (scale, restart, edit, delete) | allowed | allowed where the person's RBAC allows (`KUBEDECK_READ_ONLY=true` turns them off for everyone) |
 | Browse pod files | yes | yes, where the person may `exec` (`KUBEDECK_POD_FILES=off` turns it off). Only fixed read-only scripts run in the pod |
 | AI (Ask Deck, diagnose, explain, summaries, command translation) | provider set in Settings → AI assistant | provider set by an admin in Settings → AI assistant (stored encrypted), or pinned by the server's `KUBEDECK_AI_*` env, which wins (`KUBEDECK_AI=off` turns AI off). The assistant acts as the signed-in person. Cluster data it reads goes to that provider |
 | Port-forward | yes | no: the port would open inside the server, not on the user's machine |
-| Settings | edited in the app | configuration comes from the environment; admins manage **Users** and read the **Audit log** |
-| kubectl palette and assistant | any verb | no `config`, `auth`, `exec`, `cp`, `port-forward`, `proxy`, `attach`, `debug`, and no `--token/--server/--kubeconfig/--as` flags, so nobody steps outside their own identity. The assistant's pipelines run without a shell. When read-only, both only read |
+| Settings | edited in the app | configuration comes from the environment; admins manage **Users**, **Groups** and read the **Audit log** |
+| Projects | kept in KubeDeck's database on this computer | kept in KubeDeck's database and shared: everyone sees every project, its creator or an admin changes it |
+| kubectl palette and assistant | any verb | no `config`, `auth`, `exec`, `cp`, `port-forward`, `proxy`, `attach`, `debug`, and no `--token/--server/--kubeconfig/--as/--user/--cluster` flags, so nobody steps outside their own identity. The assistant's pipelines run without a shell. When read-only, both only read |
 | Audit | every change in **Settings → Audit log**, kept in `~/.kubedeck/kubedeck.db` under your computer's user name | every change (UI, palette, assistant) in **Settings → Audit log** and as a JSON line on stdout, with the person and their groups |
 
 What a person sees follows their RBAC: kinds they may not list are left out of the sidebar, and actions they may not take are not shown.
@@ -32,7 +33,7 @@ What a person sees follows their RBAC: kinds they may not list are left out of t
 | `KUBEDECK_PUBLIC_URL` | the URL people open, e.g. `https://kubedeck.example.com`. Requests for any other hostname are refused |
 | `KUBEDECK_AUTH_SECRET` | **required**: ≥32 random characters that sign sessions (`openssl rand -base64 32`). Keep it stable: changing it signs everyone out |
 | `KUBEDECK_ADMIN_EMAIL` / `KUBEDECK_ADMIN_PASSWORD` / `KUBEDECK_ADMIN_NAME` | the first admin, created at start if that email does not exist yet (an existing account is never changed). Password ≥12 characters |
-| `KUBEDECK_DATABASE_URL` | `sqlite:/data/kubedeck.db` (default `~/.kubedeck/kubedeck.db`; one replica, on a volume) or `postgres://user:pass@host:5432/kubedeck` (several replicas) |
+| `KUBEDECK_DATABASE_URL` | **set it in a container**: `sqlite:/data/kubedeck.db` (one replica, on a volume; the default `~/.kubedeck/kubedeck.db` is not writable on a read-only root filesystem) or `postgres://user:pass@host:5432/kubedeck` (several replicas) |
 | `KUBEDECK_PROXY_HOPS` | how many proxies in front of KubeDeck you trust to set `X-Forwarded-For` (e.g. `1` behind an ingress), so the sign-in rate limit and the audit log see each person's address |
 | `KUBEDECK_ALLOWED_GROUPS` | comma list; a person must be in one of these KubeDeck groups to use KubeDeck at all |
 | `KUBEDECK_IMPERSONATE_PREFIX` / `KUBEDECK_IMPERSONATE_GROUP_PREFIX` | prepended to user / group names sent to Kubernetes (default `kubedeck:`; the group prefix cannot be empty) |
@@ -59,7 +60,13 @@ KubeDeck **refuses to start** in web mode without a public URL or a ≥32-charac
 
 KubeDeck shows a sign-in page. There is no self sign-up: an admin adds people under **Settings → Users**, sets their password (or generates one), and puts them in groups.
 
-- **What someone may do comes from the cluster, not from KubeDeck.** Every kubectl call runs as `kubedeck:<email>` with each of their groups as `kubedeck:<group>`, so bind those groups to roles:
+- **Groups are defined under Settings → Groups** (e.g. *Developers*, *Quality team*), and an account can only be in groups defined there. Groups accounts already had are defined automatically on start. For each cluster a group uses one service account:
+  - **Picked from the cluster, impersonated** (`--as=system:serviceaccount:<ns>:<name>`). The form lists the namespace's service accounts as KubeDeck sees them and says whether KubeDeck may impersonate them; its credentials for that cluster need `impersonate` on that service account.
+  - **From an uploaded kubeconfig**, where KubeDeck may not impersonate. Only a token or an inline client certificate is accepted (exec plugins, auth providers and file paths are refused). It is checked with `kubectl auth whoami` on save, stored encrypted with a key derived from `KUBEDECK_AUTH_SECRET`, and never sent back to the browser. Changing that secret makes stored kubeconfigs unreadable: upload them again.
+
+  When several of someone's groups cover the same cluster, the group higher in the list wins (reorder with the arrows). The palette and the assistant refuse `--user` and `--cluster`, so nobody can borrow another context's credentials.
+- **A KubeDeck admin uses KubeDeck's own credentials** on a cluster none of their groups covers, so a new install works as soon as its first admin (`KUBEDECK_ADMIN_EMAIL`) signs in. Make someone an admin only if they may do what KubeDeck's kubeconfig (or service account) can.
+- **For everyone else, on a cluster none of their groups covers, KubeDeck acts as the person.** The kubectl call runs as `kubedeck:<email>` with each of their groups as `kubedeck:<group>`, so you can bind those groups to roles instead:
 
   ```sh
   kubectl create rolebinding shop-editors --clusterrole=edit --group=kubedeck:shop-editors -n shop
@@ -67,10 +74,10 @@ KubeDeck shows a sign-in page. There is no self sign-up: an admin adds people un
   ```
 
   Someone in no bound group sees nothing. Group changes apply on their next request. The `kubedeck:` prefix keeps a KubeDeck group from ever being a built-in one such as `system:masters`.
-- **KubeDeck's service account needs only `impersonate`** on `users` and `groups` (the `kubedeck-impersonator` role in the manifest). A kubectl call made outside a person's request runs as `system:anonymous`, never as the service account.
-- **The KubeDeck role is separate:** an admin manages users and reads the audit log, with no cluster access of their own beyond their groups. An admin cannot remove their own admin role, block or delete themselves.
+- **For acting as the person, KubeDeck's service account needs only `impersonate`** on `users` and `groups` (the `kubedeck-impersonator` role in the manifest; add `serviceaccounts` for groups that act as a service account). A kubectl call made outside a person's request runs as `system:anonymous`, never as the service account.
+- **The KubeDeck role:** an admin manages people, groups, plugins and the audit log, and (see above) has KubeDeck's own access where no group of theirs applies. An admin cannot remove their own admin role, block or delete themselves.
 - Sessions last 12 hours. Sign-in is rate limited per address (10 tries a minute). Blocking an account signs it out at once; so does **Sign out everywhere**.
-- Back up the database: it holds the accounts (passwords hashed with scrypt) and the audit log.
+- Back up the database: it holds the accounts (passwords hashed with scrypt), groups, projects, plugin settings and the audit log.
 
 ### Traces and Grafana
 

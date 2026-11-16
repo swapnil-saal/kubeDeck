@@ -50,4 +50,56 @@ export const MIGRATIONS = (type: DbType): Record<string, Migration> => ({
       await sql`drop table if exists plugin_state`.execute(db);
     },
   },
+  // KubeDeck groups and, per cluster, whom each acts as (server/groups)
+  "0003_groups": {
+    async up(db: Kysely<any>) {
+      await db.schema
+        .createTable("kubedeck_group")
+        .ifNotExists()
+        .addColumn("id", "text", (c) => c.primaryKey())
+        .addColumn("name", "text", (c) => c.notNull())
+        .addColumn("description", "text", (c) => c.notNull().defaultTo(""))
+        .addColumn("position", "integer", (c) => c.notNull().defaultTo(0))
+        .addColumn("updated_at", "text", (c) => c.notNull())
+        .addColumn("updated_by", "text", (c) => c.notNull().defaultTo(""))
+        .execute();
+      await db.schema
+        .createTable("group_cluster_access")
+        .ifNotExists()
+        .addColumn("group_id", "text", (c) => c.notNull())
+        .addColumn("context", "text", (c) => c.notNull())
+        .addColumn("acts_as", "text", (c) => c.notNull())
+        .addColumn("namespace", "text", (c) => c.notNull().defaultTo(""))
+        .addColumn("service_account", "text", (c) => c.notNull().defaultTo(""))
+        // an uploaded kubeconfig, encrypted; whom it signs in as; its API server
+        .addColumn("credentials", "text", (c) => c.notNull().defaultTo(""))
+        .addColumn("identity", "text", (c) => c.notNull().defaultTo(""))
+        .addColumn("server", "text", (c) => c.notNull().defaultTo(""))
+        .addPrimaryKeyConstraint("group_cluster_access_pk", ["group_id", "context"])
+        .execute();
+    },
+    async down(db: Kysely<any>) {
+      await sql`drop table if exists group_cluster_access`.execute(db);
+      await sql`drop table if exists kubedeck_group`.execute(db);
+    },
+  },
+  // projects (server/projects)
+  "0004_projects": {
+    async up(db: Kysely<any>) {
+      await db.schema
+        .createTable("project")
+        .ifNotExists()
+        .addColumn("id", "text", (c) => c.primaryKey())
+        .addColumn("name", "text", (c) => c.notNull())
+        .addColumn("description", "text", (c) => c.notNull().defaultTo(""))
+        .addColumn("scopes", "text", (c) => c.notNull().defaultTo("[]"))
+        .addColumn("created_at", "text", (c) => c.notNull())
+        .addColumn("created_by", "text", (c) => c.notNull().defaultTo(""))
+        .addColumn("updated_at", "text", (c) => c.notNull())
+        .execute();
+    },
+    async down(db: Kysely<any>) {
+      await sql`drop table if exists project`.execute(db);
+    },
+  },
 });

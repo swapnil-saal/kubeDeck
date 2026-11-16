@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { FolderKanban, Plus } from "lucide-react";
+import { FolderKanban, Loader2, Plus } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { useAcrossScopes } from "@/hooks/use-k8s";
 import { useScope } from "@/hooks/use-scope";
@@ -11,7 +11,8 @@ import { ProjectDialog } from "./ProjectDialog";
 
 /** `/projects` — applications grouped across namespaces and clusters. */
 export default function ProjectsPage() {
-  const projects = useProjects();
+  const list = useProjects();
+  const projects = list.data ?? [];
   const { context, namespace } = useScope();
   const [creating, setCreating] = useState(false);
   const [, navigate] = useLocation();
@@ -26,13 +27,17 @@ export default function ProjectsPage() {
             <h1 className="flex items-baseline gap-2 text-lg font-bold tracking-tight">
               Projects {projects.length > 0 && <span className="text-sm font-medium tabular-nums text-muted-foreground">{projects.length}</span>}
             </h1>
-            <span className="text-xs text-muted-foreground">applications across namespaces and clusters · saved in this browser</span>
+            <span className="text-xs text-muted-foreground">applications across namespaces and clusters</span>
             <button type="button" onClick={() => setCreating(true)} className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-3 text-xs font-semibold text-primary hover:bg-primary/15">
               <Plus className="h-3.5 w-3.5" />New project
             </button>
           </div>
 
-          {projects.length === 0 ? (
+          {list.isLoading ? (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading projects…</p>
+          ) : list.error ? (
+            <p role="alert" className="text-sm text-destructive">{list.error.message}</p>
+          ) : projects.length === 0 ? (
             <div className="card-elevated mx-auto max-w-xl px-6 py-10 text-center">
               <FolderKanban className="mx-auto mb-3 h-8 w-8 text-primary" />
               <p className="text-sm font-medium">Group an application's namespaces into one view</p>

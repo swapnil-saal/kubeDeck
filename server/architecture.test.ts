@@ -92,7 +92,7 @@ const CHILD_PROCESS_ALLOWED: Record<string, string> = {
 const CHILD_PROCESS_FNS = new Set(["spawn", "spawnSync", "execFile", "execFileSync", "exec", "execSync", "fork"]);
 
 /** Modules with one front door: code outside the folder imports only its index. */
-const FRONT_DOORS = ["server/auth", "server/db", "server/audit", "server/events", "server/ai/tools", "server/plugins", "server/observability", "server/mcp"];
+const FRONT_DOORS = ["server/auth", "server/db", "server/audit", "server/events", "server/ai/tools", "server/plugins", "server/observability", "server/mcp", "server/groups", "server/projects"];
 
 /**
  * Imports allowed past a front door. Empty: export what is needed from the module's index instead.
@@ -107,6 +107,9 @@ const FRONT_DOOR_EXCEPTIONS: { from: string; to: string; reason: string }[] = []
 const TABLE_OWNERS: Record<string, Scope | null> = {
   audit_log: "server/audit/",
   plugin_state: "server/plugins/",
+  kubedeck_group: "server/groups/",
+  group_cluster_access: "server/groups/",
+  project: "server/projects/",
   user: null,
   session: null,
   account: null,

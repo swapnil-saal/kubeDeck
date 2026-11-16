@@ -61,6 +61,26 @@ function pluginAction(method: string, rest: string[]): AuditAction | null {
   return null;
 }
 
+/** Groups: /api/groups[/:id | /order] */
+function groupAction(method: string, rest: string[]): AuditAction | null {
+  const [id] = rest.map(decode);
+  if (!id) return method === "POST" ? { lead: "Created a group" } : null;
+  if (id === "order") return { lead: "Reordered the groups" };
+  if (method === "PATCH") return { lead: "Changed group", target: id };
+  if (method === "DELETE") return { lead: "Deleted group", target: id };
+  return null;
+}
+
+/** Projects: /api/projects[/:id | /import] */
+function projectAction(method: string, rest: string[]): AuditAction | null {
+  const [id] = rest.map(decode);
+  if (!id) return method === "POST" ? { lead: "Created a project" } : null;
+  if (id === "import") return { lead: "Moved this browser's projects to KubeDeck" };
+  if (method === "PUT") return { lead: "Changed project", target: id };
+  if (method === "DELETE") return { lead: "Deleted project", target: id };
+  return null;
+}
+
 /** Cluster actions: /api/k8s/… */
 function k8sAction(method: string, rest: string[]): AuditAction | null {
   const [kind, name, sub] = rest;
@@ -97,6 +117,8 @@ export function describeAudit(e: Entry, emailOf?: EmailOf): AuditAction {
     else if (area === "ai") action = aiAction(rest);
     else if (area === "admin" && rest[0] === "users") action = userAction(e.method, rest.slice(1), emailOf);
     else if (area === "plugins") action = pluginAction(e.method, rest);
+    else if (area === "groups") action = groupAction(e.method, rest);
+    else if (area === "projects") action = projectAction(e.method, rest);
     else if (area === "settings" && rest.length === 0) action = { lead: "Changed KubeDeck's settings" };
   }
   return action ?? { lead: FALLBACK_VERB[e.method] ?? e.method, target: path.replace(/^\/api\//, "") || "/" };

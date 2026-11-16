@@ -42,7 +42,8 @@ function FormActions({ plugin, dirty, saving, onTest, testing }: { plugin: Plugi
   );
 }
 
-export function PluginForm({ plugin }: { plugin: PluginInfo }) {
+/** `bare`: no box of its own (inside a panel that already frames it). */
+export function PluginForm({ plugin, bare = false }: { plugin: PluginInfo; bare?: boolean }) {
   const { base, draft, changes, dirty, set, reset } = useDraft(plugin);
   const update = useUpdatePlugin();
   const test = useTestPlugin();
@@ -64,7 +65,7 @@ export function PluginForm({ plugin }: { plugin: PluginInfo }) {
   const error = update.error ?? test.error;
 
   return (
-    <form onSubmit={submit} aria-label={`${plugin.name} settings`} className="space-y-4 rounded-xl border border-border bg-muted/30 p-4">
+    <form onSubmit={submit} aria-label={`${plugin.name} settings`} className={bare ? "space-y-4" : "space-y-4 rounded-xl border border-border bg-muted/30 p-4"}>
       <div className="grid gap-4 sm:grid-cols-2">
         {plugin.fields.map((field) => {
           const id = fieldId(plugin, field.key);

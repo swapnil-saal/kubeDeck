@@ -6,6 +6,7 @@ import { forwardRef, useRef, useState, type ComponentProps, type FormEvent, type
 import { Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SheetBody, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useCreatePlugin } from "@/hooks/use-plugins";
 import { cn } from "@/lib/utils";
 import { inputClass } from "../plugins/PluginFields";
@@ -54,12 +55,12 @@ export function AddMcpServer({ onAdded, onCancel }: { onAdded: (id: string) => v
   };
 
   return (
-    <form onSubmit={submit} noValidate aria-labelledby="add-mcp-title" className="space-y-4 rounded-xl border border-primary/30 bg-card p-4 sm:p-5">
-      <div>
-        <h3 id="add-mcp-title" className="text-sm font-semibold">Add an MCP server</h3>
-        <p className="mt-0.5 text-[11px] text-muted-foreground">It starts on and read-only. Its tools and the rest of its settings open next.</p>
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2">
+    <form onSubmit={submit} noValidate aria-label="Add an MCP server" className="flex min-h-0 flex-1 flex-col">
+      <SheetHeader>
+        <SheetTitle className="text-base font-semibold">Add an MCP server</SheetTitle>
+        <SheetDescription className="text-xs text-muted-foreground">It starts on and read-only. Its tools show once it answers; the rest of its settings are under Settings.</SheetDescription>
+      </SheetHeader>
+      <SheetBody className="space-y-4">
         <Field
           id="add-mcp-name" ref={nameInput} type="text" label="Name" hint="How the assistant and this page call it." placeholder="e.g. GitHub"
           required maxLength={40} autoFocus value={name} onChange={(e) => setName(e.target.value)} problem={sent && !name.trim() ? "Give it a name." : null}
@@ -69,18 +70,18 @@ export function AddMcpServer({ onAdded, onCancel }: { onAdded: (id: string) => v
           hint="Its remote endpoint (Streamable HTTP or SSE). Local (stdio) servers are not supported."
           value={url} onChange={(e) => setUrl(e.target.value)} onBlur={() => url && setUrlLeft(true)} problem={sent || urlLeft ? serverUrlProblem(url) : null}
         />
-      </div>
-      <Field
-        id="add-mcp-token" type="password" className="sm:max-w-[calc(50%-0.5rem)]" placeholder="none" value={token} onChange={(e) => setToken(e.target.value)}
-        label={<>Token <span className="ml-1 font-normal text-muted-foreground">optional</span></>} hint="Sent as a bearer token; stored encrypted and never shown again."
-      />
-      {create.error && <p role="alert" className="text-xs text-destructive">{create.error.message}</p>}
-      <div className="flex flex-wrap items-center gap-2">
+        <Field
+          id="add-mcp-token" type="password" placeholder="none" value={token} onChange={(e) => setToken(e.target.value)}
+          label={<>Token <span className="ml-1 font-normal text-muted-foreground">optional</span></>} hint="Sent as a bearer token; stored encrypted and never shown again."
+        />
+      </SheetBody>
+      <SheetFooter>
+        {create.error && <p role="alert" className="w-full text-xs text-destructive">{create.error.message}</p>}
         <Button type="submit" size="sm" disabled={create.isPending}>
           {create.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />} Add server
         </Button>
         <Button type="button" size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>
-      </div>
+      </SheetFooter>
     </form>
   );
 }

@@ -60,12 +60,14 @@ describe("sessions and audit", () => {
 
 describe("webExecAllowed", () => {
   it.each([
-    "get pods -n e2", "describe pod x", "logs x --tail=50", "top pods",
+    "get pods -n shop", "describe pod x", "logs x --tail=50", "top pods", "get clusterroles", "get pods --context dev",
   ])("allows %s", (c) => expect(webExecAllowed(c).ok).toBe(true));
   it.each([
     "config view --raw", "get pods --kubeconfig=/etc/other", "get pods --token=abc", "get pods --as=system:admin", "get pods --server=https://evil",
     "get pods -s https://evil", "exec -it x -- sh", "port-forward x 80", "cp x:/etc/passwd .", "auth can-i --list",
     "-n e2 exec x -- sh", "--context=a debug x", "kubectl config view", "--namespace e2 attach x",
+    // a group may act with one context's credentials: another context's user or cluster would step around that
+    "get pods --context=dev --user=other-user", "get pods --cluster other-cluster", "get pods --user qa",
   ])("refuses %s", (c) => expect(webExecAllowed(c).ok).toBe(false));
 });
 

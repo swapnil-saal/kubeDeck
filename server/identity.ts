@@ -1,8 +1,17 @@
 /**
- * Per-user access in web mode: every kubectl call made for a request carries
- * `--as=kubedeck:<email> --as-group=kubedeck:<group>…` for the signed-in person, so the API server
- * applies the RBAC their groups are bound to. KubeDeck's service account needs only `impersonate`.
- * (KUBEDECK_ACCESS=shared turns this off: everyone then acts as the service account.)
+ * Who each kubectl call runs as, per cluster. In web mode, for the signed-in person:
+ *
+ *  1. the service account of the first of their KubeDeck groups that covers the cluster (Settings →
+ *     Groups): one KubeDeck impersonates (`--as=system:serviceaccount:<ns>:<name>`), or the
+ *     kubeconfig an admin uploaded for it (`--kubeconfig=<its file>`);
+ *  2. otherwise, for a KubeDeck admin, KubeDeck's own credentials (so a new install works as soon as
+ *     its first admin signs in);
+ *  3. otherwise the person themselves, `--as=kubedeck:<email> --as-group=kubedeck:<group>…`, so the
+ *     RBAC those names are bound to applies (KUBEDECK_ACCESS=shared turns this off: KubeDeck's own
+ *     credentials then).
+ *
+ * The cluster is the call's `--context` (or the kubeconfig's current context). On the desktop every
+ * call runs with the person's own kubeconfig.
  *
  * The identity rides on the request's async context (AsyncLocalStorage), so it reaches kubectl calls
  * made deep inside route handlers and the assistant's tools without being passed around. A kubectl
@@ -22,7 +31,25 @@ const store = new AsyncLocalStorage<Impersonation>();
 /** The signed-in person (or the desktop's local user), whether or not impersonation is on. */
 const people = new AsyncLocalStorage<WebUser>();
 
+/** set by asKubeDeck(): KubeDeck itself, not a person, is asking */
+const serverItself = new AsyncLocalStorage<true>();
+
 let active: Pick<WebConfig, "impersonate" | "impersonatePrefix" | "impersonateGroupPrefix"> | null = null;
+
+/** What one of a person's groups lets them act as on a cluster (see shared/groups.ts). */
+export type ClusterGrant = { as: "serviceaccount"; namespace: string; serviceAccount: string } | { as: "credentials"; kubeconfig: string };
+type GrantResolver = (person: WebUser, context: string) => ClusterGrant | undefined;
+let grants: GrantResolver | null = null;
+let defaultContext = "";
+
+/**
+ * Web mode, at startup: how to find a person's grant on a cluster (from their groups), and the
+ * kubeconfig's current context, which a call without `--context` goes to.
+ */
+export function setClusterGrants(resolve: GrantResolver | null, currentContext = ""): void {
+  grants = resolve;
+  defaultContext = currentContext;
+}
 
 /** Called once at startup with the web config (null on the desktop). */
 export function setImpersonation(c: typeof active) {
@@ -47,20 +74,51 @@ export function bindIdentity(req: Request, _res: Response, next: NextFunction): 
 
 /**
  * Who the current request is for, with their KubeDeck groups (unprefixed): web mode's signed-in
- * person, the desktop's local user; undefined outside a request. Unlike currentIdentity() it is set
+ * person, the desktop's local user; undefined outside a request. It is set
  * when KUBEDECK_ACCESS=shared too, so features limited to groups work in every mode.
  */
 export function currentPerson(): WebUser | undefined {
   return people.getStore();
 }
 
-/** The current request's identity (for cache keys); undefined when not impersonating. */
-export function currentIdentity(): Impersonation | undefined {
-  return active ? store.getStore() : undefined;
+/**
+ * A key that differs whenever two requests may get different answers from a cluster: the person and
+ * their groups ("" outside a request, and on the desktop's single user that is fine too).
+ */
+export function identityKey(): string {
+  const p = people.getStore();
+  return p ? `${p.email || p.name}|${p.groups.join(",")}` : "";
 }
 
-/** `--as` flags for a kubectl invocation, or none when impersonation is off. */
-export function impersonationFlags(): string[] {
+/**
+ * Run `fn` with KubeDeck's own credentials, as no person. Only for what KubeDeck checks about
+ * itself (whom a kubeconfig context authenticates as, for an admin); never with a request's input
+ * beyond a validated context name.
+ */
+export function asKubeDeck<T>(fn: () => T): T {
+  return serverItself.run(true, fn);
+}
+
+/** The cluster a kubectl call goes to: its last `--context` (as kubectl reads it), else the current context. */
+export function contextOf(args: string[]): string {
+  let ctx = "";
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === "--") break;
+    if (a.startsWith("--context=")) ctx = a.slice("--context=".length);
+    else if (a === "--context" && i + 1 < args.length) ctx = args[++i];
+  }
+  return ctx || defaultContext;
+}
+
+/** The identity flags for a kubectl call to `context`: `--as…`, an uploaded `--kubeconfig`, or none (KubeDeck's own). */
+export function impersonationFlags(context = defaultContext): string[] {
+  if (serverItself.getStore()) return [];
+  const person = people.getStore();
+  const grant = person && grants ? grants(person, context) : undefined;
+  if (grant?.as === "credentials") return [`--kubeconfig=${grant.kubeconfig}`];
+  if (grant?.as === "serviceaccount") return [`--as=system:serviceaccount:${grant.namespace}:${grant.serviceAccount}`];
+  if (grants && person?.role === "admin") return [];
   if (!active) return [];
   const id = store.getStore();
   if (!id) return ["--as=system:anonymous"];
@@ -78,7 +136,7 @@ const isKubectl = (cmd: string) => /(^|\/)kubectl(\.exe)?$/.test(cmd);
 export function asUser(cmd: string, args: string[]): string[] {
   const runsKubectl = isKubectl(cmd) || (/(^|\/)xargs$/.test(cmd) && args.some(isKubectl));
   if (!runsKubectl) return args;
-  const flags = impersonationFlags();
+  const flags = impersonationFlags(contextOf(args));
   if (flags.length === 0) return args;
   // `kubectl exec pod -- cmd`: whatever follows "--" belongs to the container, so the flags go before it
   const dashes = args.indexOf("--");

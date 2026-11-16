@@ -14,7 +14,7 @@ import {
 } from "@shared/traces";
 import { grafanaMcpStatus } from "./mcp";
 import { logQuery, lokiConfigured, LokiError, queryLogs, type LogScope } from "./loki";
-import { currentIdentity } from "./identity";
+import { identityKey } from "./identity";
 import { spawnCommand } from "./kubectl-run";
 import { findInvalidParam } from "./security";
 import { getObservability, type ObservabilitySettings } from "./observability";
@@ -120,7 +120,7 @@ const access = new Map<string, { at: number; ok: boolean }>();
  */
 export async function mayReadNamespace(context: string, namespace: string): Promise<boolean> {
   if (!isWebMode()) return true;
-  const key = `${currentIdentity()?.user ?? ""}|${context}|${namespace}`;
+  const key = `${identityKey()}|${context}|${namespace}`;
   const hit = access.get(key);
   if (hit && Date.now() - hit.at < ACCESS_TTL_MS) return hit.ok;
   const where = namespace && namespace !== "all" ? ["-n", namespace] : ["-A"];

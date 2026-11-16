@@ -1,89 +1,52 @@
-import { useSyncExternalStore } from "react";
-
 /**
- * Projects: an application seen as one thing, spread over namespaces in one or more clusters.
- * Kept in this browser only (no cluster permissions needed, nothing written to any cluster).
+ * Projects, kept by the server (shared/projects.ts). Projects a browser kept before that are sent to
+ * the server once, then removed from the browser.
  */
-export interface ProjectScope {
-  context: string;
-  namespace: string;
+import { useQuery } from "@tanstack/react-query";
+import { buildUrl } from "@shared/routes";
+import { projectPaths, type Project, type SaveProjectInput } from "@shared/projects";
+import { useInvalidatingMutation } from "@/hooks/use-invalidating-mutation";
+import { requestJson } from "@/lib/request-json";
+
+export { normalizeScopes, projectId, type Project, type ProjectScope } from "@shared/projects";
+
+const PROJECTS = [projectPaths.list];
+const OLD_KEY = "kubedeck.projects";
+
+/** Hand this browser's old projects to the server, once; kept in the browser if that fails. */
+async function moveBrowserProjects(): Promise<void> {
+  let raw: string | null = null;
+  try { raw = localStorage.getItem(OLD_KEY); } catch { return; }
+  if (!raw) return;
+  let old: unknown;
+  try { old = JSON.parse(raw); } catch { old = []; }
+  const projects = (Array.isArray(old) ? old : [])
+    .filter((p) => p && typeof p.name === "string" && Array.isArray(p.scopes) && p.scopes.length > 0)
+    .map((p) => ({ name: String(p.name).slice(0, 80), description: typeof p.description === "string" ? p.description.slice(0, 300) : undefined, scopes: p.scopes, createdAt: typeof p.createdAt === "number" ? p.createdAt : undefined }));
+  if (projects.length) await requestJson("POST", projectPaths.import, { projects });
+  try { localStorage.removeItem(OLD_KEY); } catch { /* nothing to clean */ }
 }
 
-export interface Project {
-  id: string;
-  name: string;
-  description?: string;
-  scopes: ProjectScope[];
-  createdAt: number;
+let moved: Promise<void> | null = null;
+
+export function useProjects() {
+  return useQuery({
+    queryKey: PROJECTS,
+    queryFn: async () => {
+      moved ??= moveBrowserProjects().catch(() => { moved = null; });
+      await moved;
+      return (await requestJson<{ projects: Project[] }>("GET", projectPaths.list)).projects;
+    },
+    staleTime: 15_000,
+  });
 }
 
-const KEY = "kubedeck.projects";
-const EVENT = "kubedeck:projects";
+const projectUrl = (id: string) => buildUrl(projectPaths.one, { id });
 
-function read(): Project[] {
-  try {
-    const raw = localStorage.getItem(KEY);
-    const list = raw ? (JSON.parse(raw) as Project[]) : [];
-    return Array.isArray(list) ? list.filter((p) => p && typeof p.id === "string" && Array.isArray(p.scopes)) : [];
-  } catch {
-    return [];
-  }
-}
+export const useSaveProject = () =>
+  useInvalidatingMutation(
+    ({ id, ...v }: SaveProjectInput & { id?: string }) => requestJson<Project>(id ? "PUT" : "POST", id ? projectUrl(id) : projectPaths.list, v),
+    [{ queryKey: PROJECTS }],
+  );
 
-let cache: Project[] = read();
-
-function write(next: Project[]) {
-  cache = next;
-  try { localStorage.setItem(KEY, JSON.stringify(next)); } catch { /* private mode: kept for this session */ }
-  window.dispatchEvent(new Event(EVENT));
-}
-
-function subscribe(onChange: () => void) {
-  const reload = () => { cache = read(); onChange(); };
-  const local = () => onChange();
-  window.addEventListener("storage", reload); // other tabs
-  window.addEventListener(EVENT, local);
-  return () => {
-    window.removeEventListener("storage", reload);
-    window.removeEventListener(EVENT, local);
-  };
-}
-
-export function useProjects(): Project[] {
-  return useSyncExternalStore(subscribe, () => cache, () => cache);
-}
-
-/** "Payments API" → "payments-api", unique among existing ids. */
-export function projectId(name: string, taken: string[]): string {
-  const base = name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "project";
-  let id = base;
-  for (let i = 2; taken.includes(id); i++) id = `${base}-${i}`;
-  return id;
-}
-
-/** Same cluster and namespace only once, in a stable order. */
-export function normalizeScopes(scopes: ProjectScope[]): ProjectScope[] {
-  const seen = new Set<string>();
-  return scopes
-    .filter((s) => s.context && s.namespace && s.namespace !== "all")
-    .filter((s) => { const k = `${s.context}\u0000${s.namespace}`; if (seen.has(k)) return false; seen.add(k); return true; })
-    .sort((a, b) => a.context.localeCompare(b.context) || a.namespace.localeCompare(b.namespace));
-}
-
-export function saveProject(p: Omit<Project, "id" | "createdAt"> & { id?: string }): Project {
-  const list = read();
-  const existing = p.id ? list.find((x) => x.id === p.id) : undefined;
-  const project: Project = {
-    id: existing?.id ?? projectId(p.name, list.map((x) => x.id)),
-    name: p.name.trim(),
-    description: p.description?.trim() || undefined,
-    scopes: normalizeScopes(p.scopes),
-    createdAt: existing?.createdAt ?? Date.now(),
-  };
-  write(existing ? list.map((x) => (x.id === project.id ? project : x)) : [...list, project]);
-  return project;
-}
-
-export function deleteProject(id: string) {
-  write(read().filter((p) => p.id !== id));
-}
+export const useDeleteProject = () => useInvalidatingMutation((id: string) => requestJson("DELETE", projectUrl(id)), [{ queryKey: PROJECTS }]);

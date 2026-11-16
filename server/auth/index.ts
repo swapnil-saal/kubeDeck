@@ -2,9 +2,9 @@
  * KubeDeck's sign-in for web mode, built on Better Auth. This module is the only code
  * that knows Better Auth exists: the rest of the server sees a `WebUser` (name, email, groups, role).
  *
- * Who someone is comes from here; what they may do in a cluster comes from Kubernetes RBAC, because
- * every kubectl call runs as them (`--as` / `--as-group`, see identity.ts). The KubeDeck role only
- * says who may manage users and read the audit log.
+ * Who someone is, and which KubeDeck groups they are in, comes from here; what they may do in a
+ * cluster is decided per kubectl call in identity.ts (their groups' cluster access, else RBAC for
+ * `--as` / `--as-group`). The KubeDeck role only says who may manage users, groups and the audit log.
  *
  *   KUBEDECK_AUTH_SECRET=<32+ random characters>      signs sessions; keep it stable across restarts
  *   KUBEDECK_ADMIN_EMAIL / KUBEDECK_ADMIN_PASSWORD     first admin, created on start if missing
@@ -49,6 +49,8 @@ export interface KubeDeckAuth {
   userOf(req: IncomingMessage): Promise<WebUser | null>;
   /** a request's headers in the form Better Auth's API takes (for calls made as the signed-in admin) */
   headersOf(req: IncomingMessage): Headers;
+  /** how many accounts carry each group id */
+  groupMembers(): Promise<Map<string, number>>;
   /** the Better Auth instance, for the admin routes in this module only */
   readonly instance: BetterAuthInstance;
 }
@@ -101,6 +103,13 @@ export async function startAuth(d: Database, c: AuthConfig): Promise<KubeDeckAut
     instance: auth,
     handle: (req, res) => handler(req, res),
     headersOf: (req) => fromNodeHeaders(req.headers),
+    async groupMembers() {
+      const ctx = await auth.$context;
+      const users = (await ctx.internalAdapter.listUsers(100_000)) as { groups?: unknown }[];
+      const counts = new Map<string, number>();
+      for (const u of users) for (const g of splitGroups(u.groups)) counts.set(g, (counts.get(g) ?? 0) + 1);
+      return counts;
+    },
     async userOf(req) {
       const s = await auth.api.getSession({ headers: fromNodeHeaders(req.headers) });
       if (!s?.user || s.user.banned) return null;
@@ -129,4 +138,4 @@ async function ensureFirstAdmin(auth: BetterAuthInstance, c: AuthConfig): Promis
 
 export { joinGroups, roleOf, splitGroups } from "./groups";
 export { CLIENT_IP_HEADER, mountAuthRoutes } from "./mount";
-export { registerAdminRoutes } from "./admin-routes";
+export { registerAdminRoutes, type AdminRouteDeps } from "./admin-routes";

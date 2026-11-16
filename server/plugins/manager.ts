@@ -7,7 +7,7 @@
  */
 import type { PluginInfo, PluginStatus, PluginUpdate, PluginValues } from "@shared/plugins";
 import { emit, type PluginChanged } from "../events";
-import { decrypt, encrypt, secretKey } from "./secrets";
+import { decrypt, encrypt, secretKey } from "../secrets";
 import { memoryStore, type PluginStore, type StoredPlugin } from "./store";
 import type { PluginDefinition, PluginFactory, PluginRuntime } from "./types";
 

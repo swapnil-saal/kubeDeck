@@ -9,9 +9,6 @@ import { cn } from "@/lib/utils";
 
 export const field = "h-9 rounded-lg border-border bg-muted/50 text-sm focus-visible:ring-primary/20";
 
-/** "shop-editors, viewers" → ["shop-editors", "viewers"] (the server validates each one) */
-export const parseGroups = (raw: string) => raw.split(/[\s,]+/).map((g) => g.trim().toLowerCase()).filter(Boolean);
-
 /** 24 random characters, for an admin who does not want to invent a password */
 export function generatePassword(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(18));
