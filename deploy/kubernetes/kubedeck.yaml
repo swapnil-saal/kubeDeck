@@ -77,7 +77,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: kubedeck
-          image: swapnilsaal/kubedeck:1.15.0-web   # or your own registry: see docs/DEPLOYMENT.md
+          image: swapnilsaal/kubedeck:2.0.0-web   # or your own registry: see docs/DEPLOYMENT.md
           ports:
             - { name: http, containerPort: 5000 }
           env:
