@@ -29,13 +29,14 @@ export const useDeleteGroup = () => useGroupMutation((id: string) => requestJson
 export const useReorderGroups = () => useGroupMutation((ids: string[]) => requestJson<GroupList>("PUT", groupPaths.order, { ids }));
 
 /** A namespace's service accounts as KubeDeck's credentials see them, and whether it may impersonate them. */
-export function useServiceAccounts(context: string | undefined, namespace: string | undefined) {
-  const url = `${buildUrl(groupPaths.serviceAccounts, { context: encodeURIComponent(context ?? "") })}?namespace=${encodeURIComponent(namespace ?? "")}`;
+export function useServiceAccounts(context: string | undefined, namespace: string | undefined, name = "") {
+  const url = `${buildUrl(groupPaths.serviceAccounts, { context: encodeURIComponent(context ?? "") })}?namespace=${encodeURIComponent(namespace ?? "")}${name ? `&name=${encodeURIComponent(name)}` : ""}`;
   return useQuery({
-    queryKey: [groupPaths.serviceAccounts, context, namespace],
+    queryKey: [groupPaths.serviceAccounts, context, namespace, name],
     queryFn: getParsed(serviceAccountsInfoSchema, url),
     enabled: !!context && !!namespace && /^[a-z0-9][a-z0-9.-]*$/.test(namespace),
     staleTime: 60_000,
     retry: false,
   });
 }
+

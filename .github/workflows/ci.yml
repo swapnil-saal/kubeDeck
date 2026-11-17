@@ -31,7 +31,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # preinstalled on GitHub's Ubuntu runners; server/incluster.test.ts runs it
+      # preinstalled on GitHub's Ubuntu runners; tests/server/incluster.test.ts runs it
       - name: kubectl
         run: kubectl version --client
 

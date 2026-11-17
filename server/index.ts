@@ -1,14 +1,16 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
-import { serveStatic } from "./static";
+import { serveDocs, serveStatic } from "./static";
 import { createServer } from "http";
 import { registerParamValidators, requireTrustedRequest, validateK8sQuery } from "./security";
 import { reportUnreachableAs503 } from "./errors";
-import { ensureInClusterKubeconfig } from "./incluster";
-import { asKubeDeck, bindIdentity, setClusterGrants, setImpersonation } from "./identity";
+import fs from "fs";
+import os from "os";
+import path from "path";
+import { bindIdentity, setClusterGrants } from "./identity";
 import {
-  auditLog, describeMode, HEALTH_PATH, loadWebConfig, setSessionResolver, setWebConfig, validateWebConfig,
-  webFeatureOff, webGate, webReadOnly,
+  auditLog, describeMode, HEALTH_PATH, loadWebConfig, RETIRED_SETTINGS, setPermissionResolver, setSessionResolver, setWebConfig, validateWebConfig,
+  webFeatureOff, webGate, webPermissionGate, webReadOnly,
 } from "./web-mode";
 import type { KubeDeckAuth } from "./auth";
 import { authConfigProblems, loadAuthConfig, mountAuthRoutes, registerAdminRoutes } from "./auth";
@@ -19,9 +21,9 @@ import { databaseStore, memoryStore, registerPluginRoutes, startPlugins } from "
 import { migrateObservability } from "./observability";
 import { legacyAi, legacyObservability } from "./settings";
 import { migrateAiSettings } from "./ai/ai-plugin";
-import { adoptGroups, clusterAccessFor, databaseGroupStore, groupIds, registerGroupRoutes, startGroups } from "./groups";
+import { databaseClusterStore, registerClusterRoutes, startClusters } from "./clusters";
+import { adoptGroups, appPermissionsFor, clusterGrantsFor, clustersFor, groupsUsing, databaseGroupStore, groupIds, registerGroupRoutes, startGroups } from "./groups";
 import { databaseProjectStore, memoryProjectStore, registerProjectRoutes } from "./projects";
-import { runKubectlRaw } from "./kubectl-run";
 
 // Web (shared-service) mode is opt-in; refuse to start half-configured rather than serve cluster access to anyone.
 const webCfg = loadWebConfig();
@@ -31,19 +33,16 @@ if (webProblems.length > 0) {
   process.exit(1);
 }
 setWebConfig(webCfg);
-setImpersonation(webCfg.enabled ? webCfg : null);
-if (webCfg.enabled && webCfg.impersonate) {
-  console.log(
-    `[kubedeck] Each signed-in user acts as their groups allow per cluster (Settings → Groups), else as themselves (kubectl --as=${webCfg.impersonatePrefix}<email>, ` +
-      `groups as ${webCfg.impersonateGroupPrefix}<group>).`,
-  );
-}
-if (webCfg.enabled && !webCfg.impersonate) {
-  console.warn("[kubedeck] KUBEDECK_ACCESS=shared: every signed-in user acts as KubeDeck's own service account, whatever their groups.");
-}
 if (webCfg.enabled) {
-  const kc = ensureInClusterKubeconfig();
-  if (kc) console.log(`[kubedeck] running in a pod: using the service account via ${kc}`);
+  // web mode reads no kubeconfig from this machine: kubectl gets an empty one, and every call names its
+  // connection (a cluster's, or a group's) with --kubeconfig (identity.ts)
+  const empty = path.join(os.tmpdir(), "kubedeck-no-kubeconfig");
+  fs.writeFileSync(empty, "", { mode: 0o600 });
+  process.env.KUBECONFIG = empty;
+  for (const name of RETIRED_SETTINGS.filter((n) => process.env[n] !== undefined)) {
+    console.warn(`[kubedeck] ${name} is no longer used: clusters come from Settings → Clusters and access from Settings → Groups.`);
+  }
+  console.log("[kubedeck] Clusters come from Settings → Clusters; people reach a cluster through their groups' service accounts (Settings → Groups).");
 }
 
 const app = express();
@@ -73,6 +72,7 @@ app.use(auditLog);
 let builtinAuth: KubeDeckAuth | null = null;
 if (webCfg.enabled) mountAuthRoutes(app, () => builtinAuth);
 app.use("/api", webFeatureOff);
+app.use("/api", webPermissionGate);
 app.use("/api", webReadOnly);
 // whether the audit log is kept: set once the database has opened (or failed to, on the desktop)
 let auditReady = false;
@@ -141,14 +141,12 @@ app.use((req, res, next) => {
     const adopted = await adoptGroups([...(await a.groupMembers()).keys()], "startup");
     if (adopted.length) console.log(`[kubedeck] Defined the groups accounts already had: ${adopted.join(", ")}.`);
     registerAdminRoutes(app, a, { knownGroups: groupIds });
-    registerGroupRoutes(app, {
-      members: async (id) => (await a.groupMembers()).get(id) ?? 0,
-      userPrefix: webCfg.impersonatePrefix,
-      groupPrefix: webCfg.impersonateGroupPrefix,
-    });
-    // every kubectl call: the first of the person's groups that covers its cluster decides whom it runs as
-    const current = await asKubeDeck(() => runKubectlRaw("config current-context"));
-    setClusterGrants((person, context) => clusterAccessFor(person.groups, context), current.code === 0 ? current.stdout.trim() : "");
+    setPermissionResolver(appPermissionsFor);
+    registerGroupRoutes(app, { members: async (id) => (await a.groupMembers()).get(id) ?? 0 });
+    // clusters (Settings → Clusters) and every kubectl call: the person's groups' service accounts on its cluster, in order
+    await startClusters(databaseClusterStore(d));
+    registerClusterRoutes(app, { usedBy: groupsUsing });
+    setClusterGrants((person, context) => clusterGrantsFor(person.groups, context), (person) => clustersFor(person.groups));
   }
   // projects: in the database on the desktop and in web mode (memory for this run without one)
   registerProjectRoutes(app, d ? databaseProjectStore(d) : memoryProjectStore());
@@ -164,6 +162,7 @@ app.use((req, res, next) => {
 
   // An unknown API path is a 404, not the single-page app's index.html (which answered 200 to anything).
   app.use("/api", (_req, res) => { res.status(404).json({ message: "Not found" }); });
+  serveDocs(app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

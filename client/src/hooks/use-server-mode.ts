@@ -6,15 +6,14 @@ export interface ServerMode {
   readOnly: boolean;
   /** web mode: people sign in with KubeDeck's own accounts */
   auth?: "builtin";
-  /** web mode: "user" = each person's own RBAC (impersonation); "shared" = KubeDeck's service account */
-  access?: "user" | "shared";
   /** web mode: the signed-in person; desktop: the computer's local user (never signs in or out) */
   user?: { name: string; email: string; groups?: string[]; role?: "admin" | "user" } | null;
   /**
    * podFiles: browse and search a container's files (kubectl exec); users: may manage accounts (web
    * admins); audit: may read the audit log (admins, desktop included)
    */
-  features: { portForward: boolean; settingsEdit: boolean; ai: boolean; podFiles?: boolean; users?: boolean; audit?: boolean };
+  /** palette / projects: the person's KubeDeck permissions from their groups (Settings → Groups) */
+  features: { portForward: boolean; settingsEdit: boolean; ai: boolean; podFiles?: boolean; users?: boolean; audit?: boolean; palette?: boolean; projects?: boolean };
 }
 
 /** Desktop is the default while loading, and when the endpoint is missing (older server). */

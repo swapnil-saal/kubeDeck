@@ -128,7 +128,8 @@ spec:
             - { name: tmp, mountPath: /tmp }
             - { name: data, mountPath: /data }
       volumes:
-        - { name: tmp, emptyDir: {} }
+        # in memory: decrypted cluster and group kubeconfigs that kubectl reads never touch the node's disk
+        - { name: tmp, emptyDir: { medium: Memory, sizeLimit: 32Mi } }
         - { name: data, persistentVolumeClaim: { claimName: kubedeck-data } }
 ---
 apiVersion: v1

@@ -77,11 +77,18 @@ export function usePalettes(): Record<ThemeMode, string> & { choose: (mode: Them
 
 /** Keeps `data-palette` on <html> in step with the current mode and the user's choice. Mount once. */
 export function useApplyPalette(): void {
-  const { resolvedTheme } = useTheme();
+  const { resolvedTheme, theme } = useTheme();
   const palettes = usePalettes();
   const mode: ThemeMode = resolvedTheme === "light" ? "light" : "dark";
   const id = palettes[mode];
   useEffect(() => {
     document.documentElement.dataset.palette = id;
   }, [id]);
+  // the docs at /docs (same origin) open in the same mode: docmd reads "docmd-theme" before it draws
+  useEffect(() => {
+    try {
+      if (theme === "light" || theme === "dark") localStorage.setItem("docmd-theme", theme);
+      else localStorage.removeItem("docmd-theme");
+    } catch { /* storage off: the docs follow the system */ }
+  }, [theme]);
 }

@@ -1,0 +1,85 @@
+import { describe, expect, it } from "vitest";
+import {
+  ingressBackends, ingressHosts, metricsUnavailable, ownerWorkload, parseNamespaceNames,
+  parseTopNodes, parseTopPods,
+} from "@server/k8s-parse";
+
+describe("parseTopPods", () => {
+  it("parses a single-namespace listing", () => {
+    const out = "e2-admin-module-dd8c44c74-pgz4r   1m    88Mi\ne2-aggregation-apis-7948689757-4vclb   12m   70Mi\n";
+    expect(parseTopPods(out, false)).toEqual([
+      { name: "e2-admin-module-dd8c44c74-pgz4r", namespace: undefined, cpuMilli: 1, memMi: 88 },
+      { name: "e2-aggregation-apis-7948689757-4vclb", namespace: undefined, cpuMilli: 12, memMi: 70 },
+    ]);
+  });
+  it("reads the namespace column with -A and converts cores / Gi", () => {
+    const out = "kube-system   coredns-1   2   1Gi\n";
+    expect(parseTopPods(out, true)).toEqual([{ name: "coredns-1", namespace: "kube-system", cpuMilli: 2000, memMi: 1024 }]);
+  });
+  it("ignores blank and short lines", () => {
+    expect(parseTopPods("\n  \nonly-two cols\n", false)).toEqual([]);
+  });
+});
+
+describe("parseTopNodes", () => {
+  it("parses cores, percentages and memory", () => {
+    expect(parseTopNodes("node-1   420m   10%   3120Mi   40%\n")).toEqual([
+      { name: "node-1", cpuMilli: 420, cpuPct: 10, memMi: 3120, memPct: 40 },
+    ]);
+  });
+});
+
+describe("metricsUnavailable", () => {
+  it("recognises a missing metrics-server", () => {
+    expect(metricsUnavailable("error: Metrics API not available")).toBe(true);
+    expect(metricsUnavailable("the server could not find the requested resource (get pods.metrics.k8s.io)")).toBe(true);
+    expect(metricsUnavailable("connection refused")).toBe(false);
+  });
+});
+
+describe("ownerWorkload", () => {
+  it("maps a ReplicaSet to its Deployment by dropping the template hash", () => {
+    expect(ownerWorkload([{ kind: "ReplicaSet", name: "e2-admin-module-dd8c44c74" }])).toEqual({ kind: "Deployment", name: "e2-admin-module" });
+    expect(ownerWorkload([{ kind: "ReplicaSet", name: "web-5d79ccfd54" }])).toEqual({ kind: "Deployment", name: "web" });
+  });
+  it("keeps StatefulSets and DaemonSets as they are", () => {
+    expect(ownerWorkload([{ kind: "StatefulSet", name: "nifi" }])).toEqual({ kind: "StatefulSet", name: "nifi" });
+    expect(ownerWorkload([{ kind: "DaemonSet", name: "agent" }])).toEqual({ kind: "DaemonSet", name: "agent" });
+  });
+  it("strips a CronJob run suffix from Job owners", () => {
+    expect(ownerWorkload([{ kind: "Job", name: "backup-28734120" }])).toEqual({ kind: "Job", name: "backup" });
+  });
+  it("returns undefined for unowned pods", () => {
+    expect(ownerWorkload(undefined)).toBeUndefined();
+    expect(ownerWorkload([])).toBeUndefined();
+  });
+});
+
+describe("summary counters", () => {
+  it("reads namespace names", () => {
+    expect(parseNamespaceNames("namespace/e2\nnamespace/kube-system\n")).toEqual(["e2", "kube-system"]);
+  });
+});
+
+describe("ingress helpers", () => {
+  const ing = {
+    spec: {
+      defaultBackend: { service: { name: "fallback" } },
+      rules: [
+        { host: "app.example.com", http: { paths: [{ backend: { service: { name: "web" } } }, { backend: { service: { name: "api" } } }] } },
+        { http: { paths: [{ backend: { service: { name: "web" } } }] } },
+      ],
+    },
+  };
+  it("collects every backend service once", () => {
+    expect(Array.from(ingressBackends(ing)).sort()).toEqual(["api", "fallback", "web"]);
+  });
+  it("lists hosts, using * for a host-less rule", () => {
+    expect(ingressHosts(ing)).toBe("app.example.com, *");
+  });
+  it("copes with a missing spec or legacy (non-service) backends", () => {
+    expect(ingressBackends({}).size).toBe(0);
+    expect(ingressBackends({ spec: { rules: [{ http: { paths: [{ backend: { resource: { name: "x" } } }] } }] } }).size).toBe(0);
+    expect(ingressHosts(undefined)).toBe("");
+  });
+});

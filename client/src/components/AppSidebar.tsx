@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, type FC, type ReactNode } from "react";
 import { useLocation } from "wouter";
-import { ChevronDown, FolderKanban, Gauge, LayoutGrid, PanelLeftClose, PanelLeftOpen, SlidersHorizontal } from "lucide-react";
+import { ChevronDown, FolderKanban, Gauge, LayoutGrid, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, BookOpen } from "lucide-react";
 import { AiAvatar } from "@/ai";
 import { KubeDeckLogo, KubeDeckMark } from "@/components/KubeDeckLogo";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -245,6 +245,8 @@ export function AppSidebar() {
       <div className="flex shrink-0 flex-col gap-0.5 border-t border-border px-2 py-2">
         {/* set up once, visited now and then: kept with Settings, out of the main list */}
         <NavItem label="Projects" icon={<FolderKanban className="h-4 w-4" />} active={path.startsWith("/projects")} collapsed={collapsed} onClick={() => navigate("/projects")} />
+        {/* the documentation site this server serves at /docs, in its own tab (the desktop opens the browser) */}
+        <NavItem label="Docs" icon={<BookOpen className="h-4 w-4" />} active={false} collapsed={collapsed} onClick={() => window.open(new URL("/docs/", window.location.origin).href, "_blank", "noopener")} />
         {/* always shown: appearance is per browser, even on a read-only shared KubeDeck */}
         <NavItem
           label="Settings"

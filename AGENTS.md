@@ -10,11 +10,12 @@ through `kubectl`.
 |---|---|
 | `npm run dev` | server + client with hot reload (desktop mode) on `PORT` (default 5000) |
 | `npm run electron:dev` | the desktop app |
-| `npm test` | vitest (server and client), including the architecture check |
-| `npm run check:arch` | only the architecture check (`server/architecture.test.ts`) |
+| `npm test` | vitest: every test under `tests/` (mirrors `server/`, `client/src`, `shared/`; see `tests/README.md`), including the architecture check |
+| `npm run check:arch` | only the architecture check (`tests/architecture.test.ts`) |
 | `npm run check` | TypeScript |
 | `npm run build` | production bundle in `dist/` |
 | `script/docker-build.sh [--push]` | web image; `--push` builds linux/amd64 + linux/arm64 |
+| `npm run docs:dev` / `npm run docs:build` | the documentation site (docmd, `documentation/`), served by KubeDeck at `/docs`; `npm run build` builds it too |
 
 Web mode locally: `KUBEDECK_MODE=web KUBEDECK_PUBLIC_URL=http://localhost:5051 KUBEDECK_AUTH_SECRET=<32+ chars> KUBEDECK_ADMIN_EMAIL=… KUBEDECK_ADMIN_PASSWORD=… PORT=5051 npm run dev`
 (see `docs/WEB.md` for every setting).
@@ -37,6 +38,7 @@ Web mode locally: `KUBEDECK_MODE=web KUBEDECK_PUBLIC_URL=http://localhost:5051 K
   the assistant in `ai/`. Resource kinds in the sidebar come from `lib/resource-kinds.ts`.
 - `shared/`: route definitions and schemas used by both sides.
 - `deploy/kubernetes/`, `docs/`: web-mode manifest and runbooks.
+- `documentation/`: the user-facing documentation site (pages in `pages/`, sidebar in `docmd.config.json`, style in `AUTHORING.md`). A feature change that users see updates its page there.
 
 ## Rules
 
@@ -46,12 +48,12 @@ Web mode locally: `KUBEDECK_MODE=web KUBEDECK_PUBLIC_URL=http://localhost:5051 K
 - Anything a shared web server runs must keep users inside its identity: no `config`, `auth`,
   `exec`, `--as`, `--token`… from the palette or the assistant (`webExecAllowed`, `webAgentRefusal`).
 - Never add a `HEALTHCHECK` to the Dockerfile; probes live in the pod spec.
-- Tests run against real code; no mocked LLMs or clusters.
+- Tests live in `tests/`, mirroring the code, and import it through aliases (`@server/…`, `@/…`, `@shared/…`, helpers from `@tests/support/…`). They run against real code; no mocked LLMs or clusters.
 
 ### Architecture rules
 
 Only gateways reach outside, each module has one front door, each module owns its tables.
-`server/architecture.test.ts` enforces this on every `npm test` (and in CI); a failure names the
+`tests/architecture.test.ts` enforces this on every `npm test` (and in CI); a failure names the
 file, the import, the rule and the fix. Allowlists in that file hold today's exceptions, each with
 a reason: fix the code rather than growing them.
 

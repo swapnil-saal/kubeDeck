@@ -23,6 +23,7 @@ import { kindByKey, listHref } from "@/lib/resource-kinds";
 import { AccessGate } from "@/pages/dashboard/AccessGate";
 import { ConnectionGate } from "@/pages/dashboard/ConnectionGate";
 import { HomeOverview } from "@/pages/dashboard/HomeOverview";
+import { NoClusters } from "@/pages/dashboard/NoClusters";
 import { PinnedRecent } from "@/pages/dashboard/PinnedRecent";
 import { StatTiles, type Tile, type TileState } from "@/pages/dashboard/StatTiles";
 
@@ -157,6 +158,15 @@ export default function Dashboard() {
   // The contexts request has settled but produced nothing usable. Never keep the
   // spinner up here — show what went wrong and how to recover.
   if (!currentContext) {
+    // no clusters at all is not an error: say how to get one
+    if (!contextsFailure && contextsFetchStatus !== "paused" && contexts && contexts.length === 0) {
+      return (
+        <div className="flex flex-col h-full overflow-hidden text-foreground">
+          <AppHeader breadcrumbs={[{ label: "Overview" }]} />
+          <NoClusters onRefresh={() => refetchContexts()} />
+        </div>
+      );
+    }
     const detail = contextsFailure
       ?? (contextsFetchStatus === "paused"
         ? "The request was shelved before it could complete, usually because the machine looked offline. Retry once you are back online."

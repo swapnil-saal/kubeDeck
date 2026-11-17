@@ -6,7 +6,8 @@
 import { spawn } from "child_process";
 import { getKubeconfigEnv } from "../../settings";
 import { splitArgs } from "../../kubectl-safety";
-import { asUser } from "../../identity";
+import { asUser, asUserChoices, hasNoAccess } from "../../identity";
+import { noAccessAnswer } from "../../kubectl-run";
 
 const MAX_OUTPUT_LENGTH = 6000;
 
@@ -88,12 +89,27 @@ export function injectNamespaceIntoBash(command: string, namespace: string): str
  * closed the tab) the whole process group is killed, so `sh -c "kubectl … | grep …"`
  * pipelines do not keep running in the background.
  */
-export function execCommand(
+export async function execCommand(
   cmd: string, args: string[], env?: Record<string, string>, signal?: AbortSignal,
 ): Promise<{ stdout: string; stderr: string; code: number }> {
+  // as each of the person's identities on the cluster until one is not refused, like spawnCommand
+  const choices = asUserChoices(cmd, args).length;
+  let first: { stdout: string; stderr: string; code: number } | null = null;
+  for (let choice = 0; choice < choices; choice++) {
+    const r = await execOnce(cmd, args, choice, env, signal);
+    if (r.code === 0 || !/forbidden|cannot impersonate/i.test(`${r.stderr} ${r.stdout}`)) return r;
+    first ??= r;
+  }
+  return first!;
+}
+
+function execOnce(
+  cmd: string, args: string[], choice: number, env?: Record<string, string>, signal?: AbortSignal,
+): Promise<{ stdout: string; stderr: string; code: number }> {
+  if (hasNoAccess(asUser(cmd, args, choice))) return Promise.resolve(noAccessAnswer(args));
   return new Promise((resolve) => {
     if (signal?.aborted) return resolve({ stdout: "", stderr: "(cancelled)", code: 130 });
-    const proc = spawn(cmd, asUser(cmd, args), {
+    const proc = spawn(cmd, asUser(cmd, args, choice), {
       env: env ? { ...process.env, ...env } : undefined,
       timeout: 30000,
       detached: true, // own process group so the abort can kill pipeline children too

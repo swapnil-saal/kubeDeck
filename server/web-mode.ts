@@ -23,7 +23,9 @@
  */
 import os from "os";
 import type { NextFunction, Request, Response } from "express";
+import { ALL_PERMISSIONS, APP_PERMISSIONS, NO_PERMISSIONS, type AppPermission, type AppPermissions } from "@shared/groups";
 import { emit, type ActionDone } from "./events";
+import { currentPerson } from "./identity";
 import { scanShell, type SafetyLevel } from "./kubectl-safety";
 
 export interface WebConfig {
@@ -38,12 +40,10 @@ export interface WebConfig {
   hosts: string[];
   /** if set, the user must belong to at least one of these groups */
   allowedGroups: string[];
-  /** act as each signed-in user (kubectl --as), so their RBAC applies; off only with KUBEDECK_ACCESS=shared */
-  impersonate: boolean;
-  /** prepended to the user and group names KubeDeck sends to Kubernetes (default "kubedeck:") */
-  impersonatePrefix: string;
-  impersonateGroupPrefix: string;
 }
+
+/** Settings from before clusters and groups were set up in KubeDeck; now ignored, and said so at start. */
+export const RETIRED_SETTINGS = ["KUBEDECK_ACCESS", "KUBEDECK_IMPERSONATE_PREFIX", "KUBEDECK_IMPERSONATE_GROUP_PREFIX"];
 
 export interface WebUser {
   name: string;
@@ -63,9 +63,6 @@ export function loadWebConfig(env: NodeJS.ProcessEnv = process.env): WebConfig {
   if (env.KUBEDECK_PUBLIC_URL) {
     try { hosts.push(new URL(env.KUBEDECK_PUBLIC_URL).hostname.toLowerCase()); } catch { /* reported by validateWebConfig */ }
   }
-  const access = (env.KUBEDECK_ACCESS ?? "").trim().toLowerCase();
-  // names get a prefix by default so a KubeDeck group can never be a built-in one (system:masters)
-  const prefix = (v: string | undefined) => v ?? "kubedeck:";
   return {
     enabled: (env.KUBEDECK_MODE ?? "").toLowerCase() === "web",
     readOnly: truthy(env.KUBEDECK_READ_ONLY),
@@ -73,9 +70,6 @@ export function loadWebConfig(env: NodeJS.ProcessEnv = process.env): WebConfig {
     podFiles: !falsy(env.KUBEDECK_POD_FILES),
     hosts: Array.from(new Set(hosts)),
     allowedGroups: list(env.KUBEDECK_ALLOWED_GROUPS),
-    impersonate: access !== "shared",
-    impersonatePrefix: prefix(env.KUBEDECK_IMPERSONATE_PREFIX),
-    impersonateGroupPrefix: prefix(env.KUBEDECK_IMPERSONATE_GROUP_PREFIX),
   };
 }
 
@@ -83,9 +77,6 @@ export function loadWebConfig(env: NodeJS.ProcessEnv = process.env): WebConfig {
 export function validateWebConfig(c: WebConfig): string[] {
   if (!c.enabled) return [];
   const problems: string[] = [];
-  if (c.impersonate && !c.impersonateGroupPrefix) {
-    problems.push("KUBEDECK_IMPERSONATE_GROUP_PREFIX cannot be empty (default \"kubedeck:\"): a KubeDeck group must never be a built-in Kubernetes group.");
-  }
   if (c.hosts.length === 0) problems.push("Set KUBEDECK_PUBLIC_URL (e.g. https://kubedeck.example.com) so requests for other hostnames are refused.");
   return problems;
 }
@@ -163,6 +154,44 @@ export function webGate(req: Request, res: Response, next: NextFunction): void {
   }, next);
 }
 
+/** Web mode: how to find what a person's groups let them use in KubeDeck (set at startup by server/index.ts). */
+let permissionsOfPerson: ((memberOf: string[]) => AppPermissions) | null = null;
+export function setPermissionResolver(fn: typeof permissionsOfPerson): void {
+  permissionsOfPerson = fn;
+}
+
+/**
+ * What `user` may use in KubeDeck itself: everything on the desktop and for an admin; otherwise what
+ * any of their groups allows (nothing for someone in no group).
+ */
+export function permissionsFor(user: WebUser | undefined): AppPermissions {
+  if (!active.enabled || user?.role === "admin" || !permissionsOfPerson) return { ...ALL_PERMISSIONS };
+  return user ? permissionsOfPerson(user.groups) : { ...NO_PERMISSIONS };
+}
+
+/** Whether the person of the current request may use `feature` (always outside web mode). */
+export const personMay = (feature: AppPermission): boolean => permissionsFor(currentPerson())[feature];
+
+const label = (f: AppPermission) => APP_PERMISSIONS.find((p) => p.key === f)?.label ?? f;
+const notAllowed = (f: AppPermission) => `Your KubeDeck groups do not include ${label(f)}. Ask a KubeDeck admin.`;
+
+/** Requests that need a KubeDeck permission (Settings → Groups), with the permission. */
+const NEEDS: { match: RegExp; writesOnly: boolean; feature: AppPermission }[] = [
+  { match: /^\/api\/ai(\/|$)/, writesOnly: false, feature: "assistant" },
+  { match: /^\/api\/kubectl\/exec$/, writesOnly: false, feature: "palette" },
+  { match: /^\/api\/k8s\/pods\/[^/]+\/files(\/|$)/, writesOnly: false, feature: "podFiles" },
+  { match: /^\/api\/projects(\/|$)/, writesOnly: true, feature: "projects" },
+];
+
+/** Web mode: refuse a request the person's groups do not allow. Runs after the session is known. */
+export function webPermissionGate(req: Request, res: Response, next: NextFunction): void {
+  if (!active.enabled) return next();
+  const full = req.baseUrl + req.path;
+  const need = NEEDS.find((n) => n.match.test(full) && (!n.writesOnly || MUTATING.has(req.method)));
+  if (!need || permissionsFor(req.kubedeckUser)[need.feature]) return next();
+  res.status(403).json({ message: notAllowed(need.feature) });
+}
+
 /** Features a shared KubeDeck may have turned off, with the reason the browser shows. */
 const WEB_OFF: { match: RegExp; writesOnly: boolean; off: (c: WebConfig) => boolean; message: string }[] = [
   { match: /^\/api\/ai(\/|$)/, writesOnly: false, off: (c) => !c.ai, message: "The AI assistant is turned off on this KubeDeck." },
@@ -190,7 +219,8 @@ export function webReadOnly(req: Request, res: Response, next: NextFunction): vo
   if (!active.enabled || !active.readOnly || !MUTATING.has(req.method)) return next();
   // mounted under "/api", so req.path is relative to that mount; compare the full path
   const full = req.baseUrl + req.path;
-  if (full === "/api/kubectl/exec" || /^\/api\/(ai|admin|groups|plugins|projects)\//.test(full) || /^\/api\/(groups|plugins|projects)$/.test(full)) return next();
+  const ownRecords = /^\/api\/(ai|admin|groups|plugins|projects)\//.test(full) || /^\/api\/(groups|plugins|projects)$/.test(full);
+  if (full === "/api/kubectl/exec" || ownRecords) return next();
   res.status(403).json({ message: "This KubeDeck is read-only. Scaling, restarting, editing and deleting are turned off here." });
 }
 
@@ -284,6 +314,7 @@ export function webAgentRefusal(line: string, tool: "kubectl" | "bash", level: S
     if (!r.ok) return `Blocked: ${r.message}`;
   }
   if (active.readOnly && level !== "allow") return "Blocked: this KubeDeck is read-only, so the assistant can only read from the cluster.";
+  if (level !== "allow" && !personMay("assistantChanges")) return "Blocked: your KubeDeck groups let the assistant read only.";
   return null;
 }
 
@@ -298,22 +329,25 @@ export function describeMode(req: Request, o: { audit: boolean } = { audit: true
   const c = active;
   const user = publicUser(req.kubedeckUser);
   const admin = user?.role === "admin";
+  const may = permissionsFor(req.kubedeckUser);
   if (!c.enabled) {
     return {
       mode: "desktop" as const,
       readOnly: false,
       user,
-      features: { portForward: true, settingsEdit: true, ai: true, podFiles: true, users: false, audit: admin && o.audit },
+      features: { portForward: true, settingsEdit: true, ai: true, podFiles: true, users: false, audit: admin && o.audit, palette: true, projects: true },
     };
   }
   return {
     mode: "web" as const,
     readOnly: c.readOnly,
     auth: "builtin" as const,
-    // whose permissions apply: each user's own (impersonation) or KubeDeck's service account
-    access: c.impersonate ? ("user" as const) : ("shared" as const),
     user,
     // settings come from the server's environment; a forwarded port would open on the server
-    features: { portForward: false, settingsEdit: false, ai: c.ai, podFiles: c.podFiles, users: admin, audit: admin && o.audit },
+    // what this person may use: the server's switches AND their groups' KubeDeck permissions
+    features: {
+      portForward: false, settingsEdit: false, ai: c.ai && may.assistant, podFiles: c.podFiles && may.podFiles,
+      users: admin, audit: admin && o.audit, palette: may.palette, projects: may.projects,
+    },
   };
 }

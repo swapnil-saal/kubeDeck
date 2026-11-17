@@ -8,7 +8,7 @@ import type { PluginStatus, PluginTool } from "@shared/plugins";
 import type { PluginRuntime } from "../plugins";
 import { proxyTool, registerTools, unregisterTools, type KubeScope, type ToolApproval, type ToolEntry, type ToolsetCall } from "../ai/tools";
 import { currentPerson } from "../identity";
-import { isWebMode, webConfig } from "../web-mode";
+import { isWebMode, personMay, webConfig } from "../web-mode";
 import { connectMcp, resultText, toInfo, type McpConnection, type McpTarget, type McpTool, type McpToolInfo } from "./hub";
 
 /** The server's tools KubeDeck offers, by risk, sorted by name. */
@@ -60,11 +60,14 @@ export interface McpToolsetRuntime extends PluginRuntime {
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 /**
- * Whether the person of the current request may use a server limited to `groups`. Groups only exist
- * on a shared (web) KubeDeck; the desktop's one person always may. Outside a request: no.
+ * Whether the person of the current request may use a server limited to `groups`: their groups must
+ * allow MCP tools (Settings → Groups) and include one of `groups` when it is set. Groups only exist on
+ * a shared (web) KubeDeck; the desktop's one person always may. Outside a request: no.
  */
 export function personMayUse(groups: readonly string[]): boolean {
-  if (groups.length === 0 || !isWebMode()) return true;
+  if (!isWebMode()) return true;
+  if (!personMay("mcp")) return false;
+  if (groups.length === 0) return true;
   const person = currentPerson();
   return !!person && person.groups.some((g) => groups.includes(g));
 }
@@ -115,6 +118,7 @@ function approve(connection: McpConnection, o: McpToolsetOptions, name: string):
   if (risk === "read") return undefined;
   if (!risk) return { type: "denied", reason: `Blocked: "${name}" is not one of the ${o.source} tools KubeDeck may use.` };
   if (kubeDeckReadOnly()) return { type: "denied", reason: "Blocked: this KubeDeck is read-only, so the assistant can only read." };
+  if (!personMay("assistantChanges")) return { type: "denied", reason: "Blocked: your KubeDeck groups let the assistant read only." };
   return "user-approval";
 }
 

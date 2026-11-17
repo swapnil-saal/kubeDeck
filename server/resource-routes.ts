@@ -5,11 +5,15 @@ import type { Express } from "express";
 import * as os from "os";
 import { api } from "@shared/routes";
 import { ownerWorkload } from "./k8s-parse";
+import { visibleClusters } from "./identity";
 import { getNamespaceFlag, runKubectl, runKubectlRaw } from "./kubectl-run";
 
 export function registerResourceRoutes(app: Express): void {
   // ── Contexts ──────────────────────────────────────
   app.get(api.k8s.contexts.path, async (req, res) => {
+    // web mode: the clusters the person's groups give them (Settings → Clusters / Groups), no kubeconfig
+    const reachable = visibleClusters();
+    if (reachable) return res.json(reachable.map((name) => ({ name, cluster: name, user: name, isCurrent: false })));
     try {
       const ctxResult = await runKubectlRaw("config get-contexts -o name");
       if (ctxResult.code !== 0) {

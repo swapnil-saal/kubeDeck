@@ -13,7 +13,7 @@ import { Sheet, SheetBody, SheetContent, SheetDescription, SheetFooter, SheetHea
 import { useBanUser, useCreateUser, useDeleteUser, useSetPassword, useSignOutEverywhere, useUpdateUser } from "@/hooks/use-admin";
 import { useToast } from "@/hooks/use-toast";
 import { InlineConfirm } from "../InlineConfirm";
-import { AccessPreview } from "../groups/access-view";
+import { AccessPreview, PermissionsPreview } from "../groups/access-view";
 import { GroupPicker } from "./GroupPicker";
 import { field, generatePassword, Labeled, PasswordField, RoleSelect } from "./user-fields";
 
@@ -82,12 +82,11 @@ function AccountActions({ user, isMe }: { user: AdminUser; isMe: boolean }) {
  * `user` set: edit them; `user` null: add someone. `open` false closes it. The groups and prefixes
  * come from the Groups list, so the access preview matches what the server will do.
  */
-export function UserSheet({ open, user, isMe, groups, userPrefix, onClose }: {
+export function UserSheet({ open, user, isMe, groups, onClose }: {
   open: boolean;
   user: AdminUser | null;
   isMe: boolean;
   groups: Group[];
-  userPrefix: string;
   onClose: () => void;
 }) {
   const { toast } = useToast();
@@ -164,7 +163,11 @@ export function UserSheet({ open, user, isMe, groups, userPrefix, onClose }: {
             </Section>
 
             <Section title="Cluster access" hint={user ? "with these groups" : undefined}>
-              <AccessPreview groups={groups} memberOf={memberOf} userPrefix={userPrefix} email={email} admin={role === "admin"} />
+              <AccessPreview groups={groups} memberOf={memberOf} />
+            </Section>
+
+            <Section title="KubeDeck permissions" hint={role === "admin" ? "an admin has all" : "from any of their groups"}>
+              <PermissionsPreview groups={groups} memberOf={memberOf} admin={role === "admin"} />
             </Section>
 
             {user && (

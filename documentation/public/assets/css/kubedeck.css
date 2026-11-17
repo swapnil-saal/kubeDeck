@@ -1,0 +1,134 @@
+/*
+ * KubeDeck's look for the docs: the app's fonts (Outfit, JetBrains Mono) and its default palettes,
+ * Paper (light) and OLED black (dark), mapped onto docmd's variables. Tokens come from
+ * client/src/index.css and client/src/themes.css; keep them in step.
+ */
+@font-face {
+  font-family: "Outfit Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("../fonts/outfit-latin-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Outfit Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("../fonts/outfit-latin-ext-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "JetBrains Mono Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 800;
+  src: url("../fonts/jetbrains-mono-latin-wght-normal.woff2") format("woff2-variations");
+}
+
+/* Paper (light) */
+html:root {
+  --font-family-sans: "Outfit Variable", "Outfit", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-family-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --bg-color: hsl(240 10% 98%);
+  --text-color: hsl(240 10% 16%);
+  --text-muted: hsl(240 3.8% 42%);
+  --text-heading: hsl(240 10% 10%);
+  --link-color: hsl(186 78% 30%);
+  --link-color-hover: hsl(186 78% 24%);
+  --accent-color: hsl(186 78% 30%);
+  --border-color: hsl(240 5.9% 89%);
+  --border-color-hover: hsl(240 5.9% 82%);
+  --header-bg: hsl(240 10% 98% / 0.85);
+  --header-border: hsl(240 5.9% 89%);
+  --sidebar-bg: hsl(0 0% 100%);
+  --sidebar-text: hsl(240 10% 24%);
+  --sidebar-link-active-bg: hsl(184 60% 93%);
+  --sidebar-link-active-text: hsl(186 78% 24%);
+  --code-bg: hsl(240 4.8% 95.9%);
+  --code-text: hsl(240 10% 10%);
+  --scrollbar-thumb: hsl(240 5.9% 85%);
+  --glow-color: hsl(186 78% 30% / 0.14);
+  --glow-color-strong: hsl(186 78% 30% / 0.24);
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+
+/* OLED black (dark): docmd sets data-theme on <html> and <body> */
+html[data-theme="dark"],
+body[data-theme="dark"] {
+  --bg-color: hsl(0 0% 0%);
+  --text-color: hsl(0 0% 86%);
+  --text-muted: hsl(0 0% 64%);
+  --text-heading: hsl(0 0% 98%);
+  --link-color: hsl(184 70% 60%);
+  --link-color-hover: hsl(184 70% 74%);
+  --accent-color: hsl(184 70% 60%);
+  --border-color: hsl(0 0% 15%);
+  --border-color-hover: hsl(0 0% 22%);
+  --header-bg: hsl(0 0% 0% / 0.8);
+  --header-border: hsl(0 0% 13%);
+  --sidebar-bg: hsl(0 0% 2%);
+  --sidebar-text: hsl(0 0% 82%);
+  --sidebar-link-active-bg: hsl(184 30% 11%);
+  --sidebar-link-active-text: hsl(184 70% 74%);
+  --code-bg: hsl(0 0% 6%);
+  --code-text: hsl(0 0% 95%);
+  --scrollbar-thumb: hsl(0 0% 17%);
+  --scrollbar-thumb-hover: hsl(0 0% 30%);
+  --glow-color: hsl(184 70% 60% / 0.16);
+  --glow-color-strong: hsl(184 70% 60% / 0.26);
+  --halo-soft: 0 0 0 4px hsl(184 70% 60% / 0.16);
+}
+
+/* Headings as in the app: Outfit, tight tracking */
+h1, h2, h3, h4 { letter-spacing: -0.02em; }
+h1 { font-weight: 700; }
+
+/* The KubeDeck wordmark (as client/src/components/KubeDeckLogo.tsx draws it) */
+.kd-logo {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45em;
+  text-decoration: none !important;
+}
+.kd-wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  font-family: var(--font-family-sans);
+  font-weight: 900;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: -0.05em;
+  text-transform: lowercase;
+}
+.kd-wordmark .kd-kube { color: var(--text-heading); }
+.kd-wordmark .kd-deck { color: var(--link-color); display: inline-flex; align-items: baseline; }
+.kd-wordmark .kd-d { position: relative; display: inline-block; }
+.kd-wordmark .kd-cut {
+  position: absolute;
+  left: 48%;
+  top: -0.04em;
+  width: 0.34em;
+  height: 0.38em;
+  transform: translateX(-50%);
+  background: var(--text-heading);
+  clip-path: polygon(0% 28%, 100% 0%, 100% 100%, 0% 100%);
+  pointer-events: none;
+}
+.kd-docs-label {
+  font-family: var(--font-family-sans);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 1px 8px;
+  align-self: center;
+}
+
+/* the docs chat appears once KubeDeck says this person may use its AI (kubedeck.js) */
+html:not(.kd-ai) #docmd-ai-plugin-root { display: none !important; }

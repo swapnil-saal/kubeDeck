@@ -2,6 +2,7 @@ import type { Express, Response } from "express";
 import { generateText, pipeUIMessageStreamToResponse, streamText, toUIMessageStream } from "ai";
 import { z } from "zod";
 import { agentCallOptionsSchema, streamKubeAgent } from "./chat/agent";
+import { DOCS_INSTRUCTIONS, docsPrompt, docsQuestionSchema, loadDocs, relevantSections, siteRelativeLinks } from "./docs-answer";
 import { formatProviderError } from "./errors";
 import { defaultMaxOutputTokens, getLanguageModel } from "./provider";
 import { getAiTask } from "./tasks";
@@ -106,6 +107,35 @@ export function registerAiRoutes(app: Express): void {
       response: res,
       stream: toUIMessageStream({ stream: result.stream, onError: formatProviderError }),
     });
+  });
+
+  /** The documentation site's chat widget: docmd's relay protocol, answered as JSON `{ text }`. */
+  app.post("/api/ai/docs", async (req, res) => {
+    const parsed = docsQuestionSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: "Ask a question in words." });
+    const docs = loadDocs();
+    if (!docs) return res.json({ unconfigured: true, message: "The documentation is not built on this KubeDeck, so there is nothing to answer from." });
+    let resolved: ReturnType<typeof getLanguageModel>;
+    try {
+      resolved = getLanguageModel();
+    } catch (err) {
+      return res.json({ unconfigured: true, message: formatProviderError(err) });
+    }
+    const { message, history, pageTitle } = parsed.data;
+    const found = relevantSections(docs.sections, message, undefined, docs.pool);
+    try {
+      const { text } = await generateText({
+        model: resolved.model,
+        instructions: DOCS_INSTRUCTIONS,
+        prompt: docsPrompt(message, history ?? [], found, pageTitle),
+        temperature: 0.2,
+        maxOutputTokens: defaultMaxOutputTokens(resolved.provider),
+        abortSignal: abortOnClose(res),
+      });
+      res.json({ text: siteRelativeLinks(text.trim()) || "I could not find an answer in the documentation." });
+    } catch (err) {
+      if (!res.headersSent) res.status(502).json({ error: formatProviderError(err) });
+    }
   });
 
   /** Plain language → one kubectl command (structured output). */

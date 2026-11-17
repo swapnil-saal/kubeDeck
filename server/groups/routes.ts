@@ -11,6 +11,7 @@ import {
   type GroupList,
   type ServiceAccountsInfo,
 } from "@shared/groups";
+import { clusterFile } from "../clusters";
 import { asKubeDeck } from "../identity";
 import { spawnCommand } from "../kubectl-run";
 import { findInvalidParam } from "../security";
@@ -20,8 +21,6 @@ import { createGroup, deleteGroup, GroupError, listGroups, reorderGroups, update
 export interface GroupRouteDeps {
   /** how many accounts carry this group */
   members(id: string): Promise<number>;
-  userPrefix: string;
-  groupPrefix: string;
 }
 
 const who = (req: Request) => req.kubedeckUser?.email || req.kubedeckUser?.name || "unknown";
@@ -39,12 +38,13 @@ const adminOnly = (handler: (req: Request, res: Response) => Promise<unknown>) =
 const lastLine = (text: string) => (text.trim().split("\n").pop() || "").slice(0, 300);
 
 /** A namespace's service accounts and whether KubeDeck may impersonate them, both as KubeDeck itself. */
-async function serviceAccountsOf(context: string, namespace: string): Promise<ServiceAccountsInfo> {
+async function serviceAccountsOf(context: string, namespace: string, name = ""): Promise<ServiceAccountsInfo> {
   const env = getKubeconfigEnv();
-  const where = [`--context=${context}`, "-n", namespace, "--request-timeout=10s"];
+  const where = [`--context=${context}`, `--kubeconfig=${clusterFile(context) ?? "/dev/null"}`, "-n", namespace, "--request-timeout=10s"];
   const [list, can] = await asKubeDeck(() => Promise.all([
     spawnCommand("kubectl", ["get", "serviceaccounts", "-o", "jsonpath={.items[*].metadata.name}", ...where], env),
-    spawnCommand("kubectl", ["auth", "can-i", "impersonate", "serviceaccounts", ...where], env),
+    // the account itself when named: a cluster admin often allows just that one (resourceNames)
+    spawnCommand("kubectl", ["auth", "can-i", "impersonate", name ? `serviceaccounts/${name}` : "serviceaccounts", ...where], env),
   ]));
   const canImpersonate = can.stdout.trim() === "yes";
   if (list.code !== 0) {
@@ -55,7 +55,7 @@ async function serviceAccountsOf(context: string, namespace: string): Promise<Se
 }
 
 export function registerGroupRoutes(app: Express, deps: GroupRouteDeps): void {
-  const list = (): GroupList => ({ groups: listGroups(), userPrefix: deps.userPrefix, groupPrefix: deps.groupPrefix });
+  const list = (): GroupList => ({ groups: listGroups() });
 
   app.get(groupPaths.list, adminOnly(async (_req, res) => res.json(list())));
 
@@ -76,8 +76,9 @@ export function registerGroupRoutes(app: Express, deps: GroupRouteDeps): void {
   app.get(groupPaths.serviceAccounts, adminOnly(async (req, res) => {
     const context = String(req.params.context);
     const namespace = typeof req.query.namespace === "string" ? req.query.namespace : "";
-    if (findInvalidParam({ context, namespace }) || !namespace || namespace === "all") return res.status(400).json({ message: "Pick a cluster and a namespace." });
-    res.json(await serviceAccountsOf(context, namespace));
+    const name = typeof req.query.name === "string" ? req.query.name : "";
+    if (findInvalidParam({ context, namespace, name }) || !namespace || namespace === "all") return res.status(400).json({ message: "Pick a cluster and a namespace." });
+    res.json(await serviceAccountsOf(context, namespace, name));
   }));
 
   app.patch(groupPaths.one, adminOnly(async (req, res) => {

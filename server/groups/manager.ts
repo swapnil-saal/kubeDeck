@@ -4,12 +4,12 @@
  * kubectl reads. Every change goes through here: it is checked, saved, the memory copy replaced, and
  * `group.changed` emitted.
  */
-import { randomUUID } from "crypto";
-import { accessOn, groupIdFor, type ClusterAccess, type CreateGroupInput, type Group, type UpdateGroupInput } from "@shared/groups";
+import { ALL_PERMISSIONS, groupIdFor, permissionsOf, type AppPermissions, type ClusterAccess, type CreateGroupInput, type Group, type UpdateGroupInput } from "@shared/groups";
+import { clusterFile, clusterNames } from "../clusters";
 import { emit } from "../events";
 import type { ClusterGrant } from "../identity";
 import { decrypt, encrypt, secretKey } from "../secrets";
-import { clearCredentialsFiles, CredentialsError, identityOf, normalizeKubeconfig, writeCredentialsFile } from "./credentials";
+import { clearCredentialsFiles, CredentialsError, checkKubeconfig, normalizeKubeconfig, writeCredentialsFile } from "../kubeconfig-files";
 import type { GroupStore, StoredGroup } from "./store";
 
 export class GroupError extends Error {
@@ -27,12 +27,12 @@ const fileKey = (group: string, context: string) => `${group}\u0000${context}`;
 
 /** Decrypt every uploaded kubeconfig into its file; one that cannot be decrypted is skipped (its calls fail). */
 function writeFiles(): void {
-  clearCredentialsFiles();
+  clearCredentialsFiles("groups");
   files.clear();
   for (const g of groups) {
     for (const [context, sealed] of Object.entries(g.secrets)) {
       try {
-        files.set(fileKey(g.id, context), writeCredentialsFile(`${g.id}-${context}`, decrypt(sealed, key!)));
+        files.set(fileKey(g.id, context), writeCredentialsFile("groups", `${g.id}-${context}`, decrypt(sealed, key!)));
       } catch {
         console.warn(`[kubedeck] Group ${g.name}: the kubeconfig for ${context} cannot be decrypted (was KUBEDECK_AUTH_SECRET changed?). Upload it again.`);
       }
@@ -51,7 +51,7 @@ export function stopGroups(): void {
   store = null;
   groups = [];
   files.clear();
-  clearCredentialsFiles();
+  clearCredentialsFiles("groups");
 }
 
 const need = (): GroupStore => {
@@ -68,16 +68,40 @@ const find = (id: string): StoredGroup => {
   return g;
 };
 
+/** A group's access on a cluster as kubectl flags' source; a connection that cannot be read fails closed. */
+const toGrant = (g: StoredGroup, a: ClusterAccess): ClusterGrant =>
+  a.as === "serviceaccount"
+    ? { as: "serviceaccount", kubeconfig: clusterFile(a.context) ?? "/dev/null", namespace: a.namespace, serviceAccount: a.serviceAccount }
+    : { as: "credentials", kubeconfig: files.get(fileKey(g.id, a.context)) ?? "/dev/null" };
+
+/** The clusters someone in `memberOf` can reach: those their groups have a service account on, that still exist. */
+export function clustersFor(memberOf: string[]): string[] {
+  const known = new Set(clusterNames());
+  return [...new Set(groups.filter((g) => memberOf.includes(g.id)).flatMap((g) => g.access.map((a) => a.context)))].filter((c) => known.has(c)).sort();
+}
+
+/** The names of the groups that have a service account on `cluster`. */
+export const groupsUsing = (cluster: string): string[] => groups.filter((g) => g.access.some((a) => a.context === cluster)).map((g) => g.name);
+
 /**
- * What a person in `memberOf` runs as on `context`: the first of their groups, in the list's order,
- * that covers it. Undefined when none does. Credentials that could not be decrypted fail closed.
+ * Every service account a person in `memberOf` has on `context`, in the groups' order (the order kubectl
+ * tries them). Credentials that could not be decrypted fail closed.
  */
+export function clusterGrantsFor(memberOf: string[], context: string): ClusterGrant[] {
+  if (!context) return [];
+  return [...groups].sort((a, b) => a.position - b.position)
+    .filter((g) => memberOf.includes(g.id))
+    .flatMap((g) => g.access.filter((a) => a.context === context).map((a) => toGrant(g, a)));
+}
+
+/** The first of them (what a call starts as), or undefined when no group covers the cluster. */
 export function clusterAccessFor(memberOf: string[], context: string): ClusterGrant | undefined {
-  const hit = accessOn(groups, memberOf, context);
-  if (!hit) return undefined;
-  const a = hit.access;
-  if (a.as === "serviceaccount") return { as: "serviceaccount", namespace: a.namespace, serviceAccount: a.serviceAccount };
-  return { as: "credentials", kubeconfig: files.get(fileKey(hit.group.id, context)) ?? "/dev/null" };
+  return clusterGrantsFor(memberOf, context)[0];
+}
+
+/** What someone in `memberOf` may use in KubeDeck: a feature any of their groups allows. */
+export function appPermissionsFor(memberOf: string[]): AppPermissions {
+  return permissionsOf(groups, memberOf);
 }
 
 /**
@@ -87,7 +111,9 @@ export function clusterAccessFor(memberOf: string[], context: string): ClusterGr
 async function sealAccess(input: ClusterAccess[], before: StoredGroup | undefined): Promise<Pick<StoredGroup, "access" | "secrets">> {
   const access: ClusterAccess[] = [];
   const secrets: Record<string, string> = {};
+  const known = new Set(clusterNames());
   for (const a of input) {
+    if (!known.has(a.context)) throw new GroupError(400, `There is no cluster named ${a.context}. Add it under Settings → Clusters first.`);
     if (a.as === "serviceaccount") { access.push(a); continue; }
     if (!a.kubeconfig) {
       const kept = before?.access.find((x) => x.context === a.context && x.as === "credentials");
@@ -98,7 +124,7 @@ async function sealAccess(input: ClusterAccess[], before: StoredGroup | undefine
     }
     try {
       const { yaml, server } = normalizeKubeconfig(a.kubeconfig, a.context);
-      const identity = await identityOf(writeCredentialsFile(`check-${randomUUID()}`, yaml), a.context);
+      const identity = await checkKubeconfig("groups", yaml, a.context);
       access.push({ context: a.context, as: "credentials", identity, server });
       secrets[a.context] = encrypt(yaml, key!);
     } catch (err) {
@@ -124,6 +150,7 @@ export async function createGroup(input: Required<Pick<CreateGroupInput, "name">
     name: input.name.trim(),
     description: input.description?.trim() ?? "",
     position: groups.length === 0 ? 0 : Math.max(...groups.map((g) => g.position)) + 1,
+    permissions: { ...ALL_PERMISSIONS, ...input.permissions },
     ...(await sealAccess(input.access ?? [], undefined)),
   };
   await s.save(group, by);
@@ -135,7 +162,8 @@ export async function updateGroup(id: string, input: UpdateGroupInput, by: strin
   const s = need();
   const g = find(id);
   const sealed = input.access ? await sealAccess(input.access, g) : { access: g.access, secrets: g.secrets };
-  await s.save({ ...g, name: input.name ?? g.name, description: input.description ?? g.description, ...sealed }, by);
+  const permissions = { ...g.permissions, ...input.permissions };
+  await s.save({ ...g, name: input.name ?? g.name, description: input.description ?? g.description, permissions, ...sealed }, by);
   await reload(id, "updated", by);
   return publicGroup(find(id));
 }

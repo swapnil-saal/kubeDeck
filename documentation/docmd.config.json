@@ -1,0 +1,111 @@
+{
+  // KubeDeck's documentation site: `npm run docs:dev` to write, `npm run docs:build` to build into
+  // dist/docs, which the KubeDeck server serves at /docs.
+  "title": "KubeDeck Docs",
+  // the bundled JS engine: with "rust" docmd may npm-install packages during the build (it did in Docker)
+  "engine": "js",
+  "src": "pages",
+  "out": "../dist/docs",
+  "base": "/docs/",
+  "favicon": "/favicon.svg",
+  "theme": { "name": "default", "appearance": "system", "customCss": ["/assets/css/kubedeck.css"] },
+  "customJs": ["/assets/js/kubedeck.js"],
+  // no AI chat widget: KubeDeck has its own assistant, and the docs send nothing to outside services
+  "plugins": {
+    "ai": {
+      "endpoint": "/api/ai/docs",
+      "captcha": false,
+      "position": "bottom-right",
+      "greeting": "Ask anything about KubeDeck. Answers come from these docs, through the AI configured for Ask Deck.",
+      "placeholder": "Ask the KubeDeck docs…",
+      "suggestions": ["How do I add a cluster?", "How do groups give cluster access?", "What does read-only mode block?"]
+    }
+  },
+  "layout": {
+    "copyWidgets": { "enabled": true, "raw": true, "context": true }
+  },
+  "navigation": [
+    { "title": "Introduction", "path": "/", "icon": "home" },
+    {
+      "title": "Getting started",
+      "icon": "rocket",
+      "children": [
+        { "title": "Installation", "path": "/getting-started/installation" },
+        { "title": "Quick start (desktop)", "path": "/getting-started/quick-start" },
+        { "title": "Quick start (shared web)", "path": "/getting-started/web-quick-start" }
+      ]
+    },
+    {
+      "title": "Using KubeDeck",
+      "icon": "layout-dashboard",
+      "collapsible": true,
+      "children": [
+        { "title": "Overview page", "path": "/guide/overview" },
+        { "title": "Clusters and namespaces", "path": "/guide/clusters-and-namespaces" },
+        { "title": "Resources and actions", "path": "/guide/resources" },
+        { "title": "Logs", "path": "/guide/logs" },
+        { "title": "Map", "path": "/guide/map" },
+        { "title": "Projects", "path": "/guide/projects" },
+        { "title": "kubectl palette", "path": "/guide/kubectl-palette" },
+        { "title": "Ask Deck (assistant)", "path": "/guide/assistant" },
+        { "title": "Traces", "path": "/guide/traces" },
+        { "title": "Alerts", "path": "/guide/alerts" },
+        { "title": "Pod files and port-forward", "path": "/guide/pod-files-and-port-forward" },
+        { "title": "Appearance", "path": "/guide/appearance" },
+        { "title": "Keyboard shortcuts", "path": "/guide/keyboard-shortcuts" }
+      ]
+    },
+    {
+      "title": "Shared web mode",
+      "icon": "server",
+      "collapsible": true,
+      "children": [
+        { "title": "Desktop vs web", "path": "/web/overview" },
+        { "title": "Deploy on Kubernetes", "path": "/web/deploy-kubernetes" },
+        { "title": "Run with Docker", "path": "/web/docker" },
+        { "title": "Configuration", "path": "/web/configuration" },
+        { "title": "Clusters", "path": "/web/clusters" },
+        { "title": "Database", "path": "/web/database" },
+        { "title": "Users and roles", "path": "/web/users" },
+        { "title": "Groups and cluster access", "path": "/web/groups" },
+        { "title": "Permissions", "path": "/web/permissions" },
+        { "title": "Security model", "path": "/web/security" },
+        { "title": "Audit log", "path": "/web/audit-log" },
+        { "title": "Troubleshooting", "path": "/web/troubleshooting" }
+      ]
+    },
+    {
+      "title": "Integrations",
+      "icon": "plug",
+      "collapsible": true,
+      "children": [
+        { "title": "AI providers", "path": "/integrations/ai-providers" },
+        { "title": "Plugins", "path": "/integrations/plugins" },
+        { "title": "Grafana Tempo", "path": "/integrations/tempo" },
+        { "title": "Grafana Loki", "path": "/integrations/loki" },
+        { "title": "MCP servers", "path": "/integrations/mcp-servers" }
+      ]
+    },
+    {
+      "title": "Reference",
+      "icon": "book-open",
+      "collapsible": true,
+      "children": [
+        { "title": "Environment variables", "path": "/reference/environment-variables" },
+        { "title": "Architecture", "path": "/reference/architecture" },
+        { "title": "FAQ", "path": "/reference/faq" }
+      ]
+    },
+    {
+      "title": "Contributing",
+      "icon": "git-pull-request",
+      "collapsible": true,
+      "children": [
+        { "title": "Development setup", "path": "/contributing/development" },
+        { "title": "Code rules", "path": "/contributing/code-rules" },
+        { "title": "Releases", "path": "/contributing/releases" }
+      ]
+    },
+    { "title": "GitHub", "path": "https://github.com/swapnil-saal/kubeDeck", "icon": "github", "external": true }
+  ]
+}

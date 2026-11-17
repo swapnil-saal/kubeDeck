@@ -3,16 +3,18 @@
 A step-by-step runbook for running KubeDeck as a shared web service with its own sign-in. For *why* it works this way, see [WEB.md](WEB.md).
 
 ```
-browser ──HTTPS──▶ ingress ──▶ KubeDeck ──kubectl --as=kubedeck:<email> --as-group=kubedeck:<group>──▶ Kubernetes API
-                               (one pod, SQLite on a 1 GB volume)                                     RBAC decides
+browser ──HTTPS──▶ ingress ──▶ KubeDeck ──kubectl --kubeconfig=<cluster's connection> --as=system:serviceaccount:<ns>:<name>──▶ Kubernetes API
+                               (one pod, SQLite on a 1 GB volume)                                                   RBAC decides
 ```
+
+Web mode reads no kubeconfig from disk. After deploying, an admin adds clusters under **Settings → Clusters**, creates groups with a service account on each cluster under **Settings → Groups**, and adds people to groups under **Settings → Users**.
 
 ## What you need
 
 | | |
 |---|---|
 | A Kubernetes cluster | with an ingress controller (the manifest uses `nginx`) and a TLS certificate for your hostname |
-| A hostname | e.g. `kubedeck.yourcompany.com`, pointing at the ingress |
+| A hostname | e.g. `kubedeck.example.com`, pointing at the ingress |
 | A storage class | for one 1 GiB `ReadWriteOnce` volume (the cluster's default is fine) |
 | `kubectl` access | able to create a namespace, cluster RBAC and a Deployment |
 | The image | `swapnilsaal/kubedeck:<version>-web` on Docker Hub, or build your own (below) |
@@ -39,7 +41,7 @@ kubectl create namespace kubedeck
 
 kubectl -n kubedeck create secret generic kubedeck-auth \
   --from-literal=secret="$(openssl rand -base64 32)" \
-  --from-literal=admin-email='you@yourcompany.com' \
+  --from-literal=admin-email='you@example.com' \
   --from-literal=admin-password="$(openssl rand -base64 18)"
 
 # the first admin's password, to sign in with:
@@ -84,27 +86,38 @@ kubectl apply -f deploy/kubernetes/kubedeck.yaml
 kubectl -n kubedeck rollout status deploy/kubedeck
 ```
 
-This creates the namespace, a service account that may only impersonate users and groups, a 1 GiB volume for the database, the Deployment, a Service and an Ingress.
+This creates the namespace, the `kubedeck` service account, a 1 GiB volume for the database, the Deployment, a Service and an Ingress. The manifest's `kubedeck-impersonator` ClusterRole grants `impersonate` on `users` and `groups`, which this version no longer uses; see step 5 for what to give instead.
 
-## 5. Give groups their permissions
+## 5. Connect clusters
 
-KubeDeck acts as each person (`kubedeck:<email>`) and their groups (`kubedeck:<group>`). Bind the groups you plan to use to roles, per namespace or cluster-wide:
+On each kubectl call KubeDeck runs as the service accounts the person's groups have on that cluster (Settings → Groups), in the groups' order; the next one is tried when the cluster answers Forbidden, so permissions add up. Someone with no group on a cluster, a KubeDeck admin included, has no access there. KubeDeck never acts as the person themselves or as its own connection.
 
-```sh
-kubectl create clusterrolebinding kubedeck-viewers --clusterrole=view --group=kubedeck:viewers
-kubectl create rolebinding kubedeck-shop-editors --clusterrole=edit --group=kubedeck:shop-editors -n shop
-kubectl create clusterrolebinding kubedeck-admins --clusterrole=cluster-admin --group=kubedeck:admins   # only if you mean it
-```
+Each cluster needs a connection: the credentials KubeDeck itself uses for it, added under **Settings → Clusters** after you sign in (step 6).
 
-Someone in no bound group signs in and sees nothing. Put the first admin in a group too (step 6), or they can manage users but see no cluster.
+- **The cluster KubeDeck runs in:** choose **This cluster**. It uses the pod's `kubedeck` service account, which then needs `impersonate` on each service account your groups will use. Uncomment the `serviceaccounts` rule in the manifest's `kubedeck-impersonator` role and name each account in `resourceNames`:
 
-## 6. Check it works
+  ```yaml
+  - apiGroups: [""]
+    resources: [serviceaccounts]
+    resourceNames: [shop-editor, shop-viewer]
+    verbs: [impersonate]
+  ```
 
-1. Open `https://<your-host>` and sign in with the admin email and password from step 2.
-2. **Settings → Users**: put yourself in a group from step 5, then add people (name, email, a generated password, groups). Give each person their password; they can sign in at once.
-3. Check the features: lists show what your groups allow, a deployment's actions offer scale / restart where you may change it, Ask Deck answers (if the `kubedeck-ai` Secret exists), a pod's **Logs** tab streams.
-4. **Settings → Audit log** lists every change with who made it.
-5. From the command line:
+  You can drop that role's `users` / `groups` rule.
+- **Other clusters:** upload a kubeconfig whose user is a service account token or an inline client certificate (exec plugins and file paths are refused), with the same `impersonate` rights on that cluster.
+- **Optional, per connection:** `list` on `namespaces` and `serviceaccounts` so the group form can offer them (otherwise you type the names).
+
+Where a connection may not impersonate, a group can upload its service account's kubeconfig instead.
+
+## 6. Set it up and check it works
+
+1. Open `https://<your-host>` and sign in with the admin email and password from step 2. The cluster picker is empty: nobody has a group yet.
+2. **Settings → Clusters**: add each cluster (step 5).
+3. **Settings → Groups**: create your groups and give each a service account per cluster.
+4. **Settings → Users**: add yourself to a group, then add people (name, email, a generated password, groups). Give each person their password; they can sign in at once.
+5. Check the features: lists show what your groups allow, a deployment's actions offer scale / restart where you may change it, Ask Deck answers (if the `kubedeck-ai` Secret exists), a pod's **Logs** tab streams.
+6. **Settings → Audit log** lists every change with who made it.
+7. From the command line:
 
 ```sh
 kubectl -n kubedeck get pods                 # 1/1 Running
@@ -113,9 +126,7 @@ kubectl -n kubedeck logs deploy/kubedeck     # "database: sqlite /data/kubedeck.
 
 ## Several clusters
 
-In a pod KubeDeck shows **one** cluster: the one it runs in (context `in-cluster`). Options for more:
-- Deploy one KubeDeck per cluster (simplest; each has its own accounts unless they share a Postgres database).
-- Mount a kubeconfig as a Secret and set `KUBECONFIG` to it. KubeDeck lists every context in that file and impersonates people in each, so its credentials there need `impersonate` and the groups need bindings in every cluster.
+One KubeDeck serves as many clusters as an admin adds under **Settings → Clusters**, each with an uploaded kubeconfig (step 5). The kubeconfigs are stored encrypted in the database; nothing is mounted, and `KUBECONFIG` is ignored. Each cluster's API server must be reachable from the KubeDeck pod. **Upload a new kubeconfig** on a cluster's row reconnects it when its token expires.
 
 ## Operations
 
@@ -125,7 +136,7 @@ In a pod KubeDeck shows **one** cluster: the one it runs in (context `in-cluster
 kubectl -n kubedeck logs deploy/kubedeck | grep '"audit":true'
 ```
 
-**Back up** the database: with SQLite, copy `/data/kubedeck.db` (accounts and audit log) from the volume, or snapshot the volume.
+**Back up** the database: with SQLite, copy `/data/kubedeck.db` (accounts, clusters, groups and the audit log) from the volume, or snapshot the volume. Keep `KUBEDECK_AUTH_SECRET` with it: without it, uploaded kubeconfigs cannot be decrypted.
 
 **Upgrade.** Change the image tag and apply; the pod is replaced (a few seconds of downtime with SQLite).
 
@@ -136,7 +147,7 @@ kubectl -n kubedeck rollout status deploy/kubedeck
 
 **Roll back.** `kubectl -n kubedeck rollout undo deploy/kubedeck`
 
-**Remove.** `kubectl delete -f deploy/kubernetes/kubedeck.yaml` and `kubectl delete secret -n kubedeck kubedeck-auth kubedeck-ai`. Deleting the namespace also deletes the volume, and with it every account and the audit log.
+**Remove.** `kubectl delete -f deploy/kubernetes/kubedeck.yaml` and `kubectl delete secret -n kubedeck kubedeck-auth kubedeck-ai`. Deleting the namespace also deletes the volume, and with it every account, cluster, group and the audit log.
 
 ## Troubleshooting
 
@@ -146,7 +157,10 @@ kubectl -n kubedeck rollout status deploy/kubedeck
 | `403 KubeDeck only accepts requests from its own window` | the hostname you used is not the one in `KUBEDECK_PUBLIC_URL` |
 | Sign-in says the email and password do not match | wrong password; an admin can set a new one under Settings → Users |
 | `Too many attempts` on sign-in | 10 tries a minute per address. Behind an ingress, check `KUBEDECK_PROXY_HOPS=1` is set, or everyone shares one limit |
-| Signed in, but everything is empty or "Access denied" | the person's groups have no RoleBinding for that namespace (step 5), or the service account lacks `impersonate` |
+| Cluster picker says "No clusters for you yet", or "none of your KubeDeck groups gives you access to cluster …" | none of the person's groups has a service account on that cluster (admins too): add the cluster under Settings → Clusters, give a group of theirs a service account on it, put them in that group |
+| Signed in, but everything is empty or "Access denied" | the group's service account has no RoleBinding for that namespace (the group's **RBAC** menu opens them), or the cluster's connection lacks `impersonate` on it (step 5) |
+| Log: `Cluster <name>: its connection cannot be read …` | `KUBEDECK_AUTH_SECRET` changed (upload a new kubeconfig on the cluster's row), or a **This cluster** connection while KubeDeck no longer runs in a pod |
+| Log: `KUBEDECK_ACCESS is no longer used …` (or an `…IMPERSONATE…` variable) | a retired setting is still in the manifest; remove it |
 | `403 not in a group` | the person is not in `KUBEDECK_ALLOWED_GROUPS` |
 | No CPU / memory usage | metrics-server missing, or the person's role lacks `metrics.k8s.io` |
 | Logs stop after a minute | the ingress is buffering or timing out streams; keep the `proxy-read-timeout` and `proxy-buffering: "off"` annotations (nginx), or the equivalent for your controller |
@@ -155,7 +169,9 @@ kubectl -n kubedeck rollout status deploy/kubedeck
 
 - [ ] TLS on the ingress (session cookies are marked secure when `KUBEDECK_PUBLIC_URL` is `https`)
 - [ ] `KUBEDECK_AUTH_SECRET` random and stored only in the Secret
-- [ ] Groups bound to the narrowest roles that work; `cluster-admin` only for the few who need it; **secrets** readable only by groups that may read every secret in that namespace
+- [ ] Each cluster's connection may impersonate only the service accounts groups use (`resourceNames`)
+- [ ] Groups' service accounts bound to the narrowest roles that work; **secrets** readable only by service accounts that may read every secret in that namespace
+- [ ] The KubeDeck admin role only for people you trust to put anyone in any group
 - [ ] The first admin's password changed after first sign-in if it was ever pasted anywhere
 - [ ] The AI provider is one your organisation allows cluster data to be sent to (or `KUBEDECK_AI=off`)
 - [ ] The database volume backed up
@@ -163,6 +179,6 @@ kubectl -n kubedeck rollout status deploy/kubedeck
 
 ## What has and has not been tested
 
-Tested: sign-in, admin-only user management, group changes, blocking and the audit log end to end over HTTP, against both SQLite and Postgres 17; the production bundle running against each; the image deployed with this manifest to a kind cluster (Kubernetes 1.31): the pod runs as uid 1000, keeps the database on its volume across restarts (accounts, sessions and the audit log survive), and with a service account that may only impersonate, a person in no group sees nothing, a `shop-viewers` person reads `shop` only and cannot scale there.
+Tested: sign-in, admin-only user management, group changes, blocking and the audit log end to end over HTTP, against both SQLite and Postgres 17; the production bundle running against each; the image deployed with this manifest to a kind cluster (Kubernetes 1.31): the pod runs as uid 1000, keeps the database on its volume across restarts (accounts, sessions and the audit log survive). Those runs predate clusters under Settings → Clusters: the cluster connections and the service-account-only access described here have not been through the same end-to-end run with this manifest.
 
 **Not yet tested end to end:** Postgres with several replicas behind an ingress, and the published multi-arch image of this version (it is not released yet).

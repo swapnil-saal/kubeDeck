@@ -102,4 +102,33 @@ export const MIGRATIONS = (type: DbType): Record<string, Migration> => ({
       await sql`drop table if exists project`.execute(db);
     },
   },
+  // what each group may use in KubeDeck itself (server/groups), as JSON
+  "0005_group_permissions": {
+    async up(db: Kysely<any>) {
+      await db.schema.alterTable("kubedeck_group").addColumn("permissions", "text", (c) => c.notNull().defaultTo("{}")).execute();
+    },
+    async down(db: Kysely<any>) {
+      await db.schema.alterTable("kubedeck_group").dropColumn("permissions").execute();
+    },
+  },
+  // the clusters of a shared KubeDeck and KubeDeck's own connection to each (server/clusters)
+  "0006_clusters": {
+    async up(db: Kysely<any>) {
+      await db.schema
+        .createTable("kubedeck_cluster")
+        .ifNotExists()
+        .addColumn("name", "text", (c) => c.primaryKey())
+        .addColumn("source", "text", (c) => c.notNull())
+        // an uploaded kubeconfig, encrypted ("" for the pod's own service account)
+        .addColumn("credentials", "text", (c) => c.notNull().defaultTo(""))
+        .addColumn("identity", "text", (c) => c.notNull().defaultTo(""))
+        .addColumn("server", "text", (c) => c.notNull().defaultTo(""))
+        .addColumn("updated_at", "text", (c) => c.notNull())
+        .addColumn("updated_by", "text", (c) => c.notNull().defaultTo(""))
+        .execute();
+    },
+    async down(db: Kysely<any>) {
+      await sql`drop table if exists kubedeck_cluster`.execute(db);
+    },
+  },
 });

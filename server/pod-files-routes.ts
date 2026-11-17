@@ -1,5 +1,5 @@
 /**
- * Browse and search a container's files (desktop only: registered when not in web mode).
+ * Browse and search a container's files, on the desktop and in web mode (KUBEDECK_POD_FILES and the "Pod files" permission).
  * All read-only; see pod-files.ts for how commands are built.
  */
 import { spawn } from "child_process";

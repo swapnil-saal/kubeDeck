@@ -6,7 +6,7 @@ import { useScope } from "@/hooks/use-scope";
 import { useK8sContexts } from "@/hooks/use-k8s";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { AlertBell } from "@/components/header/AlertBell";
-import { MODE_KEY, useServerMode } from "@/hooks/use-server-mode";
+import { useServerMode } from "@/hooks/use-server-mode";
 import { signOut } from "@/hooks/use-admin";
 import { ScopeSwitcher } from "@/components/header/ScopeSwitcher";
 import { cn } from "@/lib/utils";
@@ -34,11 +34,13 @@ export function AppHeader({ breadcrumbs = [], rightSlot, showSelectors = true }:
   const { data: contexts } = useK8sContexts();
   const serverMode = useServerMode();
 
+  // a remembered cluster that is no longer offered (removed, or no group gives it any more) is dropped
   useEffect(() => {
-    if (currentContext) return;
-    if (!contexts || contexts.length === 0) return;
+    if (!contexts) return;
+    if (currentContext && contexts.some((c) => c.name === currentContext)) return;
     const initial = contexts.find((c) => c.isCurrent) ?? contexts[0];
     if (initial) setContext(initial.name);
+    else if (currentContext) setContext("");
   }, [contexts, currentContext, setContext]);
 
   return (
@@ -72,7 +74,7 @@ export function AppHeader({ breadcrumbs = [], rightSlot, showSelectors = true }:
       {showSelectors && <ScopeSwitcher className="min-w-0 max-w-[22rem] shrink" />}
 
       <div className="flex shrink-0 items-center gap-2">
-        <button
+        {serverMode.features.palette !== false && <button
           type="button"
           onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }))}
           className="flex h-9 items-center gap-2 rounded-lg border border-border bg-secondary/40 px-2.5 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:bg-secondary hover:text-foreground lg:px-3"
@@ -82,7 +84,7 @@ export function AppHeader({ breadcrumbs = [], rightSlot, showSelectors = true }:
           <SquareTerminal size={15} className="shrink-0 text-primary" />
           <span className="hidden xl:inline">Run kubectl…</span>
           <kbd className="hidden rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-medium lg:inline">⌘K</kbd>
-        </button>
+        </button>}
         <AlertBell />
         {/* the desktop's local user never signs in, so it has no sign-out */}
         {serverMode.mode === "web" && serverMode.user && <SignedIn user={serverMode.user} />}
@@ -98,14 +100,14 @@ function SignedIn({ user }: { user: { name: string; email: string; groups?: stri
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
   const groups = user.groups?.length ? user.groups.join(", ") : "no groups";
+  // a fresh page after signing out: the sign-in page, and nothing of this person's data left in memory
   const leave = async () => {
     setBusy(true);
     try {
       await signOut();
     } finally {
       qc.clear();
-      await qc.invalidateQueries({ queryKey: MODE_KEY });
-      setBusy(false);
+      window.location.assign("/");
     }
   };
   return (

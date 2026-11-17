@@ -1,7 +1,8 @@
 /**
- * What the cluster identity KubeDeck acts as may do, per namespace, so the UI can disable what would
- * be refused. One SelfSubjectRulesReview per namespace (the API behind `kubectl auth can-i --list`),
- * cached for a minute. The API server still decides every request; this only shapes the buttons.
+ * What the person may do, per namespace, so the UI can hide what would be refused: one
+ * SelfSubjectRulesReview (the API behind `kubectl auth can-i --list`) per identity they have on the
+ * cluster, merged, since a call is retried as each of them. Cached for a minute. The API server still
+ * decides every request; this only shapes the buttons.
  */
 import type { Express } from "express";
 import { unlinkSync, writeFileSync } from "fs";
@@ -9,7 +10,7 @@ import * as os from "os";
 import * as path from "path";
 import { randomUUID } from "crypto";
 import { api, type Access } from "@shared/routes";
-import { identityKey } from "./identity";
+import { asEachIdentity, identityKey } from "./identity";
 import { spawnCommand } from "./kubectl-run";
 import { getKubeconfigEnv } from "./settings";
 
@@ -46,13 +47,15 @@ export function registerAccessRoutes(app: Express): void {
       apiVersion: "authorization.k8s.io/v1", kind: "SelfSubjectRulesReview", spec: { namespace },
     }), { mode: 0o600 });
     try {
-      const r = await spawnCommand(
+      const reviews = await asEachIdentity(context, () => spawnCommand(
         "kubectl",
         ["create", "--raw", "/apis/authorization.k8s.io/v1/selfsubjectrulesreviews", "-f", file, "--request-timeout=20s", ...(context ? [`--context=${context}`] : [])],
         getKubeconfigEnv(),
-      );
-      if (r.code !== 0) return res.status(500).json({ message: r.stderr.trim().slice(0, 200) || "Could not read this account's permissions" });
-      const data = parseRulesReview(r.stdout);
+      ));
+      const ok = reviews.filter((r) => r.code === 0);
+      if (ok.length === 0) return res.status(500).json({ message: reviews[0]?.stderr.trim().slice(0, 200) || "Could not read this account's permissions" });
+      const parts = ok.map((r) => parseRulesReview(r.stdout));
+      const data: Access = { rules: parts.flatMap((p) => p.rules), incomplete: parts.some((p) => p.incomplete) };
       cache.set(key, { at: Date.now(), data });
       res.json(data);
     } catch {

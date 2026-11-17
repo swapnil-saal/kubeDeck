@@ -5,7 +5,7 @@
 import type { Response } from "express";
 import { spawn } from "child_process";
 import { getKubeconfigEnv } from "./settings";
-import { asUser } from "./identity";
+import { asUser, asUserChoices, contextOf, hasNoAccess } from "./identity";
 
 // ═══════════════════════════════════════════════════
 //  KUBECTL HELPERS
@@ -18,9 +18,20 @@ export interface KubectlResult {
   [key: string]: any;
 }
 
-export function spawnCommand(cmd: string, args: string[], envOverride?: Record<string, string>): Promise<{ stdout: string; stderr: string; code: number }> {
+/** The answer to a call the person has no identity for (web mode: no group of theirs covers the cluster). */
+export const noAccessAnswer = (args: string[]) => ({
+  stdout: "",
+  stderr: contextOf(args)
+    ? `Error from server (Forbidden): none of your KubeDeck groups gives you access to cluster "${contextOf(args)}". Ask a KubeDeck admin.`
+    : "Error from server (Forbidden): pick a cluster: a shared KubeDeck has no default cluster.",
+  code: 1,
+});
+
+/** One run as the person's `choice`-th identity on the call's cluster. */
+function spawnOnce(cmd: string, args: string[], choice: number, envOverride?: Record<string, string>): Promise<{ stdout: string; stderr: string; code: number }> {
+  if (hasNoAccess(asUser(cmd, args, choice))) return Promise.resolve(noAccessAnswer(args));
   return new Promise((resolve) => {
-    const proc = spawn(cmd, asUser(cmd, args), envOverride ? { env: { ...process.env, ...envOverride } } : undefined);
+    const proc = spawn(cmd, asUser(cmd, args, choice), envOverride ? { env: { ...process.env, ...envOverride } } : undefined);
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
     proc.stdout.on("data", (chunk) => stdoutChunks.push(chunk));
@@ -34,6 +45,24 @@ export function spawnCommand(cmd: string, args: string[], envOverride?: Record<s
   });
 }
 
+const forbidden = (r: { stderr: string; stdout: string }) => /forbidden|cannot impersonate/i.test(`${r.stderr} ${r.stdout}`);
+
+/**
+ * Run `cmd` as the person (see identity.ts). When the cluster refuses the first identity with
+ * Forbidden, the next one the person has there is tried, so ANY of their service accounts may allow
+ * it; a refusal changed nothing. All refused: the first refusal is the answer.
+ */
+export async function spawnCommand(cmd: string, args: string[], envOverride?: Record<string, string>): Promise<{ stdout: string; stderr: string; code: number }> {
+  const choices = asUserChoices(cmd, args).length;
+  let first: Awaited<ReturnType<typeof spawnOnce>> | null = null;
+  for (let choice = 0; choice < choices; choice++) {
+    const r = await spawnOnce(cmd, args, choice, envOverride);
+    if (r.code === 0 || !forbidden(r)) return r;
+    first ??= r;
+  }
+  return first!;
+}
+
 export async function runKubectl(command: string): Promise<KubectlResult> {
   // fail in seconds when a cluster is unreachable (kubectl would otherwise wait ~30s per call)
   const args = command.trim().split(/\s+/).concat("-o", "json", "--request-timeout=20s");
@@ -41,6 +70,9 @@ export async function runKubectl(command: string): Promise<KubectlResult> {
   if (code !== 0) {
     const combined = `${stderr} ${stdout}`.toLowerCase();
     if (combined.includes("forbidden")) {
+      if (combined.includes("none of your kubedeck groups") || combined.includes("no default cluster")) {
+        return { items: [], _forbidden: true, _error: stderr.replace(/^Error from server \(Forbidden\): /, "").trim() };
+      }
       const missing = missingPermission(stderr);
       return { items: [], _forbidden: true, _error: `Access denied: ${missing ?? `kubectl ${command.split(" ").slice(0, 3).join(" ")}`}` };
     }

@@ -2,7 +2,7 @@
  * Groups and their cluster access in the database: `kubedeck_group` and `group_cluster_access`
  * (this module owns both). An uploaded kubeconfig is stored encrypted, next to the access it belongs to.
  */
-import type { ClusterAccess, Group } from "@shared/groups";
+import { ALL_PERMISSIONS, appPermissionsSchema, type AppPermissions, type ClusterAccess, type Group } from "@shared/groups";
 import type { Database } from "../db";
 
 /** A group as stored: its uploaded kubeconfigs by context, encrypted. */
@@ -39,6 +39,16 @@ function toAccess(r: any): ClusterAccess | null {
   return null;
 }
 
+/** Stored permissions over the defaults: a feature added later starts on for every group. */
+function readPermissions(raw: unknown): AppPermissions {
+  try {
+    const parsed = appPermissionsSchema.partial().safeParse(JSON.parse(String(raw || "{}")));
+    return { ...ALL_PERMISSIONS, ...(parsed.success ? parsed.data : {}) };
+  } catch {
+    return { ...ALL_PERMISSIONS };
+  }
+}
+
 export function databaseGroupStore(d: Database): GroupStore {
   return {
     async all() {
@@ -51,6 +61,7 @@ export function databaseGroupStore(d: Database): GroupStore {
           name: g.name,
           description: g.description ?? "",
           position: Number(g.position),
+          permissions: readPermissions(g.permissions),
           access: mine.map(toAccess).filter((a): a is ClusterAccess => a !== null),
           secrets: Object.fromEntries(mine.filter((r) => r.acts_as === "credentials" && r.credentials).map((r) => [r.context, r.credentials])),
         };
@@ -58,7 +69,7 @@ export function databaseGroupStore(d: Database): GroupStore {
     },
     async save(g, by) {
       await d.db.transaction().execute(async (tx) => {
-        const row = { name: g.name, description: g.description, position: g.position, updated_at: new Date().toISOString(), updated_by: by };
+        const row = { name: g.name, description: g.description, position: g.position, permissions: JSON.stringify(g.permissions), updated_at: new Date().toISOString(), updated_by: by };
         await tx.insertInto("kubedeck_group").values({ id: g.id, ...row }).onConflict((oc) => oc.column("id").doUpdateSet(row)).execute();
         await tx.deleteFrom("group_cluster_access").where("group_id", "=", g.id).execute();
         if (g.access.length) await tx.insertInto("group_cluster_access").values(g.access.map((a) => accessRow(g, a))).execute();

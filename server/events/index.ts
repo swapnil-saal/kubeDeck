@@ -53,11 +53,19 @@ export interface GroupChanged {
   by: string;
 }
 
+/** An admin added, reconnected or removed a cluster (Settings → Clusters). */
+export interface ClusterChanged {
+  name: string;
+  change: "added" | "updated" | "removed";
+  by: string;
+}
+
 export interface EventMap {
   "action.done": ActionDone;
   "user.changed": UserChanged;
   "plugin.changed": PluginChanged;
   "group.changed": GroupChanged;
+  "cluster.changed": ClusterChanged;
 }
 
 export type EventName = keyof EventMap;

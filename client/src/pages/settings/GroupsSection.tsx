@@ -10,8 +10,8 @@ import { AccessMatrix } from "./groups/AccessMatrix";
 import { GroupDetail } from "./groups/GroupDetail";
 import { GroupSheet } from "./groups/GroupSheet";
 
-/** How a person's groups pick whom KubeDeck acts as, folded away until someone asks. */
-function HowItWorks({ userPrefix, groupPrefix }: { userPrefix: string; groupPrefix: string }) {
+/** How groups give people access, folded away until someone asks. */
+function HowItWorks() {
   const code = "rounded bg-muted px-1 font-mono text-foreground";
   return (
     <details className="group rounded-xl border border-border bg-card">
@@ -20,11 +20,11 @@ function HowItWorks({ userPrefix, groupPrefix }: { userPrefix: string; groupPref
         How groups decide access
       </summary>
       <ul className="list-disc space-y-1.5 border-t border-border/60 py-3.5 pl-9 pr-4 text-xs text-muted-foreground sm:pr-5">
-        <li><strong className="text-foreground">Service account:</strong> pick one from the cluster and KubeDeck impersonates it (<code className={code}>--as=system:serviceaccount:&lt;ns&gt;:&lt;name&gt;</code>). KubeDeck's credentials for that cluster need the <code className={code}>impersonate</code> permission on it.</li>
-        <li><strong className="text-foreground">Uploaded kubeconfig:</strong> where KubeDeck may not impersonate, upload the service account's kubeconfig (a token or client certificate). It is kept encrypted and people in the group run with it on that cluster.</li>
-        <li>When several of someone's groups cover the same cluster, the higher group in the list wins. Use the arrows to order them.</li>
-        <li>On a cluster none of their groups covers, a KubeDeck admin uses KubeDeck's own credentials; anyone else acts as themselves, <code className={code}>{userPrefix}&lt;email&gt;</code> in groups <code className={code}>{groupPrefix}&lt;group&gt;</code>, so RoleBindings to those names apply.</li>
-        <li>The palette and the assistant refuse <code className={code}>--user</code>, <code className={code}>--cluster</code>, <code className={code}>--as</code> and <code className={code}>--token</code>, so nobody steps outside what their group gives them.</li>
+        <li>Clusters come from <strong className="text-foreground">Settings → Clusters</strong>. A person reaches a cluster only through a group that has a service account on it; admins too.</li>
+        <li><strong className="text-foreground">Service account:</strong> pick one from the cluster and KubeDeck impersonates it with the cluster's connection (<code className={code}>--as=system:serviceaccount:&lt;ns&gt;:&lt;name&gt;</code>). The connection needs the <code className={code}>impersonate</code> permission on it.</li>
+        <li><strong className="text-foreground">Uploaded kubeconfig:</strong> where the connection may not impersonate, upload the service account's kubeconfig (a token or client certificate). It is kept encrypted and people in the group run with it on that cluster.</li>
+        <li>When several of someone's groups cover the same cluster, permissions add up: a call is tried as each of their service accounts, in list order, until the cluster allows it. The arrows set which is tried first.</li>
+        <li>The palette and the assistant refuse <code className={code}>--user</code>, <code className={code}>--cluster</code>, <code className={code}>--as</code>, <code className={code}>--kubeconfig</code> and <code className={code}>--token</code>, so nobody steps outside what their groups give them.</li>
       </ul>
     </details>
   );
@@ -32,7 +32,7 @@ function HowItWorks({ userPrefix, groupPrefix }: { userPrefix: string; groupPref
 
 type View = "groups" | "clusters";
 
-/** Settings → Groups: the groups in priority order beside the selected one, or all of them against every cluster. */
+/** Settings → Groups: the groups in order beside the selected one, or all of them against every cluster. */
 export function GroupsSection() {
   const groups = useGroups();
   const users = useUsers();
@@ -45,7 +45,6 @@ export function GroupsSection() {
   const people = users.data?.users ?? [];
   const selected = list.find((g) => g.id === selectedId) ?? list[0];
   const rank = selected ? list.indexOf(selected) + 1 : 0;
-  const prefixes = { userPrefix: groups.data?.userPrefix ?? "kubedeck:", groupPrefix: groups.data?.groupPrefix ?? "kubedeck:" };
   const move = (i: number, by: -1 | 1) => {
     const ids = list.map((g) => g.id);
     [ids[i], ids[i + by]] = [ids[i + by], ids[i]];
@@ -81,7 +80,7 @@ export function GroupsSection() {
         <AccessMatrix groups={list} onOpen={(id) => { setSelectedId(id); setView("groups"); }} />
       ) : (
         <div className="grid overflow-hidden rounded-xl border border-border bg-card md:grid-cols-[15rem_minmax(0,1fr)]">
-          <ol aria-label="Groups, highest priority first" className="divide-y divide-border/60 border-b border-border md:border-b-0 md:border-r">
+          <ol aria-label="Groups, in the order their service accounts are tried" className="divide-y divide-border/60 border-b border-border md:border-b-0 md:border-r">
             {list.map((g, i) => {
               const members = people.filter((u) => u.groups.includes(g.id));
               const on = g.id === selected?.id;
@@ -107,17 +106,16 @@ export function GroupsSection() {
             })}
           </ol>
           <div className="p-4 sm:p-5">
-            {selected && <GroupDetail group={selected} users={people} groupPrefix={prefixes.groupPrefix} rank={rank} onEdit={() => setSheet("edit")} />}
+            {selected && <GroupDetail group={selected} users={people} rank={rank} onEdit={() => setSheet("edit")} />}
           </div>
         </div>
       )}
       {reorder.error && <p role="alert" className="text-xs text-destructive">{reorder.error.message}</p>}
-      <HowItWorks {...prefixes} />
+      <HowItWorks />
 
       <GroupSheet
         open={sheet !== null}
         group={sheet === "edit" ? selected ?? null : null}
-        groupPrefix={prefixes.groupPrefix}
         onClose={() => setSheet(null)}
         onSaved={(id) => setSelectedId(id)}
       />

@@ -1,10 +1,10 @@
-/** Every group against every cluster: what the group acts as there, highest priority first. */
+/** Every group against every cluster: the service account each uses there, in the order they are tried. */
 import type { Group } from "@shared/groups";
-import { useK8sContexts } from "@/hooks/use-k8s";
-import { AccessBadge, SelfBadge } from "./access-view";
+import { useClusters } from "@/hooks/use-clusters";
+import { AccessBadge, NoAccessBadge } from "./access-view";
 
 export function AccessMatrix({ groups, onOpen }: { groups: Group[]; onOpen: (id: string) => void }) {
-  const contexts = (useK8sContexts().data ?? []).map((c) => c.name);
+  const contexts = (useClusters().data?.clusters ?? []).map((c) => c.name);
   if (groups.length === 0) return <p className="text-sm text-muted-foreground">No groups yet.</p>;
   return (
     <div className="overflow-x-auto rounded-xl border border-border bg-card">
@@ -31,12 +31,12 @@ export function AccessMatrix({ groups, onOpen }: { groups: Group[]; onOpen: (id:
           ))}
           <tr className="bg-muted/20">
             <th scope="row" className="sticky left-0 z-10 bg-muted/20 px-4 py-2 text-left text-xs font-normal text-muted-foreground">Not covered</th>
-            {contexts.map((c) => <td key={c} className="px-3 py-2"><SelfBadge /></td>)}
+            {contexts.map((c) => <td key={c} className="px-3 py-2"><NoAccessBadge /></td>)}
           </tr>
         </tbody>
       </table>
       <p className="border-t border-border/60 px-4 py-2 text-[11px] text-muted-foreground">
-        Someone in several groups gets the access of the highest one that covers the cluster. Where none does, an admin uses KubeDeck's own credentials and anyone else acts as themselves (RoleBindings decide).
+        Someone in several groups may do what any of their service accounts on a cluster may (tried top to bottom). Where none covers it, they have no access, admins included.
       </p>
     </div>
   );

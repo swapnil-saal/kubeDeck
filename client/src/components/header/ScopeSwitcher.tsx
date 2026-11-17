@@ -4,6 +4,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useScope } from "@/hooks/use-scope";
 import { useK8sContexts, useK8sNamespaces } from "@/hooks/use-k8s";
 import { useNamespaceAccess } from "@/hooks/use-cluster-extras";
+import { useServerMode } from "@/hooks/use-server-mode";
 import { cn } from "@/lib/utils";
 
 /**
@@ -14,6 +15,7 @@ import { cn } from "@/lib/utils";
 export function ScopeSwitcher({ className }: { className?: string }) {
   const { context, namespace, setContext, setNamespace } = useScope();
   const { data: contexts } = useK8sContexts();
+  const serverMode = useServerMode();
   const { data: namespaces } = useK8sNamespaces(context);
   const { data: access } = useNamespaceAccess(context);
   const [open, setOpen] = useState(false);
@@ -80,6 +82,15 @@ export function ScopeSwitcher({ className }: { className?: string }) {
           </div>
           {(contexts?.length ?? 0) > 6 && (
             <SearchBox value={ctxQuery} onChange={setCtxQuery} placeholder="Find a cluster…" />
+          )}
+          {contexts && contexts.length === 0 && (
+            <p className="px-2 py-1.5 text-xs text-muted-foreground">
+              {serverMode.mode === "web"
+                ? serverMode.user?.role === "admin"
+                  ? "No clusters for you yet. Add one under Settings → Clusters, then give a group of yours a service account on it."
+                  : "No clusters for you yet. A KubeDeck admin gives your groups access to clusters."
+                : "No contexts in your kubeconfig files. Add one under Settings → Clusters."}
+            </p>
           )}
           <ul className="max-h-40 overflow-y-auto" role="listbox" aria-label="Clusters">
             {ctxRows.map((c) => (

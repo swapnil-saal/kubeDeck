@@ -2,12 +2,14 @@
  * A group's service account on each cluster: one KubeDeck impersonates, picked from the cluster, or a
  * kubeconfig an admin uploads (for clusters where KubeDeck may not impersonate).
  */
-import { useRef, useState, type ReactNode } from "react";
-import { AlertTriangle, CheckCircle2, FileUp, Loader2, Plus, UserCog, X } from "lucide-react";
+import type { ReactNode } from "react";
+import { AlertTriangle, CheckCircle2, Loader2, Plus, UserCog, X } from "lucide-react";
 import { shortIdentity, type ClusterAccess } from "@shared/groups";
 import { Button } from "@/components/ui/button";
 import { useServiceAccounts } from "@/hooks/use-groups";
-import { useK8sContexts, useK8sNamespaces } from "@/hooks/use-k8s";
+import { KubeconfigInput } from "@/components/KubeconfigInput";
+import { useClusterNamespaces, useClusters } from "@/hooks/use-clusters";
+import { useHashParams } from "@/hooks/use-hash-params";
 import { cn } from "@/lib/utils";
 
 const select = "h-9 min-w-0 rounded-lg border border-border bg-background px-2 text-sm";
@@ -29,8 +31,8 @@ function Note({ tone = "muted", children }: { tone?: "muted" | "ok" | "warn"; ch
 
 /** Namespace and service account from what KubeDeck sees, and whether it may impersonate there. */
 function ServiceAccountFields({ access, onChange, onUpload }: { access: ServiceAccountAccess; onChange: (a: ClusterAccess) => void; onUpload: () => void }) {
-  const namespaces = (useK8sNamespaces(access.context).data ?? []).map((n) => n.name);
-  const info = useServiceAccounts(access.context, access.namespace || undefined);
+  const namespaces = useClusterNamespaces(access.context).data?.namespaces ?? [];
+  const info = useServiceAccounts(access.context, access.namespace || undefined, access.serviceAccount);
   const names = info.data?.names;
   const nsList = namespaces.length ? namespaces : access.namespace ? [access.namespace] : [];
   const uploadInstead = (label: string) => <button type="button" onClick={onUpload} className="font-medium underline underline-offset-2">{label}</button>;
@@ -78,16 +80,7 @@ function ServiceAccountFields({ access, onChange, onUpload }: { access: ServiceA
 
 /** Uploading (or replacing) the kubeconfig a group uses on one cluster. */
 function CredentialsFields({ access, onChange }: { access: CredentialsAccess; onChange: (a: ClusterAccess) => void }) {
-  const fileInput = useRef<HTMLInputElement>(null);
-  const [fileName, setFileName] = useState("");
-  const [pasting, setPasting] = useState(false);
-  const stored = access.kubeconfig === undefined && access.server;
-  const read = async (file: File | undefined) => {
-    if (!file) return;
-    setFileName(file.name);
-    onChange({ ...access, kubeconfig: await file.text() });
-  };
-
+  const stored = access.kubeconfig === undefined && !!access.server;
   return (
     <div className="space-y-2">
       {stored && (
@@ -97,34 +90,12 @@ function CredentialsFields({ access, onChange }: { access: CredentialsAccess; on
           <span className="truncate text-muted-foreground">{access.server}</span>
         </div>
       )}
-      {access.kubeconfig !== undefined && access.kubeconfig !== "" ? (
-        <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/[0.04] px-3 py-2 text-xs">
-          <FileUp className="h-3.5 w-3.5 text-primary" aria-hidden />
-          <span className="min-w-0 flex-1 truncate">{fileName || "Pasted kubeconfig"} · checked with {access.context} when you save</span>
-          <button type="button" onClick={() => { setFileName(""); onChange({ ...access, kubeconfig: stored ? undefined : "" }); }} className="text-muted-foreground hover:text-foreground" aria-label="Discard this kubeconfig"><X className="h-3.5 w-3.5" /></button>
-        </div>
-      ) : pasting ? (
-        <textarea
-          aria-label="Kubeconfig"
-          autoFocus
-          spellCheck={false}
-          placeholder="apiVersion: v1&#10;kind: Config&#10;…"
-          onChange={(e) => onChange({ ...access, kubeconfig: e.target.value })}
-          className="h-32 w-full rounded-lg border border-border bg-background p-2.5 font-mono text-[11px] outline-none focus:border-primary/50"
-        />
-      ) : (
-        <div
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => { e.preventDefault(); void read(e.dataTransfer.files[0]); }}
-          className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border px-3 py-3 text-xs text-muted-foreground"
-        >
-          <FileUp className="h-4 w-4" aria-hidden />
-          <span className="flex-1">{stored ? "Replace it: drop a kubeconfig here," : "Drop the service account's kubeconfig here,"}</span>
-          <Button type="button" size="sm" variant="outline" className="h-7" onClick={() => fileInput.current?.click()}>Choose file</Button>
-          <Button type="button" size="sm" variant="ghost" className="h-7" onClick={() => setPasting(true)}>Paste</Button>
-          <input ref={fileInput} type="file" className="hidden" onChange={(e) => void read(e.target.files?.[0])} />
-        </div>
-      )}
+      <KubeconfigInput
+        value={access.kubeconfig ?? ""}
+        onChange={(text) => onChange({ ...access, kubeconfig: text || (stored ? undefined : "") })}
+        prompt={stored ? "Replace it: drop a kubeconfig here," : "Drop the service account's kubeconfig here,"}
+        checkedWith={access.context}
+      />
       <Note>A token or an inline client certificate only; exec plugins and file paths are refused. Kept encrypted, never shown again.</Note>
     </div>
   );
@@ -164,20 +135,34 @@ export const accessIncomplete = (access: ClusterAccess[]) =>
   access.some((a) => (a.as === "serviceaccount" ? !a.namespace || !a.serviceAccount : a.kubeconfig === "" || (a.kubeconfig === undefined && !a.server)));
 
 export function AccessEditor({ value, onChange }: { value: ClusterAccess[]; onChange: (v: ClusterAccess[]) => void }) {
-  const contexts = (useK8sContexts().data ?? []).map((c) => c.name);
+  const clusters = useClusters();
+  const { set: setHash } = useHashParams();
+  const contexts = (clusters.data?.clusters ?? []).map((c) => c.name);
   const free = contexts.filter((c) => !value.some((a) => a.context === c));
   const set = (i: number, a: ClusterAccess) => onChange(value.map((x, j) => (j === i ? a : x)));
   return (
     <div className="space-y-2">
-      {value.length === 0 && <p className="text-xs text-muted-foreground">No clusters yet. On every cluster, people in this group act as themselves.</p>}
+      {contexts.length === 0 && !clusters.isLoading
+        ? <p className="text-xs text-muted-foreground">No clusters yet. Add them under Settings → Clusters, then give this group a service account on each.</p>
+        : value.length === 0 && <p className="text-xs text-muted-foreground">No clusters yet: people in this group reach no cluster through it.</p>}
       <ul className="space-y-2">
         {value.map((a, i) => (
           <AccessRow key={i} access={a} contexts={free} onChange={(next) => set(i, next)} onRemove={() => onChange(value.filter((_, j) => j !== i))} />
         ))}
       </ul>
-      <Button type="button" variant="outline" size="sm" disabled={free.length === 0} onClick={() => onChange([...value, { context: free[0], as: "serviceaccount", namespace: "", serviceAccount: "" }])} className="gap-1">
-        <Plus className="h-3.5 w-3.5" /> Add a cluster
-      </Button>
+      {contexts.length === 0 && !clusters.isLoading ? (
+        // no clusters yet: the only way forward is the Clusters page (this panel closes with the Groups page)
+        <Button type="button" variant="outline" size="sm" onClick={() => setHash("section", "cluster-connections")} className="gap-1">
+          <Plus className="h-3.5 w-3.5" /> Add a cluster in Settings → Clusters
+        </Button>
+      ) : (
+        <span className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant="outline" size="sm" disabled={free.length === 0} onClick={() => onChange([...value, { context: free[0], as: "serviceaccount", namespace: "", serviceAccount: "" }])} className="gap-1">
+            <Plus className="h-3.5 w-3.5" /> Add a cluster
+          </Button>
+          {free.length === 0 && <span className="text-[11px] text-muted-foreground">Every cluster already has a service account here. Add more under Settings → Clusters.</span>}
+        </span>
+      )}
     </div>
   );
 }

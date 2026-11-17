@@ -1,11 +1,11 @@
 /** Choosing a person's groups from the ones defined under Settings → Groups, each with what it gives. */
 import { Check } from "lucide-react";
-import type { Group } from "@shared/groups";
+import { NO_PERMISSIONS, type Group } from "@shared/groups";
 import { cn } from "@/lib/utils";
 
 export function GroupPicker({ groups, value, onChange }: { groups: Group[]; value: string[]; onChange: (groups: string[]) => void }) {
   // a group the account carries that is gone from the list still shows, so it can be taken off
-  const extra: Group[] = value.filter((g) => !groups.some((d) => d.id === g)).map((g, i) => ({ id: g, name: g, description: "No longer defined", access: [], position: 1e6 + i }));
+  const extra: Group[] = value.filter((g) => !groups.some((d) => d.id === g)).map((g, i) => ({ id: g, name: g, description: "No longer defined", access: [], position: 1e6 + i, permissions: NO_PERMISSIONS }));
   const all = [...groups, ...extra];
   const toggle = (g: string) => onChange(value.includes(g) ? value.filter((x) => x !== g) : [...value, g].sort());
 

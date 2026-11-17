@@ -4,6 +4,6 @@
  * (server/auth); identity.ts asks clusterAccessFor() on every kubectl call. This module owns the
  * `kubedeck_group` and `group_cluster_access` tables.
  */
-export { adoptGroups, clusterAccessFor, createGroup, deleteGroup, GroupError, groupIds, listGroups, reorderGroups, startGroups, stopGroups, updateGroup } from "./manager";
+export { adoptGroups, appPermissionsFor, clusterAccessFor, clusterGrantsFor, clustersFor, groupsUsing, createGroup, deleteGroup, GroupError, groupIds, listGroups, reorderGroups, startGroups, stopGroups, updateGroup } from "./manager";
 export { registerGroupRoutes, type GroupRouteDeps } from "./routes";
 export { databaseGroupStore, type GroupStore } from "./store";

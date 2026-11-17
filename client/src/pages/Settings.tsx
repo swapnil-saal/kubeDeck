@@ -10,6 +10,7 @@ import { AppearanceSection } from "./settings/AppearanceSection";
 import { AuditSection } from "./settings/AuditSection";
 import { UsersSection } from "./settings/UsersSection";
 import { GroupsSection } from "./settings/GroupsSection";
+import { ClusterConnectionsSection } from "./settings/ClusterConnectionsSection";
 import { ClustersSection } from "./settings/ClustersSection";
 import { PluginsSection } from "./settings/PluginsSection";
 import McpSection from "./settings/mcp/McpSection";
@@ -38,6 +39,7 @@ const SECTIONS: Section[] = [
   // everyone sees what is on and whether it works; only someone who may manage plugins changes them
   { id: "plugins", label: "Plugins", description: "Built-in integrations: traces from Tempo, logs from Loki, the assistant's Kubernetes tools", icon: Blocks, render: PluginsSection, wide: true },
   { id: "mcp", label: "MCP servers", description: "Tool servers the assistant may call: Grafana, and any you add", icon: Cable, render: McpSection, wide: true },
+  { id: "cluster-connections", label: "Clusters", description: "The clusters this KubeDeck knows and its connection to each; groups give people access to them", icon: Server, render: ClusterConnectionsSection, feature: "users", wide: true },
   { id: "users", label: "Users", description: "Who can sign in (an admin creates every account) and the groups they are in", icon: Users, render: UsersSection, feature: "users", wide: true },
   { id: "groups", label: "Groups", description: "Teams, and the service account each uses on every cluster", icon: UsersRound, render: GroupsSection, feature: "users", wide: true },
   { id: "audit", label: "Audit log", description: "Every change made through KubeDeck, who made it, and whether it went through", icon: ScrollText, render: AuditSection, feature: "audit", wide: true },
@@ -49,7 +51,7 @@ const GROUPS: { label: string; ids: string[] }[] = [
   { label: "Personal", ids: ["appearance"] },
   { label: "Connections", ids: ["clusters", "ai"] },
   { label: "Integrations", ids: ["plugins", "mcp"] },
-  { label: "Administration", ids: ["users", "groups", "audit"] },
+  { label: "Administration", ids: ["cluster-connections", "users", "groups", "audit"] },
   { label: "KubeDeck", ids: ["about"] },
 ];
 

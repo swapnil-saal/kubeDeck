@@ -1,24 +1,27 @@
 # KubeDeck web mode
 
-Run KubeDeck as a shared web service for a team, next to (or instead of) the desktop app. KubeDeck signs people in itself: an admin creates accounts and puts people in groups, and every action runs in the cluster **as that person**, so Kubernetes RBAC decides what each of them can see and change.
+Run KubeDeck as a shared web service for a team, next to (or instead of) the desktop app. KubeDeck signs people in itself. An admin adds the clusters (**Settings → Clusters**), creates groups that each have a service account on those clusters (**Settings → Groups**), and puts people in groups (**Settings → Users**). Every action runs in the cluster **as the person's groups' service accounts**, so Kubernetes RBAC decides what each of them can see and change. Someone with no group on a cluster, an admin included, has no access there.
 
 ```
-browser ──HTTPS──▶ ingress ──▶ KubeDeck ──kubectl --as=kubedeck:<email> --as-group=kubedeck:<group>──▶ Kubernetes API
-                   sign-in page │                                                                     RBAC decides
-                                └──▶ database (SQLite file, or Postgres): accounts, sessions, audit log
+browser ──HTTPS──▶ ingress ──▶ KubeDeck ──kubectl --kubeconfig=<cluster's connection> --as=system:serviceaccount:<ns>:<name>──▶ Kubernetes API
+                   sign-in page │          (or --kubeconfig=<a group's uploaded kubeconfig>)                                      RBAC decides
+                                └──▶ database (SQLite file, or Postgres): accounts, sessions, clusters, groups, audit log
 ```
+
+Web mode never reads a kubeconfig from the server's disk: at start it points `KUBECONFIG` at an empty file.
 
 ## What is different from the desktop app
 
 | | Desktop | Web mode |
 |---|---|---|
 | Who is allowed | whoever is at the machine | people with an account an admin created (optionally limited to groups) |
-| Cluster identity | your kubeconfig | per cluster, the service account the person's group uses there (Settings → Groups: impersonated, or from an uploaded kubeconfig), else the person through impersonation: `kubedeck:<email>` in groups `kubedeck:<group>` |
-| Writes (scale, restart, edit, delete) | allowed | allowed where the person's RBAC allows (`KUBEDECK_READ_ONLY=true` turns them off for everyone) |
-| Browse pod files | yes | yes, where the person may `exec` (`KUBEDECK_POD_FILES=off` turns it off). Only fixed read-only scripts run in the pod |
-| AI (Ask Deck, diagnose, explain, summaries, command translation) | provider set in Settings → AI assistant | provider set by an admin in Settings → AI assistant (stored encrypted), or pinned by the server's `KUBEDECK_AI_*` env, which wins (`KUBEDECK_AI=off` turns AI off). The assistant acts as the signed-in person. Cluster data it reads goes to that provider |
+| Clusters | the contexts in your kubeconfig files (Settings → Clusters) | the clusters an admin adds under Settings → Clusters, each with KubeDeck's own connection; each person sees only those their groups cover |
+| Cluster identity | your kubeconfig | per cluster, the service accounts of the person's groups there, in the groups' order (Settings → Groups: impersonated through the cluster's connection, or from an uploaded kubeconfig). No group on a cluster: no access, admins too |
+| Writes (scale, restart, edit, delete) | allowed | allowed where the service account's RBAC allows (`KUBEDECK_READ_ONLY=true` turns them off for everyone) |
+| Browse pod files | yes | yes, where the service account may `exec` (`KUBEDECK_POD_FILES=off` turns it off). Only fixed read-only scripts run in the pod |
+| AI (Ask Deck, diagnose, explain, summaries, command translation) | provider set in Settings → AI assistant | provider set by an admin in Settings → AI assistant (stored encrypted), or pinned by the server's `KUBEDECK_AI_*` env, which wins (`KUBEDECK_AI=off` turns AI off). The assistant acts as the signed-in person's service accounts. Cluster data it reads goes to that provider |
 | Port-forward | yes | no: the port would open inside the server, not on the user's machine |
-| Settings | edited in the app | configuration comes from the environment; admins manage **Users**, **Groups** and read the **Audit log** |
+| Settings | edited in the app | server configuration comes from the environment; admins manage **Clusters**, **Users**, **Groups** and read the **Audit log** |
 | Projects | kept in KubeDeck's database on this computer | kept in KubeDeck's database and shared: everyone sees every project, its creator or an admin changes it |
 | kubectl palette and assistant | any verb | no `config`, `auth`, `exec`, `cp`, `port-forward`, `proxy`, `attach`, `debug`, and no `--token/--server/--kubeconfig/--as/--user/--cluster` flags, so nobody steps outside their own identity. The assistant's pipelines run without a shell. When read-only, both only read |
 | Audit | every change in **Settings → Audit log**, kept in `~/.kubedeck/kubedeck.db` under your computer's user name | every change (UI, palette, assistant) in **Settings → Audit log** and as a JSON line on stdout, with the person and their groups |
@@ -36,8 +39,6 @@ What a person sees follows their RBAC: kinds they may not list are left out of t
 | `KUBEDECK_DATABASE_URL` | **set it in a container**: `sqlite:/data/kubedeck.db` (one replica, on a volume; the default `~/.kubedeck/kubedeck.db` is not writable on a read-only root filesystem) or `postgres://user:pass@host:5432/kubedeck` (several replicas) |
 | `KUBEDECK_PROXY_HOPS` | how many proxies in front of KubeDeck you trust to set `X-Forwarded-For` (e.g. `1` behind an ingress), so the sign-in rate limit and the audit log see each person's address |
 | `KUBEDECK_ALLOWED_GROUPS` | comma list; a person must be in one of these KubeDeck groups to use KubeDeck at all |
-| `KUBEDECK_IMPERSONATE_PREFIX` / `KUBEDECK_IMPERSONATE_GROUP_PREFIX` | prepended to user / group names sent to Kubernetes (default `kubedeck:`; the group prefix cannot be empty) |
-| `KUBEDECK_ACCESS=shared` | turns impersonation off: everyone acts as KubeDeck's own service account, whatever their groups. Avoid it |
 | `KUBEDECK_READ_ONLY` | `false` (default) or `true`: refuse every change, from the UI, the palette and the assistant |
 | `KUBEDECK_AI` | `on` (default) or `off` |
 | `KUBEDECK_POD_FILES` | `on` (default) or `off` |
@@ -48,36 +49,36 @@ What a person sees follows their RBAC: kinds they may not list are left out of t
 | `KUBEDECK_TEMPO_URL` | Grafana Tempo's HTTP API, e.g. `https://tempo.example.com`: configures and switches on the **Tempo traces** plugin (workload **Traces** tab, Overview → **Traces**, the assistant's trace tools). Settings → Plugins can do the same; a variable that is set wins and shows read-only there |
 | `KUBEDECK_TEMPO_TOKEN` / `KUBEDECK_TEMPO_TENANT` | optional bearer token / `X-Scope-OrgID` for Tempo (the Tempo traces plugin's Token and Tenant) |
 | `KUBEDECK_LOKI_URL` / `KUBEDECK_LOKI_TOKEN` / `KUBEDECK_LOKI_TENANT` | optional: Grafana Loki's HTTP API (+ bearer token / `X-Scope-OrgID`): configures and switches on the **Loki logs** plugin: the pod's log lines next to a traced request, and log history (pods that are gone, up to 7 days) for the assistant. Streams are matched by `cluster` and `namespace` labels, pods by the `pod` label or metadata. Settings → Plugins can do the same; the environment wins |
-| `KUBEDECK_TEMPO_CLUSTERS` | optional `context=cluster,…`: the `k8s.cluster.name` a context's traces carry, where KubeDeck cannot tell (in-cluster the context is `in-cluster`, so set `in-cluster=<your cluster name>`); the Tempo traces plugin's Clusters |
+| `KUBEDECK_TEMPO_CLUSTERS` | optional `context=cluster,…`: the `k8s.cluster.name` a context's traces carry, where KubeDeck cannot tell (in web mode a context is the cluster's name under Settings → Clusters); the Tempo traces plugin's Clusters |
 | `KUBEDECK_GRAFANA_URL` / `KUBEDECK_GRAFANA_TEMPO_DATASOURCE` | optional: Grafana and the Tempo data source uid, for "Open in Grafana" on a trace (part of the Tempo traces plugin) |
 | `KUBEDECK_GRAFANA_MCP_URL` / `KUBEDECK_GRAFANA_MCP_TOKEN` | optional: the [Grafana MCP server](https://github.com/grafana/mcp-grafana)'s streamable-HTTP endpoint (`…/mcp`) and its token; the assistant then reads Prometheus, Loki, dashboards and alerts through it |
 | `HOST` | bind address (default `0.0.0.0` in web mode) |
-| `KUBECONFIG` | optional; with no kubeconfig inside a pod, KubeDeck builds one context, `in-cluster`, from the pod's service account |
+| `KUBECONFIG` | ignored in web mode: KubeDeck points it at an empty file at start. Clusters are added under Settings → Clusters |
 
 KubeDeck **refuses to start** in web mode without a public URL or a ≥32-character `KUBEDECK_AUTH_SECRET`; the message says what to set.
 
-## Accounts, groups and RBAC
+**Retired:** `KUBEDECK_ACCESS`, `KUBEDECK_IMPERSONATE_PREFIX` and `KUBEDECK_IMPERSONATE_GROUP_PREFIX` are ignored; if one is set, the log says `<name> is no longer used: clusters come from Settings → Clusters and access from Settings → Groups.` Nobody acts as themselves (`kubedeck:<email>`) or as KubeDeck's own credentials any more, so RoleBindings to `kubedeck:<group>` names no longer grant anything through KubeDeck.
 
-KubeDeck shows a sign-in page. There is no self sign-up: an admin adds people under **Settings → Users**, sets their password (or generates one), and puts them in groups.
+## Clusters, accounts, groups and RBAC
 
-- **Groups are defined under Settings → Groups** (e.g. *Developers*, *Quality team*), and an account can only be in groups defined there. Groups accounts already had are defined automatically on start. For each cluster a group uses one service account:
-  - **Picked from the cluster, impersonated** (`--as=system:serviceaccount:<ns>:<name>`). The form lists the namespace's service accounts as KubeDeck sees them and says whether KubeDeck may impersonate them; its credentials for that cluster need `impersonate` on that service account.
-  - **From an uploaded kubeconfig**, where KubeDeck may not impersonate. Only a token or an inline client certificate is accepted (exec plugins, auth providers and file paths are refused). It is checked with `kubectl auth whoami` on save, stored encrypted with a key derived from `KUBEDECK_AUTH_SECRET`, and never sent back to the browser. Changing that secret makes stored kubeconfigs unreadable: upload them again.
+KubeDeck shows a sign-in page. There is no self sign-up. Set up in this order: add clusters, create groups with service accounts on them, add people to groups.
 
-  When several of someone's groups cover the same cluster, the group higher in the list wins (reorder with the arrows). The palette and the assistant refuse `--user` and `--cluster`, so nobody can borrow another context's credentials.
-- **A KubeDeck admin uses KubeDeck's own credentials** on a cluster none of their groups covers, so a new install works as soon as its first admin (`KUBEDECK_ADMIN_EMAIL`) signs in. Make someone an admin only if they may do what KubeDeck's kubeconfig (or service account) can.
-- **For everyone else, on a cluster none of their groups covers, KubeDeck acts as the person.** The kubectl call runs as `kubedeck:<email>` with each of their groups as `kubedeck:<group>`, so you can bind those groups to roles instead:
+- **Clusters are added under Settings → Clusters** (admins only). Each has a name (what people see in the cluster picker, and the `--context` of every call) and KubeDeck's own connection to it:
+  - **an uploaded kubeconfig**: a token or an inline client certificate only (exec plugins, auth providers and file paths are refused). With several contexts, the one named like the cluster is used, else the current one. It is checked with `kubectl auth whoami` on save, stored encrypted with a key derived from `KUBEDECK_AUTH_SECRET`, and never sent back to the browser. **Upload a new kubeconfig** on the cluster's row reconnects it (an expired token, a rotated certificate);
+  - **This cluster**, offered only when KubeDeck runs in a pod: the pod's own service account, its token read from the pod's token file on each use. KubeDeck never uses its pod's service account otherwise.
 
-  ```sh
-  kubectl create rolebinding shop-editors --clusterrole=edit --group=kubedeck:shop-editors -n shop
-  kubectl create clusterrolebinding kubedeck-viewers --clusterrole=view --group=kubedeck:viewers
-  ```
+  The connection is used to impersonate the service accounts groups pick, and to list namespaces and service accounts in the group form. A person's call never runs as the connection itself. Listing a cluster gives nobody access. A cluster cannot be removed while a group uses it.
+- **Groups are defined under Settings → Groups** (e.g. *Developers*, *Quality team*), and an account can only be in groups defined there. Groups accounts already had are defined automatically on start. For each cluster from Settings → Clusters a group uses one service account:
+  - **Picked from the cluster, impersonated through the cluster's connection** (`--kubeconfig=<cluster's connection> --as=system:serviceaccount:<ns>:<name>`). The form lists the cluster's namespaces and service accounts with that connection and says whether it may impersonate the account you named; the connection needs `impersonate` on that service account.
+  - **From an uploaded kubeconfig**, where the connection may not impersonate. Only a token or an inline client certificate is accepted (exec plugins, auth providers and file paths are refused). It is checked with `kubectl auth whoami` on save, stored encrypted with a key derived from `KUBEDECK_AUTH_SECRET`, and never sent back to the browser. Changing that secret makes stored kubeconfigs unreadable: upload them again.
 
-  Someone in no bound group sees nothing. Group changes apply on their next request. The `kubedeck:` prefix keeps a KubeDeck group from ever being a built-in one such as `system:masters`.
-- **For acting as the person, KubeDeck's service account needs only `impersonate`** on `users` and `groups` (the `kubedeck-impersonator` role in the manifest; add `serviceaccounts` for groups that act as a service account). A kubectl call made outside a person's request runs as `system:anonymous`, never as the service account.
-- **The KubeDeck role:** an admin manages people, groups, plugins and the audit log, and (see above) has KubeDeck's own access where no group of theirs applies. An admin cannot remove their own admin role, block or delete themselves.
+  When several of someone's groups cover the same cluster, their permissions add up: each kubectl call is tried as their service accounts there, in the list's order, and the next one is tried when the cluster answers Forbidden (a refused request changed nothing). The permission check that hides buttons merges them the same way. The palette and the assistant refuse `--user` and `--cluster`, so nobody can borrow another context's credentials.
+- **KubeDeck permissions per group** (Settings → Groups → Edit): switches for what people may use in KubeDeck itself: the assistant, assistant changes, the kubectl palette, pod files, creating and editing projects, and MCP server tools. They add up across a person's groups; an admin has all; someone in no group has none. They are enforced by the server (refused requests say which permission is missing) and hidden in the browser. What someone may do *in a cluster* (delete, scale, exec) stays Kubernetes RBAC on the group's service account.
+- **Kubernetes permissions of a group's service account**: the cluster's own Roles, ClusterRoles and bindings decide; KubeDeck never changes them. Settings → Groups → a cluster's **RBAC** menu opens the service account, its namespace's Roles and RoleBindings, and the cluster role bindings in KubeDeck's resource pages.
+- **No group on a cluster, no access, admins included.** A call to a cluster none of the person's groups covers is refused before kubectl runs (`none of your KubeDeck groups gives you access to cluster "<cluster>". Ask a KubeDeck admin.`), and the cluster picker shows only the clusters their groups cover. A call that names no cluster is refused too: a shared KubeDeck has no default cluster. A kubectl call made outside a person's request gets no access. Group changes apply on their next request.
+- **The KubeDeck role:** an admin manages clusters, people, groups, plugins and the audit log, and reaches clusters through groups like everyone else, so the first admin (`KUBEDECK_ADMIN_EMAIL`) puts themselves in a group after creating it. An admin can put anyone in any group and change what a group's service account may do where the connection allows it: make someone an admin only if you trust them with that. An admin cannot remove their own admin role, block or delete themselves.
 - Sessions last 12 hours. Sign-in is rate limited per address (10 tries a minute). Blocking an account signs it out at once; so does **Sign out everywhere**.
-- Back up the database: it holds the accounts (passwords hashed with scrypt), groups, projects, plugin settings and the audit log.
+- Back up the database: it holds the accounts (passwords hashed with scrypt), clusters, groups, projects, plugin settings and the audit log.
 
 ### Traces and Grafana
 
@@ -89,7 +90,7 @@ Traces come from Tempo, found by the OpenTelemetry resource attributes the OTel 
 
 ## Deploy
 
-Full runbook with every command: **[DEPLOYMENT.md](DEPLOYMENT.md)**. In short: create a Secret with the session secret and the first admin, apply `deploy/kubernetes/kubedeck.yaml` (one replica, SQLite on a 1 GB volume, a service account that may only impersonate), bind your groups to roles, sign in and add people.
+Full runbook with every command: **[DEPLOYMENT.md](DEPLOYMENT.md)**. The complete documentation is served by every KubeDeck at **/docs** (source in `documentation/`). In short: create a Secret with the session secret and the first admin, apply `deploy/kubernetes/kubedeck.yaml` (one replica, SQLite on a 1 GB volume), sign in, add clusters (**This cluster** for the one KubeDeck runs in, after giving its `kubedeck` service account `impersonate` on the service accounts groups will use), create groups with service accounts on them, and add people to groups.
 
 ## Limits to know
 
@@ -106,4 +107,4 @@ KUBEDECK_ADMIN_EMAIL=you@example.com KUBEDECK_ADMIN_PASSWORD='choose-a-long-one'
 PORT=5051 npm run dev
 ```
 
-Open http://localhost:5051 and sign in. Your own kubeconfig must be allowed to impersonate (a local kind or Docker Desktop cluster is), and your groups need bindings; `deploy/demo/kubedeck-demo.yaml` creates demo workloads and binds the groups `viewers`, `admins`, `shop-viewers`, `shop-editors` and `ops-editors`.
+Open http://localhost:5051 and sign in. Web mode does not read your kubeconfig: add a cluster under Settings → Clusters (for a local kind or Docker Desktop cluster, `kubectl config view --minify --flatten --context=<context> > dev.yaml` writes one context with inline credentials), create a group with a service account on it, and put yourself in that group. `deploy/demo/kubedeck-demo.yaml` creates demo workloads and the service accounts `shop/shop-viewer` (view) and `shop/shop-editor` (edit) to pick.

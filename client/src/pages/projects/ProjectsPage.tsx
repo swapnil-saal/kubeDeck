@@ -4,6 +4,7 @@ import { FolderKanban, Loader2, Plus } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { useAcrossScopes } from "@/hooks/use-k8s";
 import { useScope } from "@/hooks/use-scope";
+import { useServerMode } from "@/hooks/use-server-mode";
 import { useProjects, type Project } from "@/lib/projects";
 import { cn } from "@/lib/utils";
 import { healthOf } from "./project-health";
@@ -15,6 +16,7 @@ export default function ProjectsPage() {
   const projects = list.data ?? [];
   const { context, namespace } = useScope();
   const [creating, setCreating] = useState(false);
+  const mayCreate = useServerMode().features.projects !== false;
   const [, navigate] = useLocation();
 
   return (
@@ -28,9 +30,9 @@ export default function ProjectsPage() {
               Projects {projects.length > 0 && <span className="text-sm font-medium tabular-nums text-muted-foreground">{projects.length}</span>}
             </h1>
             <span className="text-xs text-muted-foreground">applications across namespaces and clusters</span>
-            <button type="button" onClick={() => setCreating(true)} className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-3 text-xs font-semibold text-primary hover:bg-primary/15">
+            {mayCreate && <button type="button" onClick={() => setCreating(true)} className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-3 text-xs font-semibold text-primary hover:bg-primary/15">
               <Plus className="h-3.5 w-3.5" />New project
-            </button>
+            </button>}
           </div>
 
           {list.isLoading ? (
@@ -45,9 +47,9 @@ export default function ProjectsPage() {
                 A project brings together namespaces from any of your clusters, say <span className="font-mono">payments</span> in dev, uat and prod,
                 with its health, workloads and map in one place.
               </p>
-              <button type="button" onClick={() => setCreating(true)} className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90">
+              {mayCreate && <button type="button" onClick={() => setCreating(true)} className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90">
                 <Plus className="h-3.5 w-3.5" />Create your first project
-              </button>
+              </button>}
             </div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">

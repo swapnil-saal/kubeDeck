@@ -11,10 +11,12 @@ import {
   saveProjectSchema,
   type Project,
 } from "@shared/projects";
+import { permissionsFor } from "../web-mode";
 import type { ProjectStore, StoredProject } from "./store";
 
 const who = (req: Request) => req.kubedeckUser?.email || req.kubedeckUser?.name || "";
-const mayEdit = (req: Request, p: StoredProject) => req.kubedeckUser?.role === "admin" || (p.createdBy !== "" && p.createdBy === who(req));
+const mayEdit = (req: Request, p: StoredProject) =>
+  permissionsFor(req.kubedeckUser).projects && (req.kubedeckUser?.role === "admin" || (p.createdBy !== "" && p.createdBy === who(req)));
 
 function toProject(req: Request, p: StoredProject): Project {
   return {

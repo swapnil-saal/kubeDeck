@@ -1,7 +1,7 @@
 {
   "name": "kubedeck",
   "version": "2.0.0",
-  "description": "KubeDeck — A native macOS Kubernetes navigator. Browse clusters, namespaces, and resources with a built-in terminal.",
+  "description": "KubeDeck \u2014 A native macOS Kubernetes navigator. Browse clusters, namespaces, and resources with a built-in terminal.",
   "author": "Swapnil Saal <swapnil-saal>",
   "homepage": "https://github.com/swapnil-saal/kubeDeck",
   "repository": {
@@ -21,7 +21,9 @@
     "package:dir": "CSC_IDENTITY_AUTO_DISCOVERY=false npm run build && electron-builder --mac --dir --publish never",
     "package:win": "npm run build && electron-builder --win --publish never",
     "test": "vitest run",
-    "check:arch": "vitest run server/architecture.test.ts"
+    "check:arch": "vitest run tests/architecture.test.ts",
+    "docs:dev": "cd documentation && docmd dev",
+    "docs:build": "cd documentation && docmd build"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.71",
@@ -75,6 +77,7 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@docmd/core": "^0.10.1",
     "@tailwindcss/typography": "^0.5.15",
     "@tailwindcss/vite": "^4.1.18",
     "@types/express": "^5.0.0",

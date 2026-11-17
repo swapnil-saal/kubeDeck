@@ -43,9 +43,6 @@ export type AdminUser = z.infer<typeof adminUserSchema>;
 
 export const userListSchema = z.object({
   users: z.array(adminUserSchema),
-  /** what the server prepends to user and group names for Kubernetes */
-  userPrefix: z.string(),
-  groupPrefix: z.string(),
 });
 export type UserList = z.infer<typeof userListSchema>;
 

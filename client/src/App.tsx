@@ -65,6 +65,7 @@ function Routes() {
 }
 
 function AppShell() {
+  const { features } = useServerMode();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const closePalette = useCallback(() => setPaletteOpen(false), []);
 
@@ -110,7 +111,7 @@ function AppShell() {
         </div>
 
         {/* mounted only while open: its resource queries do not run in the background */}
-        {paletteOpen && (
+        {paletteOpen && features.palette !== false && (
           <Suspense fallback={null}>
             <KubectlPalette open onClose={closePalette} />
           </Suspense>

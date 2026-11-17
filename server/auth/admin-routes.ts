@@ -16,7 +16,6 @@ import {
   type UserList,
 } from "@shared/admin";
 import { emit, type UserChanged } from "../events";
-import { webConfig } from "../web-mode";
 import { joinGroups, roleOf, splitGroups } from "./groups";
 import type { KubeDeckAuth } from "./index";
 
@@ -81,8 +80,7 @@ function adminHandlers(auth: KubeDeckAuth, deps: AdminRouteDeps): Record<string,
   return {
     async list(req, res) {
       const r = await api.listUsers({ headers: headers(req), query: { limit: 1000, sortBy: "createdAt", sortDirection: "asc" } });
-      const c = webConfig();
-      res.json({ users: (r.users ?? []).map(toAdminUser), userPrefix: c.impersonatePrefix, groupPrefix: c.impersonateGroupPrefix } satisfies UserList);
+      res.json({ users: (r.users ?? []).map(toAdminUser) } satisfies UserList);
     },
     async create(req, res) {
       const parsed = createUserSchema.safeParse(req.body);

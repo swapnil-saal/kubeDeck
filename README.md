@@ -16,6 +16,12 @@
 
 ---
 
+## Documentation
+
+The full documentation (installation, using KubeDeck, shared web mode, integrations, reference) is in [documentation/](documentation/) and is served by KubeDeck itself at `/docs`. Build it with `npm run docs:build`, or preview it with `npm run docs:dev`.
+
+---
+
 ## Download
 
 > **macOS Apple Silicon (arm64, macOS 13+)**, **Windows** (installer or portable), and a **Docker image** for the web version (amd64 + arm64)
@@ -41,7 +47,7 @@
 | 🤖 **AI operator** | Chat with an agent that has live, read-mostly kubectl access: it inspects the cluster, shows dashboards, and asks for your approval before any mutating command. Works with OpenAI, Anthropic, Ollama, or any OpenAI-compatible gateway |
 | 🧵 **Traces and log history** | With Grafana Tempo: each workload's endpoints with requests, errors and p95, a rollout check (new version vs old), per-service health in Overview → Traces, and a span waterfall. With Loki, the pod's log lines at the moment of a request sit next to the span, and the AI operator can read log history of pods that are gone. Grafana (Prometheus, dashboards, alerts) through the Grafana MCP server |
 | 🔐 **Permission-aware** | Shows only what your account may do: kinds you cannot list leave the sidebar, actions you cannot take are not offered |
-| 👥 **Sign-in for teams** | The web version signs people in itself: an admin creates accounts and puts people in groups, each group maps to Kubernetes RBAC, and every change lands in an audit log |
+| 👥 **Sign-in for teams** | The web version signs people in itself: an admin adds the clusters, creates groups with a service account per cluster (impersonated or an uploaded kubeconfig) and KubeDeck permissions, and puts people in groups; every change lands in an audit log |
 | 🩺 **Cluster pulse** | Live health score and a list of what is broken right now (crashing pods, image-pull errors, degraded deployments, NotReady nodes), each one click from an AI diagnosis |
 | 🔌 **Port forwarding** | Start, test, and stop `kubectl port-forward` sessions from the UI (desktop only) |
 | ⌘K **kubectl palette** | Run kubectl or describe what you want in plain English |
@@ -53,13 +59,13 @@
 
 ## Web version
 
-KubeDeck also runs as a shared web service for a team, with the desktop app's features. It signs people in itself: an admin creates accounts and puts people in groups, and everyone acts in the cluster as themselves (`kubedeck:<email>`, groups `kubedeck:<group>`), so Kubernetes RBAC decides what each person can see and change. Every change lands in an audit log. Changes, the AI assistant and pod files are on by default and can each be switched off (`KUBEDECK_READ_ONLY=true`, `KUBEDECK_AI=off`, `KUBEDECK_POD_FILES=off`). Port-forward is desktop only.
+KubeDeck also runs as a shared web service for a team, with the desktop app's features. It signs people in itself and reads no kubeconfig from the server: an admin adds each cluster under Settings → Clusters (with a kubeconfig for KubeDeck, or the pod's own service account for the cluster it runs in), creates groups that each use a service account on those clusters (one KubeDeck impersonates, or an uploaded kubeconfig), and puts people in groups. People reach only the clusters their groups cover, admins too, and Kubernetes RBAC on those service accounts decides what they can see and change. Every change lands in an audit log. Changes, the AI assistant and pod files are on by default and can each be switched off (`KUBEDECK_READ_ONLY=true`, `KUBEDECK_AI=off`, `KUBEDECK_POD_FILES=off`). Port-forward is desktop only.
 
 ```sh
 docker pull swapnilsaal/kubedeck:<version>-web    # linux/amd64 + linux/arm64, runs as non-root (uid 1000)
 ```
 
-See [docs/WEB.md](docs/WEB.md), the deployment runbook [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and `deploy/kubernetes/`.
+See the documentation (served by every KubeDeck at `/docs`, source in [documentation/](documentation/)), [docs/WEB.md](docs/WEB.md), the deployment runbook [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and `deploy/kubernetes/`.
 
 ## Screenshots
 
@@ -73,7 +79,7 @@ See [docs/WEB.md](docs/WEB.md), the deployment runbook [docs/DEPLOYMENT.md](docs
 - `kubectl` installed and available in your PATH (e.g. via Homebrew: `brew install kubectl`)
 - A valid `~/.kube/config` with at least one context
 
-KubeDeck reads your full shell environment (including `KUBECONFIG` set in `.zshrc` / `.bashrc`) automatically.
+On macOS the app takes `PATH` from your login shell, so a Homebrew `kubectl` is found. Add kubeconfig files other than `~/.kube/config` under Settings → Clusters.
 
 ---
 

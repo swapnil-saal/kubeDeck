@@ -130,8 +130,8 @@ export function UsersSection() {
         )}
       </div>
       <p className="text-[11px] text-muted-foreground">
-        A person's groups decide the service account they use on each cluster (Settings → Groups). An admin also manages people, groups, plugins and
-        the audit log, and uses KubeDeck's own credentials on clusters none of their groups covers.
+        A person's groups decide which clusters they reach and the service account they use on each (Settings → Groups). An admin also manages
+        clusters, people, groups, plugins and the audit log, and reaches clusters through groups like everyone else.
       </p>
 
       <UserSheet
@@ -139,7 +139,6 @@ export function UsersSection() {
         user={adding ? null : open}
         isMe={!adding && open?.email === me?.email}
         groups={defined}
-        userPrefix={groups.data?.userPrefix ?? users.data?.userPrefix ?? "kubedeck:"}
         onClose={() => { setAdding(false); setOpenId(null); }}
       />
     </div>
